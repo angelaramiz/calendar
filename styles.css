@@ -1,0 +1,320 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.container {
+    max-width: 900px;
+    width: 100%;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+    padding: 30px;
+    margin: 20px;
+}
+
+h1 {
+    text-align: center;
+    color: #2c3e50;
+    margin-bottom: 25px;
+    font-weight: 600;
+    font-size: 2.2rem;
+}
+
+.calendar-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding: 0 10px;
+}
+
+.month-year {
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 15px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #2980b9;
+}
+
+table#calendar {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+thead {
+    background: linear-gradient(to right, #3498db, #2c3e50);
+    color: white;
+}
+
+th {
+    padding: 15px 5px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 1.1rem;
+    letter-spacing: 0.5px;
+}
+
+tbody tr {
+    border-bottom: 1px solid #eaeaea;
+}
+
+tbody tr:last-child {
+    border-bottom: none;
+}
+
+td {
+    padding: 15px 5px;
+    text-align: center;
+    height: 100px;
+    vertical-align: top;
+    border-right: 1px solid #eaeaea;
+    transition: background-color 0.2s;
+    cursor: pointer;
+    position: relative;
+}
+
+td:last-child {
+    border-right: none;
+}
+
+td:hover {
+    background-color: #f8f9fa;
+}
+
+.other-month {
+    color: #9eaebb; /* más legible que #bdc3c7 en pantallas brillantes */
+    background-color: #f9f9f9;
+}
+
+.today {
+    background-color: #e8f4fc;
+    font-weight: bold;
+    color: #3498db;
+}
+
+.today::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 8px;
+    height: 8px;
+    background-color: #e74c3c;
+    border-radius: 50%;
+}
+
+.event-indicator {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e74c3c; /* rojo distintivo */
+    box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
+    display: inline-block;
+    pointer-events: auto; /* permite tooltip via title */
+}
+
+/* Soporte para varios colores si en el futuro quieres categorizar eventos */
+.event-indicator.blue { background: #3498db; box-shadow: 0 0 0 3px rgba(52,152,219,0.12); }
+.event-indicator.green { background: #2ecc71; box-shadow: 0 0 0 3px rgba(46,204,113,0.12); }
+
+@media (max-width: 768px) {
+    .container {
+        padding: 15px;
+    }
+
+    h1 {
+        font-size: 1.8rem;
+    }
+
+    .month-year {
+        font-size: 1.4rem;
+    }
+
+    th,
+    td {
+        padding: 10px 2px;
+        height: 70px;
+        font-size: 0.9rem;
+    }
+}
+
+@media (max-width: 480px) {
+
+    th,
+    td {
+        padding: 8px 1px;
+        height: 60px;
+        font-size: 0.8rem;
+    }
+
+    .event-indicator { width: 8px; height: 8px; right: 4px; bottom: 4px; }
+}
+/* Modal overlay y cuadro */
+#modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 16px;
+}
+#modal-overlay.hidden {
+    display: none;
+}
+#modal {
+    background: #fff;
+    width: 100%;
+    max-width: 480px;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    padding: 16px;
+    position: relative;
+}
+#modal header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+#modal header h2 {
+    font-size: 1.1rem;
+    margin: 0;
+}
+#modal-close {
+    background: transparent;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+#modal label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 0.9rem;
+}
+#modal input[type="text"], #modal textarea {
+    width: 100%;
+    padding: 8px;
+    margin-top: 4px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+}
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
+}
+button#save-event {
+    background: #2d8cf0;
+    color: #fff;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+button#save-event:hover { filter: brightness(0.95); }
+button.danger {
+    background: #e55353;
+    color: white;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+button.hidden { display: none; }
+
+/* Indicador de evento en la celda */
+#calendar-body td {
+    position: relative;
+    vertical-align: top;
+    padding: 6px;
+    min-height: 56px;
+}
+.event-indicator {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e74c3c; /* rojo distintivo */
+    box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
+    display: inline-block;
+    pointer-events: auto; /* permite tooltip via title */
+}
+
+/* lista de eventos dentro de la modal */
+.existing-events {
+    margin-top: 12px;
+    border-top: 1px solid #eee;
+    padding-top: 12px;
+}
+.existing-event {
+    border: 1px solid #f0f0f0;
+    padding: 8px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+    background: #fafafa;
+    position: relative;
+}
+.existing-event p { margin: 6px 0 0 0; font-size: 0.9rem; color: #444; }
+.existing-event .small-delete {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    background: #e55353;
+    color: white;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+
+/* Badge de frecuencia en la lista de la modal */
+.freq-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    font-size: 0.75rem;
+    background: #f0f4f8;
+    color: #2c3e50;
+    border-radius: 12px;
+    border: 1px solid #e1e7ef;
+}

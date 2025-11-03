@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guía de Uso - Calendario con Préstamos y Notificaciones</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+        }
+        
+        .intro {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border-left: 5px solid #667eea;
+        }
+        
+        .feature {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+            transition: all 0.3s;
+        }
+        
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.2);
+            border-color: #667eea;
+        }
+        
+        .feature h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .icon {
+            font-size: 2rem;
+        }
+        
+        .step {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 3px solid #28a745;
+        }
+        
+        .step strong {
+            color: #28a745;
+        }
+        
+        .example {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        
+        .example-title {
+            font-weight: bold;
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        
+        .btn-start {
+            display: block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 20px;
+            border-radius: 12px;
+            text-decoration: none;
+            font-size: 1.3rem;
+            font-weight: bold;
+            margin-top: 30px;
+            transition: transform 0.3s;
+        }
+        
+        .btn-start:hover {
+            transform: scale(1.05);
+        }
+        
+        .tip {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 10px 0;
+            border-left: 4px solid #17a2b8;
+        }
+        
+        .tip::before {
+            content: "💡 ";
+            font-weight: bold;
+        }
+        
+        code {
+            background: #f8f9fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            color: #e83e8c;
+        }
+        
+        ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        
+        ul li {
+            padding: 8px 0;
+            padding-left: 30px;
+            position: relative;
+        }
+        
+        ul li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #28a745;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Guía de Uso Rápida</h1>
+        
+        <div class="intro">
+            <h3>¡Bienvenido a tu nuevo calendario financiero!</h3>
+            <p>Esta aplicación te ayuda a gestionar ingresos, gastos, préstamos y recibir notificaciones inteligentes.</p>
+        </div>
+        
+        <!-- Feature 1: Préstamos -->
+        <div class="feature">
+            <h2><span class="icon">💰</span> Sistema de Préstamos Avanzado</h2>
+            
+            <div class="step">
+                <strong>Paso 1:</strong> Haz click en cualquier día del calendario
+            </div>
+            
+            <div class="step">
+                <strong>Paso 2:</strong> Selecciona "Agregar ingreso" o "Agregar gasto"
+            </div>
+            
+            <div class="step">
+                <strong>Paso 3:</strong> Marca el checkbox de "Préstamo"
+            </div>
+            
+            <div class="step">
+                <strong>Paso 4:</strong> Completa los campos avanzados:
+                <ul>
+                    <li>Monto base del préstamo</li>
+                    <li>Interés ($ o %) - Se auto-calcula</li>
+                    <li>Plan de pagos (único, semanal, mensual, etc.)</li>
+                    <li>Días o fechas de recuperación</li>
+                </ul>
+            </div>
+            
+            <div class="example">
+                <div class="example-title">📝 Ejemplo Real:</div>
+                <p><strong>Prestas $1,000 a un amigo</strong></p>
+                <ul>
+                    <li>Tipo: Gasto (dinero que sale)</li>
+                    <li>Préstamo: Activado (a favor)</li>
+                    <li>Interés: 5% → Se calcula $50 automáticamente</li>
+                    <li>Retorno esperado: $1,050</li>
+                    <li>Plan: 3 pagos mensuales</li>
+                </ul>
+                <p><strong>Resultado:</strong> Se crearán 3 eventos de ingreso de $350 cada mes automáticamente ✨</p>
+            </div>
+            
+            <div class="tip">
+                <strong>Consejo:</strong> El sistema oculta la frecuencia normal cuando activas préstamo porque usa su propio sistema de pagos.
+            </div>
+        </div>
+        
+        <!-- Feature 2: Notificaciones -->
+        <div class="feature">
+            <h2><span class="icon">🔔</span> Sistema de Notificaciones</h2>
+            
+            <div class="step">
+                <strong>Acceso rápido:</strong> Click en el icono 🔔 en la barra superior
+            </div>
+            
+            <h3 style="margin-top: 20px; color: #495057;">Tipos de Alertas:</h3>
+            
+            <div style="margin: 15px 0;">
+                <strong>📅 Recordatorios Automáticos</strong>
+                <ul>
+                    <li>Se activan automáticamente para eventos próximos</li>
+                    <li>Configurables por días de anticipación</li>
+                    <li>Prioridad ajustada según cercanía</li>
+                </ul>
+            </div>
+            
+            <div style="margin: 15px 0;">
+                <strong>💰 Vencimiento de Préstamos</strong>
+                <ul>
+                    <li>Alerta crítica el día del vencimiento</li>
+                    <li>Alerta alta 3 días antes</li>
+                    <li>Incluye detalles del préstamo</li>
+                </ul>
+            </div>
+            
+            <div style="margin: 15px 0;">
+                <strong>🎯 Alertas Personalizadas</strong>
+                <ul>
+                    <li>Crea alertas para cualquier evento</li>
+                    <li>Mensaje personalizado</li>
+                    <li>4 niveles de prioridad</li>
+                    <li>Notificación del navegador opcional</li>
+                </ul>
+            </div>
+            
+            <div class="example">
+                <div class="example-title">🎯 Crear Alerta Personalizada:</div>
+                <p><strong>Paso a paso:</strong></p>
+                <ol style="list-style: decimal; padding-left: 30px;">
+                    <li>Abre cualquier evento (click en su tarjeta)</li>
+                    <li>Click en "🔔 Agregar Alerta"</li>
+                    <li>Escribe tu mensaje: "Recordar llevar efectivo"</li>
+                    <li>Selecciona anticipación: 1 día antes</li>
+                    <li>Elige prioridad: Alta</li>
+                    <li>Guarda ✅</li>
+                </ol>
+            </div>
+            
+            <div class="tip">
+                <strong>Configuración:</strong> Dentro del panel de notificaciones, click en "⚙️ Configuración" para ajustar días de anticipación, tipos de alertas, y activar notificaciones del navegador.
+            </div>
+        </div>
+        
+        <!-- Feature 3: Flujo Completo -->
+        <div class="feature">
+            <h2><span class="icon">🔄</span> Flujo de Trabajo Completo</h2>
+            
+            <div class="step">
+                <strong>1. Crear Préstamo:</strong>
+                <p>Gasto de $500, préstamo a favor, interés 10%, pago único en 30 días</p>
+            </div>
+            
+            <div class="step">
+                <strong>2. Ver en Calendario:</strong>
+                <p>Indicador dorado 💰 en hoy, indicador morado ↩️ en 30 días</p>
+            </div>
+            
+            <div class="step">
+                <strong>3. Recibir Notificación:</strong>
+                <p>Alerta alta prioridad 3 días antes del vencimiento</p>
+            </div>
+            
+            <div class="step">
+                <strong>4. Confirmar Pago:</strong>
+                <p>Click en "Confirmar" cuando recibas el pago → Se archiva como historial</p>
+            </div>
+            
+            <div class="tip">
+                <strong>Badge de Contador:</strong> El número sobre el icono 🔔 muestra alertas pendientes en tiempo real.
+            </div>
+        </div>
+        
+        <!-- Visual Guide -->
+        <div class="feature">
+            <h2><span class="icon">🎨</span> Guía Visual</h2>
+            
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 12px; border: 1px solid #dee2e6;">Elemento</th>
+                    <th style="padding: 12px; border: 1px solid #dee2e6;">Significado</th>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">🟢 Indicador Verde</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Ingreso</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">🔴 Indicador Rojo</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Gasto</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">💰 Borde Dorado</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Préstamo activo</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">↩️ Morado</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Contraparte (pago)</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">📦 Atenuado</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Historial (confirmado)</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">🔔 Badge con número</td>
+                    <td style="padding: 12px; border: 1px solid #dee2e6;">Notificaciones pendientes</td>
+                </tr>
+            </table>
+        </div>
+        
+        <!-- Tips Finales -->
+        <div class="feature" style="background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%); border: 2px solid #667eea;">
+            <h2><span class="icon">💡</span> Tips Profesionales</h2>
+            
+            <div class="tip">
+                Los eventos archivados (historial) no se pueden editar para mantener integridad de registros.
+            </div>
+            
+            <div class="tip">
+                Usa <code>Ctrl+F</code> en tu navegador para buscar eventos específicos en el panel de notificaciones.
+            </div>
+            
+            <div class="tip">
+                El sistema actualiza las notificaciones cada 5 minutos automáticamente.
+            </div>
+            
+            <div class="tip">
+                Todos los datos se guardan en <code>localStorage</code> - no se pierden al cerrar el navegador.
+            </div>
+            
+            <div class="tip">
+                Para préstamos complejos, usa el plan de "Fechas personalizadas" con fechas exactas separadas por coma.
+            </div>
+        </div>
+        
+        <a href="index.html" class="btn-start">
+            🚀 ¡Comenzar a Usar el Calendario!
+        </a>
+        
+        <p style="text-align: center; margin-top: 30px; color: #6c757d;">
+            <small>Desarrollado con ❤️ | Versión 2.0 con Préstamos y Notificaciones</small>
+        </p>
+    </div>
+</body>
+</html>

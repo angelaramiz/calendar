@@ -1,9 +1,23 @@
+/* Reset y base */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
+
+/* Tipografía y escala base (fluida) */
+:root{
+    --base-font: clamp(14px, 0.9vw + 12px, 16px);
+    --muted: #9eaebb;
+    --accent: #3498db;
+    --accent-dark: #2c3e50;
+    --red: #e74c3c;
+    --green: #2ecc71;
+    --cell-height: clamp(70px, 12vh, 120px); /* altura dinámica de celdas */
+}
+
+html { font-size: var(--base-font); }
 
 body {
     background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
@@ -16,51 +30,53 @@ body {
 }
 
 .container {
-    max-width: 900px;
+    max-width: 1100px; /* un poco más ancho en escritorio */
     width: 100%;
     background-color: white;
     border-radius: 12px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-    padding: 30px;
+    padding: clamp(18px, 2vw, 36px);
     margin: 20px;
 }
 
 h1 {
     text-align: center;
-    color: #2c3e50;
+    color: var(--accent-dark);
     margin-bottom: 25px;
     font-weight: 600;
-    font-size: 2.2rem;
+    font-size: clamp(1.4rem, 2.2vw, 2.2rem);
 }
 
+/* Controles del calendario */
 .calendar-controls {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 12px;
     margin-bottom: 20px;
     padding: 0 10px;
+    flex-wrap: wrap;
 }
 
 .month-year {
-    font-size: 1.8rem;
+    font-size: clamp(1rem, 1.6vw, 1.8rem);
     font-weight: 600;
-    color: #2c3e50;
+    color: var(--accent-dark);
 }
 
+/* Botones generales (responsive) */
 button {
-    background-color: #3498db;
+    background-color: var(--accent);
     color: white;
     border: none;
     border-radius: 6px;
-    padding: 10px 15px;
+    padding: clamp(8px, 0.8vw, 12px) clamp(10px, 1.2vw, 15px);
     cursor: pointer;
-    font-size: 1rem;
-    transition: background-color 0.3s;
+    font-size: clamp(0.9rem, 1vw, 1rem);
+    transition: background-color 0.2s, transform 0.08s;
 }
 
-button:hover {
-    background-color: #2980b9;
-}
+button:hover { background-color: #2980b9; transform: translateY(-1px); }
 
 table#calendar {
     width: 100%;
@@ -71,118 +87,82 @@ table#calendar {
     overflow: hidden;
 }
 
+/* Cabecera */
 thead {
-    background: linear-gradient(to right, #3498db, #2c3e50);
+    background: linear-gradient(to right, var(--accent), var(--accent-dark));
     color: white;
 }
 
 th {
-    padding: 15px 5px;
+    padding: clamp(10px, 1.2vw, 15px) 5px;
     text-align: center;
     font-weight: 600;
-    font-size: 1.1rem;
+    font-size: clamp(0.9rem, 1vw, 1.1rem);
     letter-spacing: 0.5px;
 }
 
+/* Filas y celdas del calendario */
 tbody tr {
     border-bottom: 1px solid #eaeaea;
 }
-
-tbody tr:last-child {
-    border-bottom: none;
-}
+tbody tr:last-child { border-bottom: none; }
 
 td {
-    padding: 15px 5px;
-    text-align: center;
-    height: 100px;
+    padding: 10px 6px;
+    text-align: left; /* más flexible para eventos */
     vertical-align: top;
+    height: var(--cell-height);
+    min-height: var(--cell-height);
     border-right: 1px solid #eaeaea;
-    transition: background-color 0.2s;
+    transition: background-color 0.15s;
     cursor: pointer;
     position: relative;
+    overflow: hidden;
 }
 
-td:last-child {
-    border-right: none;
-}
+td:last-child { border-right: none; }
 
-td:hover {
-    background-color: #f8f9fa;
-}
+td:hover { background-color: #f8f9fa; }
 
 .other-month {
-    color: #9eaebb; /* más legible que #bdc3c7 en pantallas brillantes */
+    color: var(--muted);
     background-color: #f9f9f9;
 }
 
+/* Hoy */
 .today {
     background-color: #e8f4fc;
     font-weight: bold;
-    color: #3498db;
+    color: var(--accent);
 }
-
 .today::after {
     content: "";
     position: absolute;
-    top: 5px;
-    right: 5px;
+    top: 6px;
+    right: 6px;
     width: 8px;
     height: 8px;
-    background-color: #e74c3c;
+    background-color: var(--red);
     border-radius: 50%;
 }
 
+/* Indicador de evento */
 .event-indicator {
     position: absolute;
-    right: 6px;
-    bottom: 6px;
+    right: 8px;
+    bottom: 8px;
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #e74c3c; /* rojo distintivo */
+    background: var(--red);
     box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
     display: inline-block;
-    pointer-events: auto; /* permite tooltip via title */
+    pointer-events: auto;
 }
+.event-indicator.blue { background: var(--accent); box-shadow: 0 0 0 3px rgba(52,152,219,0.12); }
+.event-indicator.green { background: var(--green); box-shadow: 0 0 0 3px rgba(46,204,113,0.12); }
 
-/* Soporte para varios colores si en el futuro quieres categorizar eventos */
-.event-indicator.blue { background: #3498db; box-shadow: 0 0 0 3px rgba(52,152,219,0.12); }
-.event-indicator.green { background: #2ecc71; box-shadow: 0 0 0 3px rgba(46,204,113,0.12); }
-
-@media (max-width: 768px) {
-    .container {
-        padding: 15px;
-    }
-
-    h1 {
-        font-size: 1.8rem;
-    }
-
-    .month-year {
-        font-size: 1.4rem;
-    }
-
-    th,
-    td {
-        padding: 10px 2px;
-        height: 70px;
-        font-size: 0.9rem;
-    }
-}
-
-@media (max-width: 480px) {
-
-    th,
-    td {
-        padding: 8px 1px;
-        height: 60px;
-        font-size: 0.8rem;
-    }
-
-    .event-indicator { width: 8px; height: 8px; right: 4px; bottom: 4px; }
-}
-/* Modal overlay y cuadro */
+/* Modal overlay y cuadro (mejoras responsive) */
 #modal-overlay {
     position: fixed;
     inset: 0;
@@ -193,17 +173,17 @@ td:hover {
     z-index: 9999;
     padding: 16px;
 }
-#modal-overlay.hidden {
-    display: none;
-}
+#modal-overlay.hidden { display: none; }
+
 #modal {
     background: #fff;
     width: 100%;
-    max-width: 480px;
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    padding: 16px;
+    max-width: 640px; /* más ancho en pantallas grandes */
+    border-radius: 10px;
+    box-shadow: 0 8px 36px rgba(0,0,0,0.28);
+    padding: clamp(14px, 2vw, 22px);
     position: relative;
+    margin: 12px;
 }
 #modal header {
     display: flex;
@@ -212,7 +192,7 @@ td:hover {
     margin-bottom: 8px;
 }
 #modal header h2 {
-    font-size: 1.1rem;
+    font-size: clamp(1rem, 1.4vw, 1.2rem);
     margin: 0;
 }
 #modal-close {
@@ -221,31 +201,30 @@ td:hover {
     font-size: 1.1rem;
     cursor: pointer;
 }
-#modal label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.9rem;
-}
+#modal label { display: block; margin-bottom: 8px; font-size: 0.95rem; }
 #modal input[type="text"], #modal textarea {
     width: 100%;
     padding: 8px;
     margin-top: 4px;
-    border-radius: 4px;
+    border-radius: 6px;
     border: 1px solid #ccc;
     box-sizing: border-box;
 }
+
+/* Acciones del modal */
 .modal-actions {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-    margin-top: 8px;
+    margin-top: 12px;
+    flex-wrap: wrap;
 }
 button#save-event {
     background: #2d8cf0;
     color: #fff;
     border: none;
     padding: 8px 12px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
 }
 button#save-event:hover { filter: brightness(0.95); }
@@ -254,46 +233,22 @@ button.danger {
     color: white;
     border: none;
     padding: 8px 12px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
 }
 button.hidden { display: none; }
 
-/* Indicador de evento en la celda */
-#calendar-body td {
-    position: relative;
-    vertical-align: top;
-    padding: 6px;
-    min-height: 56px;
-}
-.event-indicator {
-    position: absolute;
-    right: 6px;
-    bottom: 6px;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: #e74c3c; /* rojo distintivo */
-    box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
-    display: inline-block;
-    pointer-events: auto; /* permite tooltip via title */
-}
-
-/* lista de eventos dentro de la modal */
-.existing-events {
-    margin-top: 12px;
-    border-top: 1px solid #eee;
-    padding-top: 12px;
-}
+/* Lista de eventos dentro de la modal */
+.existing-events { margin-top: 12px; border-top: 1px solid #eee; padding-top: 12px; }
 .existing-event {
     border: 1px solid #f0f0f0;
-    padding: 8px;
-    border-radius: 6px;
-    margin-bottom: 8px;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 10px;
     background: #fafafa;
     position: relative;
 }
-.existing-event p { margin: 6px 0 0 0; font-size: 0.9rem; color: #444; }
+.existing-event p { margin: 6px 0 0 0; font-size: 0.95rem; color: #444; }
 .existing-event .small-delete {
     position: absolute;
     right: 8px;
@@ -302,19 +257,84 @@ button.hidden { display: none; }
     color: white;
     border: none;
     padding: 4px 6px;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 0.8rem;
 }
 
-/* Badge de frecuencia en la lista de la modal */
+/* Badge de frecuencia */
 .freq-badge {
     display: inline-block;
     margin-left: 8px;
-    padding: 2px 6px;
-    font-size: 0.75rem;
+    padding: 3px 7px;
+    font-size: 0.78rem;
     background: #f0f4f8;
-    color: #2c3e50;
+    color: var(--accent-dark);
     border-radius: 12px;
     border: 1px solid #e1e7ef;
 }
+
+/* Estilos específicos para los formularios swal (mejor legibilidad) */
+.swal2-input, .swal2-textarea, .swal2-select {
+    border-radius: 6px !important;
+    border: 1px solid #d9d9d9 !important;
+    padding: 8px !important;
+    font-size: 0.95rem !important;
+}
+
+/* Pequeños ajustes visuales del toggle de "Frecuencia" en la modal */
+#swal-toggle-header {
+    display: inline-block;
+    cursor: pointer;
+    color: var(--accent-dark);
+    user-select: none;
+    font-size: 0.95rem;
+}
+#swal-contenido-frecuencia { margin-top: 8px; }
+
+/* ---------------- Responsive refinado ---------------- */
+
+/* Tablet y pantallas medianas */
+@media (max-width: 992px) {
+    :root { --cell-height: clamp(64px, 14vh, 110px); }
+    .container { padding: clamp(14px, 2vw, 26px); }
+    th, td { font-size: clamp(0.85rem, 1vw, 1rem); }
+}
+
+/* Movil (smartphones) */
+@media (max-width: 768px) {
+    :root { --cell-height: clamp(56px, 16vh, 96px); }
+    .container { padding: 12px; border-radius: 8px; margin: 12px; }
+    table#calendar { font-size: 0.92rem; }
+    th, td { padding: 8px 6px; height: var(--cell-height); min-height: var(--cell-height); }
+    td { text-align: left; padding: 8px; }
+
+    /* En móviles apilamos acciones del modal verticalmente */
+    .modal-actions { justify-content: stretch; }
+    .modal-actions button { width: 100%; }
+
+    /* Ajustes para los botones dentro de la cabecera de calendario */
+    .calendar-controls { gap: 8px; align-items: stretch; }
+}
+
+/* Teléfonos pequeños */
+@media (max-width: 480px) {
+    :root { --cell-height: clamp(48px, 18vh, 86px); }
+    h1 { font-size: 1.2rem; }
+    th, td { padding: 6px 4px; font-size: 0.82rem; }
+    .event-indicator { width: 8px; height: 8px; right: 6px; bottom: 6px; }
+
+    /* Modal a ancho completo con menos padding */
+    #modal { max-width: 100%; padding: 12px; border-radius: 8px; margin: 8px; }
+    #modal header h2 { font-size: 1rem; }
+}
+
+/* Fallback visual para contenedores con overflow largo */
+td .event-title {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Fin del stylesheet */

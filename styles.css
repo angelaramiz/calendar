@@ -162,6 +162,16 @@ td:hover { background-color: #f8f9fa; }
 .event-indicator.blue { background: var(--accent); box-shadow: 0 0 0 3px rgba(52,152,219,0.12); }
 .event-indicator.green { background: var(--green); box-shadow: 0 0 0 3px rgba(46,204,113,0.12); }
 
+/* Indicadores específicos para ingresos y gastos */
+.event-indicator.event-income {
+    background: var(--green);
+    box-shadow: 0 0 0 3px rgba(46,204,113,0.12);
+}
+.event-indicator.event-expense {
+    background: var(--red);
+    box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
+}
+
 /* Modal overlay y cuadro (mejoras responsive) */
 #modal-overlay {
     position: fixed;

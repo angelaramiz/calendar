@@ -141,10 +141,23 @@ export class Calendar {
         const span = document.createElement('span');
         span.className = 'event-indicator';
         
+        // Agregar clase específica según el tipo
+        if (event.type === 'ingreso') {
+            span.classList.add('event-income');
+        } else if (event.type === 'gasto') {
+            span.classList.add('event-expense');
+        }
+        
         // Construir tooltip
         let tooltip = event.title;
         if (event.desc) {
             tooltip += ` - ${event.desc}`;
+        }
+        if (event.amount !== undefined && event.amount !== null) {
+            tooltip += ` ($${event.amount})`;
+        }
+        if (event.category) {
+            tooltip += ` [${event.category}]`;
         }
         if (event.frequency) {
             const interval = event.interval && event.interval > 1 

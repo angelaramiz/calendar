@@ -53,42 +53,110 @@ function addDaysToISO(dateISO, days) {
 }
 
 /**
- * Crea un evento contraparte para un loan (préstamo) identificado por loanId.
- * Busca el evento original (loanId) y crea en la fecha de recuperación un evento compensatorio
- * marcado con loan.isCounterpart = true para poder identificarlo posteriormente.
+ * Crea evento(s) contraparte para un loan (préstamo) identificado por loanId.
+ * Busca el evento original (loanId) y crea contrapartes según el plan de pagos:
+ * - single: un evento en recoveryDays
+ * - weekly/biweekly/monthly: múltiples eventos según frecuencia y cantidad
+ * - custom: eventos en fechas específicas
  * @param {string} loanId
- * @returns {string|null} fecha ISO del evento contraparte creado o null
+ * @returns {string[]|null} fechas ISO de los eventos contraparte creados o null
  */
 export function createLoanCounterpartByLoanId(loanId) {
     const events = loadEvents();
-    let createdDate = null;
+    const createdDates = [];
+    
     // find original event (not counterpart)
     for (const dateISO of Object.keys(events)) {
         const arr = events[dateISO];
         for (let i = 0; i < arr.length; i++) {
             const ev = arr[i];
             if (ev.loan && ev.loan.loanId === loanId && !ev.loan.isCounterpart) {
-                const recoveryDays = ev.loan.recoveryDays;
-                if (!recoveryDays) return null;
-                const targetDate = addDaysToISO(dateISO, recoveryDays);
-                // counterpart event data
-                const counterpart = {
-                    title: `Compensación: ${ev.title}`,
-                    desc: `Contrapartida de préstamo (${ev.title})`,
-                    amount: ev.amount !== undefined ? ev.amount : null,
-                    type: ev.type === 'gasto' ? 'ingreso' : 'gasto',
-                    category: ev.category || '',
-                    frequency: '',
-                    interval: 1,
-                    limit: 1,
-                    origin: targetDate,
-                    loan: Object.assign({}, ev.loan, { isCounterpart: true }),
-                };
-                if (!events[targetDate]) events[targetDate] = [];
-                events[targetDate].push({ ...counterpart, createdAt: new Date().toISOString() });
-                createdDate = targetDate;
+                const loan = ev.loan;
+                const baseAmount = loan.expectedReturn !== undefined && loan.expectedReturn !== null 
+                    ? loan.expectedReturn 
+                    : (ev.amount !== undefined ? ev.amount : 0);
+                
+                // Determinar fechas de pago según el plan
+                const paymentDates = [];
+                
+                if (loan.paymentPlan === 'single' && loan.recoveryDays) {
+                    // Pago único
+                    paymentDates.push({
+                        date: addDaysToISO(dateISO, loan.recoveryDays),
+                        amount: baseAmount,
+                        installment: 1,
+                        total: 1
+                    });
+                } else if (loan.paymentPlan === 'custom' && loan.customDates && loan.customDates.length) {
+                    // Fechas personalizadas
+                    const amountPerPayment = baseAmount / loan.customDates.length;
+                    loan.customDates.forEach((date, idx) => {
+                        paymentDates.push({
+                            date: date,
+                            amount: amountPerPayment,
+                            installment: idx + 1,
+                            total: loan.customDates.length
+                        });
+                    });
+                } else if (['weekly', 'biweekly', 'monthly'].includes(loan.paymentPlan)) {
+                    // Pagos recurrentes
+                    const frequency = loan.paymentFrequency || 1;
+                    const count = loan.paymentCount || 1;
+                    const amountPerPayment = baseAmount / count;
+                    
+                    let daysIncrement;
+                    if (loan.paymentPlan === 'weekly') {
+                        daysIncrement = 7 * frequency;
+                    } else if (loan.paymentPlan === 'biweekly') {
+                        daysIncrement = 14 * frequency;
+                    } else if (loan.paymentPlan === 'monthly') {
+                        daysIncrement = 30 * frequency; // aproximado
+                    }
+                    
+                    for (let j = 0; j < count; j++) {
+                        paymentDates.push({
+                            date: addDaysToISO(dateISO, daysIncrement * (j + 1)),
+                            amount: amountPerPayment,
+                            installment: j + 1,
+                            total: count
+                        });
+                    }
+                }
+                
+                // Crear eventos contraparte
+                paymentDates.forEach(payment => {
+                    const counterpart = {
+                        title: payment.total > 1 
+                            ? `Pago ${payment.installment}/${payment.total}: ${ev.title}`
+                            : `Compensación: ${ev.title}`,
+                        desc: loan.notes 
+                            ? `${loan.notes}\n(Contrapartida de préstamo)` 
+                            : `Contrapartida de préstamo (${ev.title})`,
+                        amount: payment.amount,
+                        type: ev.type === 'gasto' ? 'ingreso' : 'gasto',
+                        category: ev.category || '',
+                        frequency: '',
+                        interval: 1,
+                        limit: 1,
+                        origin: payment.date,
+                        loan: {
+                            ...loan,
+                            isCounterpart: true,
+                            installment: payment.installment,
+                            totalInstallments: payment.total
+                        }
+                    };
+                    
+                    if (!events[payment.date]) events[payment.date] = [];
+                    events[payment.date].push({ 
+                        ...counterpart, 
+                        createdAt: new Date().toISOString() 
+                    });
+                    createdDates.push(payment.date);
+                });
+                
                 saveEvents(events);
-                return createdDate;
+                return createdDates;
             }
         }
     }

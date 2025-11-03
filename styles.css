@@ -172,6 +172,38 @@ td:hover { background-color: #f8f9fa; }
     box-shadow: 0 0 0 3px rgba(231,76,60,0.12);
 }
 
+/* Indicador de evento archivado/historial (atenuado) */
+.event-indicator.event-archived {
+    opacity: 0.5;
+    filter: grayscale(50%);
+}
+
+/* Indicador de préstamo (con borde dorado) */
+.event-indicator.event-loan {
+    border: 2px solid #f39c12;
+    box-shadow: 0 0 0 3px rgba(243,156,18,0.2);
+}
+
+/* Indicador de contraparte de préstamo */
+.event-indicator.event-counterpart {
+    background: #9b59b6;
+    box-shadow: 0 0 0 3px rgba(155,89,182,0.15);
+    color: white;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Badge de préstamo pequeño */
+.loan-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    font-size: 8px;
+    line-height: 1;
+}
+
 /* Modal overlay y cuadro (mejoras responsive) */
 #modal-overlay {
     position: fixed;

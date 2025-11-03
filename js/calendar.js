@@ -148,23 +148,81 @@ export class Calendar {
             span.classList.add('event-expense');
         }
         
-        // Construir tooltip
-        let tooltip = event.title;
+        // Si está archivado (historial), agregar clase especial
+        if (event.archived) {
+            span.classList.add('event-archived');
+        }
+        
+        // Si es un préstamo, agregar indicador visual
+        if (event.loan && !event.loan.isCounterpart) {
+            span.classList.add('event-loan');
+            // Añadir pequeño badge de préstamo
+            const loanBadge = document.createElement('span');
+            loanBadge.className = 'loan-badge';
+            loanBadge.textContent = '💰';
+            loanBadge.style.fontSize = '8px';
+            loanBadge.style.position = 'absolute';
+            loanBadge.style.top = '-2px';
+            loanBadge.style.right = '-2px';
+            span.appendChild(loanBadge);
+        }
+        
+        // Si es contraparte de préstamo, indicador diferente
+        if (event.loan && event.loan.isCounterpart) {
+            span.classList.add('event-counterpart');
+            span.textContent = '↩';
+            span.style.fontSize = '10px';
+            span.style.lineHeight = '10px';
+            span.style.textAlign = 'center';
+        }
+        
+        // Construir tooltip enriquecido
+        let tooltip = `${event.title}`;
+        
         if (event.desc) {
-            tooltip += ` - ${event.desc}`;
+            tooltip += `\n📝 ${event.desc}`;
         }
-        if (event.amount !== undefined && event.amount !== null) {
-            tooltip += ` ($${event.amount})`;
+        
+        // Monto esperado vs confirmado
+        if (event.confirmed && event.confirmedAmount !== undefined && event.confirmedAmount !== null) {
+            tooltip += `\n✅ Confirmado: $${event.confirmedAmount}`;
+            if (event.amount !== undefined && event.amount !== event.confirmedAmount) {
+                tooltip += ` (Esperado: $${event.amount})`;
+            }
+        } else if (event.amount !== undefined && event.amount !== null) {
+            tooltip += `\n💵 Monto: $${event.amount}`;
         }
+        
         if (event.category) {
-            tooltip += ` [${event.category}]`;
+            tooltip += `\n🏷️ ${event.category}`;
         }
+        
+        // Información de préstamo
+        if (event.loan && !event.loan.isCounterpart) {
+            const loanKind = event.loan.kind === 'favor' ? 'Préstamo a favor' : 'Préstamo en contra';
+            tooltip += `\n💰 ${loanKind}`;
+            if (event.loan.recoveryDays) {
+                tooltip += ` (Recupero en ${event.loan.recoveryDays} días)`;
+            }
+        }
+        
+        // Si es contraparte
+        if (event.loan && event.loan.isCounterpart) {
+            tooltip += `\n↩️ Compensación de préstamo`;
+        }
+        
+        // Estado de historial
+        if (event.archived) {
+            tooltip += `\n📦 Historial (Confirmado)`;
+        }
+        
+        // Frecuencia
         if (event.frequency) {
             const interval = event.interval && event.interval > 1 
                 ? ` cada ${event.interval}` 
                 : ' cada 1';
             const unit = this.getFrequencyUnit(event.frequency, event.interval);
-            tooltip += ` (Repite: ${interval}${unit}; límite: ${event.limit || 6})`;
+            tooltip += `\n🔁 Repite: ${interval}${unit} (límite: ${event.limit || 6})`;
         }
         
         span.title = tooltip;

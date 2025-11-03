@@ -130,19 +130,45 @@ export function openEventModal(dateISO, onUpdate) {
                 ? `<span class="freq-badge">${capitalize(event.frequency)}${event.interval && event.interval > 1 ? ' x' + event.interval : ''}</span>` 
                 : '';
 
+            // Información adicional de monto y categoría
+            let extraInfo = '';
+            if (event.amount !== undefined && event.amount !== null) {
+                extraInfo += `<span style="color:#666;margin-left:8px">💵 $${event.amount}</span>`;
+            }
+            if (event.category) {
+                extraInfo += `<span style="color:#888;margin-left:8px;font-size:0.85em">🏷️ ${escapeHTML(event.category)}</span>`;
+            }
+
+            // Badge de préstamo
+            let loanBadge = '';
+            if (event.loan && !event.loan.isCounterpart) {
+                const loanKind = event.loan.kind === 'favor' ? 'Préstamo a favor' : 'Préstamo en contra';
+                const recoveryText = event.loan.recoveryDays ? ` (${event.loan.recoveryDays}d)` : '';
+                loanBadge = `<span class="freq-badge" style="background:#fff3cd;color:#856404;border-color:#ffc107;margin-left:8px;">💰 ${loanKind}${recoveryText}</span>`;
+            }
+            
+            // Badge de contraparte
+            if (event.loan && event.loan.isCounterpart) {
+                loanBadge = `<span class="freq-badge" style="background:#e8daef;color:#6c3483;border-color:#9b59b6;margin-left:8px;">↩️ Compensación</span>`;
+            }
+
             if (event.confirmed || event.archived) {
+                const confirmedInfo = event.confirmedAmount !== undefined && event.confirmedAmount !== null 
+                    ? `<span style="color:#27ae60;margin-left:8px;font-weight:600">✅ Confirmado: $${event.confirmedAmount}</span>`
+                    : '<span style="color:#27ae60;margin-left:8px;font-weight:600">✅ Confirmado</span>';
+                
                 return `
                 <div class="existing-event-swal" data-idx="${idx}" style="border:1px solid #eee;padding:8px;border-radius:6px;margin-bottom:8px;background:#f5f5f5;position:relative;opacity:0.85;">
-                    <strong>${escapeHTML(event.title)} ${freqBadge} <span class="freq-badge" style="background:#f4f4f4;color:#888;border-color:#eee;margin-left:8px;">Historial</span></strong>
-                    <p style="margin:6px 0 0 0;color:#666">${escapeHTML(event.desc || '')}</p>
+                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge} <span class="freq-badge" style="background:#e8e8e8;color:#666;border-color:#ddd;margin-left:8px;">📦 Historial</span></strong>
+                    <p style="margin:6px 0 0 0;color:#666">${escapeHTML(event.desc || '')}${extraInfo}${confirmedInfo}</p>
                 </div>
             `;
             }
 
             return `
                 <div class="existing-event-swal" data-idx="${idx}" style="border:1px solid #eee;padding:8px;border-radius:6px;margin-bottom:8px;background:#fafafa;position:relative;">
-                    <strong>${escapeHTML(event.title)} ${freqBadge}</strong>
-                    <p style="margin:6px 0 0 0;color:#444">${escapeHTML(event.desc || '')}</p>
+                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge}</strong>
+                    <p style="margin:6px 0 0 0;color:#444">${escapeHTML(event.desc || '')}${extraInfo}</p>
                     <div style="position:absolute;right:8px;top:8px;display:flex;gap:6px">
                         <button data-idx="${idx}" class="swal-confirm" style="background:#3498db;color:#fff;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Confirmar</button>
                         <button data-idx="${idx}" class="swal-delete" style="background:#e55353;color:#fff;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Eliminar</button>
@@ -344,8 +370,91 @@ export function openEventModal(dateISO, onUpdate) {
      */
     function openEventDetailModal(dateISO, idx, ev, onUpdate, parentContainer) {
         const freqInfo = ev.frequency ? `<div><strong>Frecuencia:</strong> ${escapeHTML(ev.frequency)} (cada ${ev.interval}) — límite ${ev.limit}</div>` : '';
-        const amountInfo = ev.amount !== undefined ? `<div><strong>Monto:</strong> ${escapeHTML(String(ev.amount))}</div>` : '';
+        const amountInfo = ev.amount !== undefined ? `<div><strong>Monto esperado:</strong> $${escapeHTML(String(ev.amount))}</div>` : '';
         const categoryInfo = ev.category ? `<div><strong>Categoría:</strong> ${escapeHTML(ev.category)}</div>` : '';
+        
+        // Información de confirmación
+        let confirmedInfo = '';
+        if (ev.confirmed || ev.archived) {
+            confirmedInfo = '<div style="margin-top:8px;padding:8px;background:#d4edda;border:1px solid #c3e6cb;border-radius:4px;">';
+            confirmedInfo += '<strong style="color:#155724">✅ Evento Confirmado</strong>';
+            if (ev.confirmedAmount !== undefined && ev.confirmedAmount !== null) {
+                confirmedInfo += `<div><strong>Monto confirmado:</strong> $${escapeHTML(String(ev.confirmedAmount))}`;
+                if (ev.amount !== undefined && ev.amount !== ev.confirmedAmount) {
+                    const diff = ev.confirmedAmount - ev.amount;
+                    const diffText = diff >= 0 ? `+$${diff}` : `-$${Math.abs(diff)}`;
+                    confirmedInfo += ` <span style="color:#666">(${diffText})</span>`;
+                }
+                confirmedInfo += '</div>';
+            }
+            confirmedInfo += '<div style="margin-top:4px;color:#856404;font-size:0.9em">📦 Archivado en historial</div>';
+            confirmedInfo += '</div>';
+        }
+        
+        // Información de préstamo
+        let loanInfo = '';
+        if (ev.loan && !ev.loan.isCounterpart) {
+            const loanKind = ev.loan.kind === 'favor' ? 'Préstamo a favor' : 'Préstamo en contra';
+            loanInfo = '<div style="margin-top:8px;padding:12px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;">';
+            loanInfo += `<strong style="color:#856404">💰 ${loanKind}</strong>`;
+            
+            // Información del retorno esperado e interés
+            if (ev.loan.expectedReturn !== undefined && ev.loan.expectedReturn !== null) {
+                loanInfo += `<div style="margin-top:6px"><strong>Retorno esperado:</strong> $${ev.loan.expectedReturn}</div>`;
+            }
+            if (ev.loan.interestValue !== undefined && ev.loan.interestValue !== null && ev.loan.interestValue > 0) {
+                const interestPercent = ev.loan.interestPercent ? ` (${ev.loan.interestPercent.toFixed(2)}%)` : '';
+                loanInfo += `<div><strong>Interés:</strong> $${ev.loan.interestValue}${interestPercent}</div>`;
+            }
+            
+            // Plan de pagos
+            if (ev.loan.paymentPlan) {
+                const planNames = {
+                    single: 'Pago único',
+                    weekly: 'Semanal',
+                    biweekly: 'Quincenal',
+                    monthly: 'Mensual',
+                    custom: 'Fechas personalizadas'
+                };
+                loanInfo += `<div><strong>Plan:</strong> ${planNames[ev.loan.paymentPlan] || ev.loan.paymentPlan}</div>`;
+                
+                if (ev.loan.paymentPlan === 'single' && ev.loan.recoveryDays) {
+                    loanInfo += `<div>📅 Pago en ${ev.loan.recoveryDays} días</div>`;
+                } else if (['weekly', 'biweekly', 'monthly'].includes(ev.loan.paymentPlan)) {
+                    const freq = ev.loan.paymentFrequency || 1;
+                    const count = ev.loan.paymentCount || 1;
+                    loanInfo += `<div>📅 ${count} pago(s) cada ${freq} período(s)</div>`;
+                } else if (ev.loan.paymentPlan === 'custom' && ev.loan.customDates) {
+                    loanInfo += `<div>📅 ${ev.loan.customDates.length} fecha(s) personalizada(s)</div>`;
+                }
+            }
+            
+            // Notas
+            if (ev.loan.notes) {
+                loanInfo += `<div style="margin-top:6px;font-size:0.9em;color:#666;font-style:italic">"${escapeHTML(ev.loan.notes)}"</div>`;
+            }
+            
+            if (ev.loan.loanId) {
+                loanInfo += `<div style="font-size:0.85em;color:#666;margin-top:6px">ID: ${escapeHTML(ev.loan.loanId)}</div>`;
+            }
+            loanInfo += '</div>';
+        }
+        
+        // Si es contraparte
+        if (ev.loan && ev.loan.isCounterpart) {
+            loanInfo = '<div style="margin-top:8px;padding:8px;background:#e8daef;border:1px solid #9b59b6;border-radius:4px;">';
+            loanInfo += '<strong style="color:#6c3483">↩️ Compensación de préstamo</strong>';
+            if (ev.loan.installment && ev.loan.totalInstallments) {
+                loanInfo += `<div style="font-size:0.9em">Cuota ${ev.loan.installment} de ${ev.loan.totalInstallments}</div>`;
+            } else {
+                loanInfo += '<div style="font-size:0.9em">Este evento es la contraparte de un préstamo anterior</div>';
+            }
+            if (ev.loan.loanId) {
+                loanInfo += `<div style="font-size:0.85em;color:#666">Referencia: ${escapeHTML(ev.loan.loanId)}</div>`;
+            }
+            loanInfo += '</div>';
+        }
+        
         const html = `
             <div style="text-align:left">
                 <h3 style="margin:0 0 8px 0">${escapeHTML(ev.title)}</h3>
@@ -353,6 +462,8 @@ export function openEventModal(dateISO, onUpdate) {
                 ${amountInfo}
                 ${categoryInfo}
                 ${freqInfo}
+                ${confirmedInfo}
+                ${loanInfo}
             </div>
         `;
 
@@ -360,8 +471,10 @@ export function openEventModal(dateISO, onUpdate) {
             title: `Evento — ${dateISO}`,
             html,
             showCancelButton: true,
+            showDenyButton: true,
             showConfirmButton: true,
             confirmButtonText: 'Editar',
+            denyButtonText: '🔔 Agregar Alerta',
             cancelButtonText: 'Cerrar',
             focusConfirm: false,
             didOpen: () => {
@@ -369,15 +482,124 @@ export function openEventModal(dateISO, onUpdate) {
             }
         }).then(result => {
             if (result.isConfirmed) {
+                // Verificar si el evento está archivado
+                if (ev.archived || ev.confirmed) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Evento archivado',
+                        text: 'Los eventos confirmados y archivados no pueden ser editados. Si necesitas modificarlo, elimínalo y crea uno nuevo.',
+                        confirmButtonText: 'Entendido'
+                    });
+                    return;
+                }
+                
                 // abrir editor. pasamos promptApplyToFuture para que el editor pregunte si aplica a futuras
                 openFinancialEventModal(dateISO, ev.type || 'evento', onUpdate, { initialData: ev, editIndex: idx, promptApplyToFuture: true, onSaved: () => {
                     // refresh parent modal list
                     eventsList = getEventsForDate(dateISO);
                     updateModalEventsList(parentContainer);
                 }});
+            } else if (result.isDenied) {
+                // Abrir modal para crear alerta personalizada
+                openCustomAlertModal(dateISO, idx, ev);
             }
         });
     }
+}
+
+/**
+ * Abre modal para crear una alerta personalizada para un evento
+ */
+function openCustomAlertModal(dateISO, eventIndex, event) {
+    const html = `
+        <div style="text-align: left; padding: 10px;">
+            <p style="margin-bottom: 15px;">
+                Crear alerta para: <strong>${escapeHTML(event.title)}</strong>
+            </p>
+            
+            <label style="display: block; margin-bottom: 8px; font-weight: 600;">
+                Mensaje de la alerta
+            </label>
+            <input id="alert-message" type="text" class="swal2-input" 
+                   placeholder="Ej: Recordar pagar ${event.title}" 
+                   value="Recordatorio: ${escapeHTML(event.title)}">
+            
+            <label style="display: block; margin-top: 12px; margin-bottom: 8px; font-weight: 600;">
+                Alertar con anticipación
+            </label>
+            <select id="alert-timing" class="swal2-select" style="width: 100%;">
+                <option value="0">El mismo día</option>
+                <option value="1" selected>1 día antes</option>
+                <option value="2">2 días antes</option>
+                <option value="3">3 días antes</option>
+                <option value="7">1 semana antes</option>
+                <option value="14">2 semanas antes</option>
+                <option value="30">1 mes antes</option>
+            </select>
+            
+            <label style="display: block; margin-top: 12px; margin-bottom: 8px; font-weight: 600;">
+                Prioridad
+            </label>
+            <select id="alert-priority" class="swal2-select" style="width: 100%;">
+                <option value="low">Baja</option>
+                <option value="medium" selected>Media</option>
+                <option value="high">Alta</option>
+                <option value="critical">Crítica</option>
+            </select>
+            
+            <label style="display: block; margin-top: 12px; margin-bottom: 8px;">
+                <input type="checkbox" id="alert-browser">
+                Mostrar notificación del navegador
+            </label>
+        </div>
+    `;
+    
+    Swal.fire({
+        title: '🔔 Nueva Alerta Personalizada',
+        html: html,
+        showCancelButton: true,
+        confirmButtonText: 'Crear Alerta',
+        cancelButtonText: 'Cancelar',
+        preConfirm: () => {
+            const message = document.getElementById('alert-message').value.trim();
+            const timing = parseInt(document.getElementById('alert-timing').value);
+            const priority = document.getElementById('alert-priority').value;
+            const browserNotif = document.getElementById('alert-browser').checked;
+            
+            if (!message) {
+                Swal.showValidationMessage('El mensaje de la alerta es requerido');
+                return false;
+            }
+            
+            return {
+                message,
+                triggerDaysBefore: timing,
+                priority,
+                browserNotification: browserNotif
+            };
+        }
+    }).then(result => {
+        if (result.isConfirmed && result.value) {
+            // Importar y usar el módulo de notificaciones
+            import('./notifications.js').then(module => {
+                module.addEventAlert(dateISO, eventIndex, result.value);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Alerta creada',
+                    text: 'La alerta se ha configurado correctamente',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            }).catch(err => {
+                console.error('Error al crear alerta:', err);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'No se pudo crear la alerta'
+                });
+            });
+        }
+    });
 }
 
 /**

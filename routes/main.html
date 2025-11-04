@@ -1,0 +1,111 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendario Interactivo</title>
+    <link rel="stylesheet" href="../styles/styles.css">
+    
+    <!-- Session check script (runs before page loads) -->
+    <script type="module">
+        // Check if user is authenticated
+        const sessionData = localStorage.getItem('calendar_session');
+        if (!sessionData) {
+            // Not logged in, redirect to login page
+            window.location.href = '../index.html';
+        }
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="header-with-user">
+            <h1>Calendario Interactivo</h1>
+            <div class="user-info">
+                <span id="user-name">Usuario</span>
+                <button id="logout-btn" class="btn-logout">🚪 Cerrar sesión</button>
+            </div>
+        </div>
+
+        <div class="calendar-controls">
+            <button id="prev-month"> Mes Anterior</button>
+            <div class="month-year" id="current-month"></div>
+            <button id="next-month">Mes Siguiente </button>
+        </div>
+        
+        <table id="calendar">
+            <thead>
+                <tr>
+                    <th>Dom</th>
+                    <th>Lun</th>
+                    <th>Mar</th>
+                    <th>Mié</th>
+                    <th>Jue</th>
+                    <th>Vie</th>
+                    <th>Sáb</th>
+                </tr>
+            </thead>
+            <tbody id="calendar-body">
+                <tr>
+                    <td data-day="1"></td>
+                    <td data-day="2"></td>
+                    <td data-day="3"></td>
+                    <td data-day="4"></td>
+                    <td data-day="5"></td>
+                    <td data-day="6"></td>
+                    <td data-day="7"></td>
+                </tr>
+                <tr>
+                    <td data-day="8"></td>
+                    <td data-day="9"></td>
+                    <td data-day="10"></td>
+                    <td data-day="11"></td>
+                    <td data-day="12"></td>
+                    <td data-day="13"></td>
+                    <td data-day="14"></td>
+                </tr>
+                <tr>
+                    <td data-day="15"></td>
+                    <td data-day="16"></td>
+                    <td data-day="17"></td>
+                    <td data-day="18"></td>
+                    <td data-day="19"></td>
+                    <td data-day="20"></td>
+                    <td data-day="21"></td>
+                </tr>
+                <tr>
+                    <td data-day="22"></td>
+                    <td data-day="23"></td>
+                    <td data-day="24"></td>
+                    <td data-day="25"></td>
+                    <td data-day="26"></td>
+                    <td data-day="27"></td>
+                    <td data-day="28"></td>
+                </tr>
+                <tr>
+                    <td data-day="29"></td>
+                    <td data-day="30"></td>
+                    <td data-day="31"></td>
+                    <td data-day="32"></td>
+                    <td data-day="33"></td>
+                    <td data-day="34"></td>
+                    <td data-day="35"></td>
+                </tr>
+                <tr>
+                    <td data-day="36"></td>
+                    <td data-day="37"></td>
+                    <td data-day="38"></td>
+                    <td data-day="39"></td>
+                    <td data-day="40"></td>
+                    <td data-day="41"></td>
+                    <td data-day="42"></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Config de entorno (opcional) -->
+    <script src="../js/config.js"></script>
+    <script src="../js/lib/sweetalert2@11.js"></script>
+    <script type="module" src="../js/main.js"></script>
+</body>
+</html>

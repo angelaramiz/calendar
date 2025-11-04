@@ -8,9 +8,23 @@ import { loadEvents } from './events.js';
 /**
  * Configuración de notificaciones guardada en localStorage
  */
+function getCurrentUserId() {
+    try {
+        const session = JSON.parse(localStorage.getItem('calendar_session') || 'null');
+        return session && session.userId ? session.userId : 'anon';
+    } catch {
+        return 'anon';
+    }
+}
+
+function userScopedKey(base) {
+    const userId = getCurrentUserId();
+    return `${base}:${userId}`;
+}
+
 export function loadNotificationSettings() {
     try {
-        const settings = localStorage.getItem('notificationSettings');
+        const settings = localStorage.getItem(userScopedKey('notificationSettings'));
         return settings ? JSON.parse(settings) : getDefaultNotificationSettings();
     } catch (e) {
         console.error('Error al cargar configuración de notificaciones:', e);
@@ -20,7 +34,7 @@ export function loadNotificationSettings() {
 
 export function saveNotificationSettings(settings) {
     try {
-        localStorage.setItem('notificationSettings', JSON.stringify(settings));
+        localStorage.setItem(userScopedKey('notificationSettings'), JSON.stringify(settings));
     } catch (e) {
         console.error('Error al guardar configuración de notificaciones:', e);
     }
@@ -69,7 +83,7 @@ export function addEventAlert(dateISO, eventIndex, alertConfig) {
  */
 export function loadEventAlerts() {
     try {
-        const alerts = localStorage.getItem('eventAlerts');
+        const alerts = localStorage.getItem(userScopedKey('eventAlerts'));
         return alerts ? JSON.parse(alerts) : {};
     } catch (e) {
         console.error('Error al cargar alertas:', e);
@@ -79,7 +93,7 @@ export function loadEventAlerts() {
 
 export function saveEventAlerts(alerts) {
     try {
-        localStorage.setItem('eventAlerts', JSON.stringify(alerts));
+        localStorage.setItem(userScopedKey('eventAlerts'), JSON.stringify(alerts));
     } catch (e) {
         console.error('Error al guardar alertas:', e);
     }
@@ -346,7 +360,7 @@ export function markAlertAsRead(dateISO, eventIndex) {
 
 function loadReadAlerts() {
     try {
-        const alerts = localStorage.getItem('readAlerts');
+        const alerts = localStorage.getItem(userScopedKey('readAlerts'));
         return alerts ? JSON.parse(alerts) : {};
     } catch (e) {
         return {};
@@ -355,7 +369,7 @@ function loadReadAlerts() {
 
 function saveReadAlerts(alerts) {
     try {
-        localStorage.setItem('readAlerts', JSON.stringify(alerts));
+        localStorage.setItem(userScopedKey('readAlerts'), JSON.stringify(alerts));
     } catch (e) {
         console.error('Error al guardar alertas leídas:', e);
     }

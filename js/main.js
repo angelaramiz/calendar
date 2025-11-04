@@ -3,6 +3,7 @@
  */
 
 import { Calendar } from './calendar.js';
+import { syncDownMonth } from './events.js';
 import { 
     initNotificationSystem, 
     getPendingAlerts, 
@@ -12,10 +13,24 @@ import {
     requestBrowserNotificationPermission
 } from './notifications.js';
 
+// Current user session
+let currentUser = null;
+
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialize user session
+    initUserSession();
+    
     const calendar = new Calendar('calendar-body');
     calendar.init();
+
+    // Sincronizar solo el mes visible desde Supabase y refrescar indicadores
+    try {
+        const d = calendar.currentDate;
+        syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
+            calendar.refreshAllEventIndicators();
+        });
+    } catch (e) { /* ignore */ }
     
     // Inicializar sistema de notificaciones
     initNotificationSystem();
@@ -27,7 +42,101 @@ document.addEventListener('DOMContentLoaded', () => {
     setInterval(() => {
         updateNotifications();
     }, 5 * 60 * 1000);
+
+    // Re-sincronizar al navegar entre meses
+    const reSync = () => {
+        const d = calendar.currentDate;
+        syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
+            calendar.refreshAllEventIndicators();
+        });
+    };
+    const prevBtn = document.getElementById('prev-month');
+    const nextBtn = document.getElementById('next-month');
+    if (prevBtn) prevBtn.addEventListener('click', () => setTimeout(reSync, 0));
+    if (nextBtn) nextBtn.addEventListener('click', () => setTimeout(reSync, 0));
 });
+
+/**
+ * Initialize user session and display user info
+ */
+function initUserSession() {
+    try {
+        const sessionData = localStorage.getItem('calendar_session');
+        if (!sessionData) {
+            window.location.href = '../index.html';
+            return;
+        }
+
+        currentUser = JSON.parse(sessionData);
+        
+        // Display user name
+        const userNameElement = document.getElementById('user-name');
+        if (userNameElement) {
+            userNameElement.textContent = currentUser.name || currentUser.username;
+        }
+
+        // Setup logout button
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', handleLogout);
+        }
+    } catch (err) {
+        console.error('Error initializing session:', err);
+        window.location.href = '../index.html';
+    }
+}
+
+/**
+ * Handle user logout
+ */
+async function handleLogout() {
+    const result = await Swal.fire({
+        title: '¿Cerrar sesión?',
+        text: '¿Estás seguro que deseas salir?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, salir',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#667eea',
+        cancelButtonColor: '#718096'
+    });
+
+    if (result.isConfirmed) {
+        // Cerrar sesión de Supabase Auth explícitamente
+        try {
+            const { supabase } = await import('./supabase-client.js');
+            await supabase.auth.signOut();
+        } catch (_) { /* ignore */ }
+        // Limpiar TODO el almacenamiento del navegador
+        try {
+            // Limpiar completamente localStorage y sessionStorage
+            localStorage.clear();
+            sessionStorage.clear();
+        } catch (e) {
+            // Fallback: al menos eliminar la sesión si clear falla
+            try { localStorage.removeItem('calendar_session'); } catch (_) {}
+        }
+        
+        // Show goodbye message
+        await Swal.fire({
+            icon: 'success',
+            title: 'Sesión cerrada',
+            text: '¡Hasta pronto!',
+            timer: 1500,
+            showConfirmButton: false
+        });
+
+        // Redirect to login
+        window.location.href = '../index.html';
+    }
+}
+
+/**
+ * Get current user ID for database queries
+ */
+export function getCurrentUserId() {
+    return currentUser?.userId || null;
+}
 
 /**
  * Crea el panel de notificaciones en la UI

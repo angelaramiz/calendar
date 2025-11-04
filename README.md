@@ -456,24 +456,100 @@ En `modal.js` y `recurrence.js` puedes añadir nuevas frecuencias (ej: diaria, q
 ### Indicadores
 En `calendar.js` método `createEventIndicator()` personaliza el aspecto de los puntos.
 
+## �️ Migración a Base de Datos
+
+El proyecto incluye una **estructura completa para migrar a PostgreSQL**:
+
+### Archivos Clave
+- **`docs/database-schema.sql`**: Schema completo con 6 tablas, índices y triggers
+- **`docs/database-migration-guide.md`**: Guía paso a paso con ejemplos
+- **`js/data-structure.js`**: Esquemas y lógica de agrupación optimizada
+- **`js/database.js`**: Adaptador con modo híbrido (localStorage ↔ DB)
+
+### Ventajas de la Migración
+✅ **Sin límite de almacenamiento** (localStorage ~5-10MB máx)  
+✅ **Sincronización** entre dispositivos  
+✅ **Backup automático** y recuperación  
+✅ **Queries optimizados** con agrupación mensual/semanal  
+✅ **Escalabilidad** para grandes historiales  
+✅ **Separación relacional** (eventos, préstamos, alertas)  
+
+### Agrupación Optimizada
+Estructura mensual con **6 semanas** por mes:
+- **Semana 1**: Días desde inicio del mes hasta fin de primera semana
+- **Semanas 2-5**: Semanas completas de 7 días
+- **Semana 6**: Días restantes del mes
+
+Beneficios: reduce tamaño de JSON, acelera queries por período específico.
+
+### Modo Híbrido
+Durante la transición, el sistema puede operar en tres modos:
+
+```javascript
+// js/database.js
+const DB_CONFIG = {
+  useLocalStorage: true,  // false = API/DB, true = localStorage
+  enableSync: false,       // true = escritura doble (migración)
+  apiUrl: 'http://localhost:3000/api'
+};
+```
+
+### Proceso de Migración Rápido
+
+```javascript
+// 1. Inicializar adaptador
+import { db } from './js/database.js';
+const userId = crypto.randomUUID();
+await db.init(userId);
+
+// 2. Ejecutar migración
+const result = await db.migrateToDatabase();
+console.log(`✅ ${result.eventsCreated} eventos migrados`);
+
+// 3. Cambiar configuración
+DB_CONFIG.useLocalStorage = false;
+```
+
+Ver guía completa en **`docs/database-migration-guide.md`** con:
+- Setup de backend (Node.js + Express o Supabase)
+- API REST completa
+- Deploy a producción (Heroku, Railway, DigitalOcean)
+- Rollback y troubleshooting
+
 ## 📝 Notas
 
-- Los eventos se guardan **solo en el navegador actual** (localStorage)
-- Para sincronización multi-dispositivo necesitarías un backend
-- Los datos persisten hasta que se limpie localStorage o cache del navegador
+- **Modo actual**: Eventos guardados **solo en el navegador actual** (localStorage)
+- **Límite**: ~5-10MB de datos en localStorage (aprox. 200-500 eventos)
+- **Persistencia**: Hasta que se limpie localStorage o cache del navegador
+- **Migración**: Preparado para PostgreSQL sin refactorizar código existente
+
+## ✅ Completado en v2.0
+
+- [x] Sistema de préstamos con intereses y planes de pago
+- [x] Notificaciones y alertas personalizadas
+- [x] Notificaciones del navegador
+- [x] Estructura de base de datos optimizada
+- [x] Migración automática desde localStorage
+- [x] Schema PostgreSQL completo
+- [x] API REST documentada
+- [x] Guía de deployment
 
 ## 🔜 Mejoras Futuras Sugeridas
 
 - [ ] Exportar/Importar eventos (JSON, iCal)
 - [ ] Drag & drop de eventos
 - [ ] Vista de lista de eventos
-- [ ] Filtros y búsqueda
-- [ ] Categorías/etiquetas con colores
-- [ ] Notificaciones del navegador
-- [ ] Backend para sincronización
-- [ ] Modo oscuro
+- [ ] Filtros y búsqueda avanzada
+- [ ] Categorías/etiquetas con colores personalizados
+- [ ] Autenticación de usuarios (OAuth, JWT)
+- [ ] Modo oscuro automático
+- [ ] PWA con offline support
+- [ ] Estadísticas y gráficas (Chart.js)
+- [ ] Integración con calendarios externos (Google Calendar, Outlook)
 
 ---
 
-**Autor**: Refactorizado con arquitectura modular ES6
+**Versión**: 2.0 - Database Ready  
+**Autor**: Sistema modular con arquitectura ES6  
 **Licencia**: MIT
+

@@ -199,6 +199,15 @@ class FinancialForm extends HTMLElement {
             this._loanPaymentPlan.addEventListener('change', this._onPaymentPlanChange);
         }
 
+        // Ajustar placeholder del título según tipo
+        if (this._type === 'ingreso') {
+            this._title.placeholder = 'Ej: Salario, Freelance, Intereses';
+        } else if (this._type === 'gasto') {
+            this._title.placeholder = 'Ej: Alquiler, Comida, Transporte';
+        } else {
+            this._title.placeholder = 'Ej: Evento';
+        }
+
         this._save.addEventListener("click", this._onSave);
         this._cancel.addEventListener("click", this._onCancel);
     }

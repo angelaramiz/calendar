@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recuperar Contraseña - Calendario Financiero</title>
+    <link rel="stylesheet" href="../styles/styles.css">
+    <link rel="stylesheet" href="../styles/auth.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>🔑 Recuperar Contraseña</h1>
+                <p class="auth-subtitle">Ingresa tu usuario o correo para restablecer tu contraseña</p>
+            </div>
+
+            <!-- Step 1: Enter username -->
+            <form id="recovery-form" class="auth-form" data-step="1">
+                <div class="form-step" id="step-1">
+                    <div class="form-group">
+                        <label for="username">
+                            <span class="label-icon">👤</span>
+                            Usuario o correo
+                        </label>
+                        <input 
+                            type="text" 
+                            id="username" 
+                            name="username" 
+                            placeholder="Ingresa tu usuario o correo"
+                            required
+                            autocomplete="username"
+                            autofocus
+                        >
+                    </div>
+
+                    <button type="submit" class="btn-primary btn-full" id="verify-btn">
+                        <span class="btn-text">Continuar</span>
+                        <span class="btn-loader" style="display: none;">⏳</span>
+                    </button>
+                </div>
+
+                <!-- Step 2: Security question (optional) -->
+                <div class="form-step" id="step-2" style="display: none;">
+                    <div class="form-group">
+                        <label id="security-question-label">
+                            <span class="label-icon">❓</span>
+                            Pregunta de seguridad
+                        </label>
+                        <input 
+                            type="text" 
+                            id="security-answer" 
+                            name="security-answer" 
+                            placeholder="Tu respuesta"
+                            autocomplete="off"
+                        >
+                    </div>
+
+                    <button type="button" class="btn-primary btn-full" id="verify-answer-btn">
+                        <span class="btn-text">Verificar</span>
+                        <span class="btn-loader" style="display: none;">⏳</span>
+                    </button>
+                </div>
+
+                <!-- Step 3: Reset password -->
+                <div class="form-step" id="step-3" style="display: none;">
+                    <div class="success-message" style="margin-bottom: 1.5rem;">
+                        <span style="font-size: 2rem;">✅</span>
+                        <p>Usuario verificado. Ingresa tu nueva contraseña.</p>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="new-password">
+                            <span class="label-icon">🔒</span>
+                            Nueva contraseña
+                        </label>
+                        <div class="password-input-wrapper">
+                            <input 
+                                type="password" 
+                                id="new-password" 
+                                name="new-password" 
+                                placeholder="Mínimo 6 caracteres"
+                                autocomplete="new-password"
+                                minlength="6"
+                            >
+                            <button type="button" class="toggle-password" id="toggle-new">
+                                👁️
+                            </button>
+                        </div>
+                        <div class="password-strength" id="password-strength" style="display: none;">
+                            <div class="strength-bar">
+                                <div class="strength-fill" id="strength-fill"></div>
+                            </div>
+                            <small id="strength-text">Seguridad: débil</small>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm-new-password">
+                            <span class="label-icon">🔒</span>
+                            Confirmar contraseña
+                        </label>
+                        <div class="password-input-wrapper">
+                            <input 
+                                type="password" 
+                                id="confirm-new-password" 
+                                name="confirm-new-password" 
+                                placeholder="Repite tu contraseña"
+                                autocomplete="new-password"
+                                minlength="6"
+                            >
+                            <button type="button" class="toggle-password" id="toggle-confirm-new">
+                                👁️
+                            </button>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-primary btn-full" id="reset-btn">
+                        <span class="btn-text">Cambiar Contraseña</span>
+                        <span class="btn-loader" style="display: none;">⏳</span>
+                    </button>
+                </div>
+
+                <div class="form-divider">
+                    <span>o</span>
+                </div>
+
+                <div class="auth-links">
+                    <p>¿Recordaste tu contraseña?</p>
+                    <a href="../index.html" class="btn-secondary btn-full">
+                        Volver al inicio de sesión
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Info card -->
+        <div class="info-card">
+            <h3>🛡️ Proceso de recuperación</h3>
+            <ul class="features-list">
+                <li>
+                    <strong>Paso 1:</strong> Ingresa tu usuario o correo
+                </li>
+                <li>
+                    <strong>Paso 2:</strong> Verificación de identidad
+                </li>
+                <li>
+                    <strong>Paso 3:</strong> Establece nueva contraseña
+                </li>
+            </ul>
+
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,193,7,0.1); border-radius: 8px;">
+                <p style="margin: 0; font-size: 0.9rem; color: #856404;">
+                    <strong>💡 Nota:</strong> Con correo enviaremos un enlace de recuperación.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Config de entorno (opcional) -->
+    <script src="../js/config.js"></script>
+    <!-- SweetAlert2 -->
+    <script src="../js/lib/sweetalert2@11.js"></script>
+    
+    <!-- Recovery module -->
+    <script type="module" src="../js/auth/recovery.js"></script>
+</body>
+</html>

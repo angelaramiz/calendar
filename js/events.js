@@ -1,15 +1,36 @@
 /**
  * Módulo de Gestión de Eventos
- * Maneja localStorage y operaciones CRUD de eventos
+ * Maneja localStorage por usuario y sincronización con Supabase (best-effort)
  */
+import { supabase } from './supabase-client.js';
+
+// Activar sincronización con Supabase (manteniendo localStorage como fuente inmediata)
+const ENABLE_SUPABASE_SYNC = true;
+
+// Obtiene el ID de usuario actual desde la sesión
+function getCurrentUserId() {
+    try {
+        const session = JSON.parse(localStorage.getItem('calendar_session') || 'null');
+        return session && session.userId ? session.userId : 'anon';
+    } catch {
+        return 'anon';
+    }
+}
+
+// Obtiene la clave de almacenamiento específica por usuario
+function getEventsStorageKey() {
+    const userId = getCurrentUserId();
+    return `events:${userId}`;
+}
 
 /**
- * Carga eventos desde localStorage
+ * Carga eventos desde localStorage (aislados por usuario)
  * @returns {Object} Objeto con fechas como keys y arrays de eventos como values
  */
 export function loadEvents() {
     try {
-        return JSON.parse(localStorage.getItem('events') || '{}');
+        const key = getEventsStorageKey();
+        return JSON.parse(localStorage.getItem(key) || '{}');
     } catch (e) {
         console.error('Error al cargar eventos:', e);
         return {};
@@ -22,7 +43,8 @@ export function loadEvents() {
  */
 export function saveEvents(eventsObj) {
     try {
-        localStorage.setItem('events', JSON.stringify(eventsObj));
+        const key = getEventsStorageKey();
+        localStorage.setItem(key, JSON.stringify(eventsObj));
     } catch (e) {
         console.error('Error al guardar eventos:', e);
     }
@@ -43,6 +65,11 @@ export function addEvent(dateISO, eventData) {
         createdAt: new Date().toISOString()
     });
     saveEvents(events);
+
+    // Sincronizar con Supabase en segundo plano
+    if (ENABLE_SUPABASE_SYNC) {
+        syncDatesToSupabase([dateISO]).catch(() => {});
+    }
 }
 
 // Helper: add days to ISO date string
@@ -156,6 +183,9 @@ export function createLoanCounterpartByLoanId(loanId) {
                 });
                 
                 saveEvents(events);
+                if (ENABLE_SUPABASE_SYNC && createdDates.length) {
+                    syncDatesToSupabase(createdDates).catch(() => {});
+                }
                 return createdDates;
             }
         }
@@ -179,6 +209,11 @@ export function removeLoanCounterpartByLoanId(loanId) {
         }
     });
     if (changed) saveEvents(events);
+    if (changed && ENABLE_SUPABASE_SYNC) {
+        // sincronizar todas las fechas afectadas
+        const affected = Object.keys(events);
+        syncDatesToSupabase(affected).catch(() => {});
+    }
 }
 
 /**
@@ -202,6 +237,9 @@ export function addRecurringEvents(dates, eventData) {
         });
     });
     saveEvents(events);
+    if (ENABLE_SUPABASE_SYNC) {
+        syncDatesToSupabase(dates).catch(() => {});
+    }
 }
 
 /**
@@ -260,6 +298,9 @@ export function updateFutureOccurrences(dateISO, index, newEventData) {
     });
 
     saveEvents(events);
+    if (ENABLE_SUPABASE_SYNC) {
+        syncDatesToSupabase(updatedDates.length ? updatedDates : [dateISO]).catch(() => {});
+    }
     return updatedDates;
 }
 
@@ -280,6 +321,9 @@ export function deleteEvent(dateISO, index) {
             delete events[dateISO];
         }
         saveEvents(events);
+        if (ENABLE_SUPABASE_SYNC) {
+            syncDatesToSupabase([dateISO]).catch(() => {});
+        }
     }
 }
 
@@ -302,6 +346,9 @@ export function updateEvent(dateISO, index, newEventData) {
         };
         events[dateISO] = arr;
         saveEvents(events);
+        if (ENABLE_SUPABASE_SYNC) {
+            syncDatesToSupabase([dateISO]).catch(() => {});
+        }
     }
 }
 
@@ -340,4 +387,229 @@ export function escapeHTML(str) {
 export function capitalize(str) {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+// ============================================================
+// Sincronización con Supabase
+// ============================================================
+
+function mapEventToRow(userId, dateISO, ev) {
+    return {
+        user_id: userId,
+        date: dateISO,
+        title: ev.title || '',
+        description: ev.desc || null,
+        type: ev.type || 'evento',
+        amount: ev.amount !== undefined && ev.amount !== null ? Number(ev.amount) : null,
+        category: ev.category || null,
+        confirmed: !!ev.confirmed,
+        archived: !!ev.archived,
+        confirmed_amount: ev.confirmedAmount !== undefined && ev.confirmedAmount !== null ? Number(ev.confirmedAmount) : null,
+        is_recurring: !!(ev.frequency),
+        occurrence_date: ev.occurrenceDate || dateISO,
+        frequency: ev.frequency || null,
+        interval: ev.interval || null,
+        limit_count: ev.limit || null,
+        loan_id: null,
+        is_loan_counterpart: ev.loan && ev.loan.isCounterpart ? true : false
+    };
+}
+
+async function syncDatesToSupabase(dates) {
+    const sessionRaw = localStorage.getItem('calendar_session');
+    if (!sessionRaw) return;
+    const session = JSON.parse(sessionRaw);
+    const userId = session.userId;
+    if (!userId) return;
+
+    const events = loadEvents();
+
+    // Borrar filas existentes de esas fechas para el usuario y reinsertar estado actual
+    try {
+        // Delete
+        const { error: delError } = await supabase
+            .from('events')
+            .delete()
+            .eq('user_id', userId)
+            .in('date', dates);
+        if (delError) {
+            console.warn('No se pudo eliminar para resincronizar:', delError.message);
+        }
+
+
+        // Insertar evento por evento para poder asociar préstamos
+        for (const dateISO of dates) {
+            const list = events[dateISO] || [];
+            for (const ev of list) {
+                const row = mapEventToRow(userId, dateISO, ev);
+                const { data: insertedEvent, error: insErr } = await supabase
+                    .from('events')
+                    .insert([row])
+                    .select('*')
+                    .single();
+                if (insErr) {
+                    console.warn('No se pudo insertar evento:', insErr.message);
+                    continue;
+                }
+
+                // Si el evento tiene datos de préstamo y NO es contraparte, crear préstamo
+                if (ev.loan && !ev.loan.isCounterpart) {
+                    const loanRow = mapLoanToRow(userId, insertedEvent.id, ev);
+                    const { data: insertedLoan, error: loanErr } = await supabase
+                        .from('loans')
+                        .insert([loanRow])
+                        .select('*')
+                        .single();
+                    if (loanErr) {
+                        console.warn('No se pudo insertar préstamo:', loanErr.message);
+                    } else {
+                        // Opcional: referenciar loan_id en el evento
+                        await supabase.from('events').update({ loan_id: insertedLoan.id }).eq('id', insertedEvent.id);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Error sincronizando con Supabase:', e);
+    }
+}
+
+function mapLoanToRow(userId, eventId, ev) {
+    const loan = ev.loan || {};
+    const principal = ev.amount !== undefined && ev.amount !== null ? Number(ev.amount) : 0;
+    return {
+        user_id: userId,
+        event_id: eventId,
+        kind: loan.kind || (ev.type === 'gasto' ? 'favor' : 'contra'),
+        amount: principal,
+        expected_return: loan.expectedReturn !== undefined && loan.expectedReturn !== null ? Number(loan.expectedReturn) : null,
+        interest_value: loan.interestValue !== undefined && loan.interestValue !== null ? Number(loan.interestValue) : null,
+        interest_percent: loan.interestPercent !== undefined && loan.interestPercent !== null ? Number(loan.interestPercent) : null,
+        payment_plan: loan.paymentPlan || 'single',
+        recovery_days: loan.recoveryDays || null,
+        payment_frequency: loan.paymentFrequency || null,
+        payment_count: loan.paymentCount || null,
+        custom_dates: loan.customDates && loan.customDates.length ? loan.customDates : null,
+        notes: loan.notes || null,
+        status: 'active'
+    };
+}
+
+export async function syncDownAllEventsForUser() {
+    const sessionRaw = localStorage.getItem('calendar_session');
+    if (!sessionRaw) return;
+    const session = JSON.parse(sessionRaw);
+    const userId = session.userId;
+    if (!userId) return;
+
+    try {
+        const { data, error } = await supabase
+            .from('events')
+            .select('*')
+            .eq('user_id', userId);
+        if (error) {
+            console.warn('No se pudo leer eventos desde Supabase:', error.message);
+            return;
+        }
+
+        const grouped = {};
+        (data || []).forEach(row => {
+            const dateISO = row.date;
+            if (!grouped[dateISO]) grouped[dateISO] = [];
+            grouped[dateISO].push({
+                title: row.title,
+                desc: row.description || '',
+                type: row.type,
+                amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
+                category: row.category || '',
+                confirmed: !!row.confirmed,
+                archived: !!row.archived,
+                confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
+                frequency: row.frequency || '',
+                interval: row.interval || 1,
+                limit: row.limit_count || 0,
+                occurrenceDate: row.occurrence_date || row.date,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+                // marcar préstamo para indicador en UI
+                loan: (row.loan_id || row.is_loan_counterpart) ? {
+                    isCounterpart: !!row.is_loan_counterpart,
+                    loanId: row.loan_id || null
+                } : undefined
+            });
+        });
+
+        // Reemplazar almacenamiento local del usuario
+        const key = getEventsStorageKey();
+        localStorage.setItem(key, JSON.stringify(grouped));
+    } catch (e) {
+        console.warn('Error en syncDownAllEventsForUser:', e);
+    }
+}
+
+export async function syncDownMonth(year, month) {
+    const sessionRaw = localStorage.getItem('calendar_session');
+    if (!sessionRaw) return;
+    const session = JSON.parse(sessionRaw);
+    const userId = session.userId;
+    if (!userId) return;
+
+    // calcular primer y último día del mes
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+    const startISO = start.toISOString().slice(0, 10);
+    const endISO = end.toISOString().slice(0, 10);
+
+    try {
+        const { data, error } = await supabase
+            .from('events')
+            .select('*')
+            .eq('user_id', userId)
+            .gte('date', startISO)
+            .lte('date', endISO);
+        if (error) {
+            console.warn('No se pudo leer eventos del mes desde Supabase:', error.message);
+            return;
+        }
+
+        // cargar eventos actuales y limpiar solo las fechas del mes
+        const key = getEventsStorageKey();
+        const current = JSON.parse(localStorage.getItem(key) || '{}');
+        // eliminar claves del mes
+        const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+        Object.keys(current).forEach(k => {
+            if (k.startsWith(monthPrefix)) delete current[k];
+        });
+
+        // agregar los del servidor
+        (data || []).forEach(row => {
+            const dateISO = row.date;
+            if (!current[dateISO]) current[dateISO] = [];
+            current[dateISO].push({
+                title: row.title,
+                desc: row.description || '',
+                type: row.type,
+                amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
+                category: row.category || '',
+                confirmed: !!row.confirmed,
+                archived: !!row.archived,
+                confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
+                frequency: row.frequency || '',
+                interval: row.interval || 1,
+                limit: row.limit_count || 0,
+                occurrenceDate: row.occurrence_date || row.date,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at,
+                // marcar préstamo para indicador en UI
+                loan: (row.loan_id || row.is_loan_counterpart) ? {
+                    isCounterpart: !!row.is_loan_counterpart,
+                    loanId: row.loan_id || null
+                } : undefined
+            });
+        });
+
+        localStorage.setItem(key, JSON.stringify(current));
+    } catch (e) {
+        console.warn('Error en syncDownMonth:', e);
+    }
 }

@@ -3,7 +3,8 @@
  */
 
 import { Calendar } from './calendar.js';
-import { syncDownMonth } from './events.js';
+import { syncDownMonth, saveEvents } from './events.js';
+import { computeDailyStats, computeWeeklyStatsForMonth, computeMonthlyFutureStats, computeAnnualStatsGroup, renderMoney } from './stats.js';
 import { 
     initNotificationSystem, 
     getPendingAlerts, 
@@ -15,6 +16,7 @@ import {
 
 // Current user session
 let currentUser = null;
+let calendarInstance = null;
 
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
@@ -23,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const calendar = new Calendar('calendar-body');
     calendar.init();
+    calendarInstance = calendar;
 
     // Sincronizar solo el mes visible desde Supabase y refrescar indicadores
     try {
@@ -37,6 +40,17 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Crear panel de notificaciones en el header
     createNotificationPanel();
+
+    // Configurar botones de ayuda y configuración
+    const helpBtn = document.getElementById('help-btn');
+    if (helpBtn) helpBtn.addEventListener('click', openHelpGuide);
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) settingsBtn.addEventListener('click', openSettingsPanel);
+    const statsBtn = document.getElementById('stats-btn');
+    if (statsBtn) statsBtn.addEventListener('click', openStatsDrawer);
+
+    // Mostrar guía de uso si es la primera vez de este usuario
+    try { maybeShowOnboarding(); } catch (_) {}
     
     // Actualizar notificaciones cada 5 minutos
     setInterval(() => {
@@ -68,6 +82,8 @@ function initUserSession() {
         }
 
         currentUser = JSON.parse(sessionData);
+        // Aplicar tema guardado por usuario (light/dark)
+        applySavedTheme();
         
         // Display user name
         const userNameElement = document.getElementById('user-name');
@@ -136,6 +152,528 @@ async function handleLogout() {
  */
 export function getCurrentUserId() {
     return currentUser?.userId || null;
+}
+
+/**
+ * Muestra la guía de inicio si el usuario nunca la vio
+ */
+function maybeShowOnboarding() {
+    const uid = getCurrentUserId();
+    if (!uid) return;
+    const key = `onboarding_seen:${uid}`;
+    const seen = localStorage.getItem(key);
+    if (seen === '1') return;
+    openHelpGuide().then(() => {
+        localStorage.setItem(key, '1');
+    });
+}
+
+/**
+ * Abre la guía/tutorial de uso (3 pasos rápidos)
+ */
+async function openHelpGuide() {
+    const steps = [
+        {
+            title: 'Bienvenido 👋',
+            html: `Organiza tus ingresos, gastos y eventos en un calendario simple.<br><br>
+                   • Clic en un día para agregar eventos<br>
+                   • Usa «Ingreso» o «Gasto» con repetición opcional<br>
+                   • Confirma y archiva cuando se cumplan`
+        },
+        {
+            title: 'Préstamos y notificaciones',
+            html: `Crea préstamos y sus contrapartes de pago automáticamente.<br><br>
+                   • Recibirás alertas de vencimientos<br>
+                   • El panel 🔔 te muestra pendientes`
+        },
+        {
+            title: 'Sincronización y seguridad',
+            html: `Tus datos se guardan por usuario para mantener tu historial.<br><br>
+                   • Botón ⚙️ para tema claro/oscuro, cerrar sesión y borrar eventos`
+        }
+    ];
+    for (const s of steps) {
+        // eslint-disable-next-line no-await-in-loop
+        await Swal.fire({ icon: 'info', confirmButtonText: 'Siguiente', ...s });
+    }
+    await Swal.fire({ icon: 'success', title: '¡Listo!', text: 'Disfruta usando tu calendario 🎉' });
+}
+
+/**
+ * Abre el panel de configuración
+ */
+async function openSettingsPanel() {
+    const uid = getCurrentUserId();
+    const username = currentUser?.username || '—';
+    const name = currentUser?.name || '—';
+    const email = currentUser?.email || '—';
+
+    const theme = getSavedTheme();
+
+        const html = `
+      <div style="text-align:left;display:flex;flex-direction:column;gap:14px;">
+        <section>
+          <h3 style="margin-bottom:6px;">Usuario</h3>
+          <div><strong>Nombre:</strong> ${escapeHtml(name)}</div>
+          <div><strong>Usuario:</strong> ${escapeHtml(username)}</div>
+          <div><strong>Email:</strong> ${escapeHtml(email)}</div>
+          <div><strong>ID:</strong> ${escapeHtml(uid || '—')}</div>
+        </section>
+        <section>
+          <h3 style="margin-bottom:6px;">Apariencia</h3>
+          <label style="display:flex;align-items:center;gap:8px;">
+            <input id="theme-toggle" type="checkbox" ${theme === 'dark' ? 'checked' : ''} />
+            Tema oscuro
+          </label>
+        </section>
+        <section>
+          <h3 style="margin-bottom:6px;">Eventos</h3>
+          <button id="btn-clear-events" class="danger">🗑️ Limpiar todos los eventos</button>
+        </section>
+        <section>
+          <h3 style="margin-bottom:6px;">Sesión</h3>
+          <button id="btn-logout" class="btn-logout">🚪 Cerrar sesión</button>
+        </section>
+      </div>
+    `;
+
+    await Swal.fire({
+        title: 'Configuración',
+        html,
+        showConfirmButton: false,
+        showCancelButton: true,
+        cancelButtonText: 'Cerrar',
+        didOpen: () => {
+            const $ = (id) => Swal.getHtmlContainer().querySelector(id);
+            const themeToggle = $('#theme-toggle');
+            const clearBtn = $('#btn-clear-events');
+            const logoutBtn = $('#btn-logout');
+
+            if (themeToggle) {
+                themeToggle.addEventListener('change', () => {
+                    const newTheme = themeToggle.checked ? 'dark' : 'light';
+                    saveTheme(newTheme);
+                    applyTheme(newTheme);
+                });
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', async () => {
+                    const ok = await confirmDanger('¿Eliminar todos los eventos?', 'Se borrarán todos los eventos guardados en este dispositivo.');
+                    if (!ok) return;
+                    await clearAllEvents(false);
+                    await Swal.fire({ icon:'success', title:'Eventos borrados' });
+                    try { calendarInstance?.refreshAllEventIndicators(); } catch(_) {}
+                });
+            }
+
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', handleLogout);
+            }
+        }
+    });
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+function getSavedTheme() {
+    const uid = getCurrentUserId() || 'anon';
+    return localStorage.getItem(`theme:${uid}`) || 'light';
+}
+function saveTheme(theme) {
+    const uid = getCurrentUserId() || 'anon';
+    localStorage.setItem(`theme:${uid}`, theme);
+}
+function applyTheme(theme) {
+    const body = document.body;
+    if (!body) return;
+    body.classList.toggle('dark-theme', theme === 'dark');
+}
+function applySavedTheme() {
+    applyTheme(getSavedTheme());
+}
+
+async function confirmDanger(title, text) {
+    const res = await Swal.fire({
+        icon: 'warning',
+        title,
+        html: text,
+        showCancelButton: true,
+        confirmButtonText: 'Sí, continuar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#e55353'
+    });
+    return res.isConfirmed;
+}
+
+async function clearAllEvents() {
+    // Vaciar localmente solamente
+    try { saveEvents({}); } catch (_) {}
+}
+
+// ---------- Drawer de estadísticas ----------
+function ensureStatsDrawerDom() {
+        if (!document.getElementById('stats-drawer')) {
+                const overlay = document.createElement('div');
+                overlay.id = 'stats-drawer-overlay';
+                overlay.addEventListener('click', closeStatsDrawer);
+                document.body.appendChild(overlay);
+
+                const drawer = document.createElement('div');
+                drawer.id = 'stats-drawer';
+                drawer.innerHTML = `
+                    <div class="stats-header">
+                        <strong>Estadísticas</strong>
+                        <button id="stats-close" title="Cerrar">✖</button>
+                    </div>
+                    <div class="stats-content">
+                        <div class="stats-nav">
+                            <button data-tab="hoy" class="active">Hoy</button>
+                            <button data-tab="semanas">Semanas</button>
+                            <button data-tab="mes">Mes</button>
+                            <button data-tab="anio">Año</button>
+                        </div>
+                        <div id="stats-body"></div>
+                    </div>`;
+                document.body.appendChild(drawer);
+
+                drawer.querySelector('#stats-close')?.addEventListener('click', closeStatsDrawer);
+                drawer.querySelectorAll('.stats-nav button').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                                drawer.querySelectorAll('.stats-nav button').forEach(b => b.classList.remove('active'));
+                                btn.classList.add('active');
+                                renderStatsTab(btn.getAttribute('data-tab'));
+                        });
+                });
+        }
+}
+
+function openStatsDrawer() {
+        ensureStatsDrawerDom();
+        document.getElementById('stats-drawer-overlay').style.display = 'block';
+        document.getElementById('stats-drawer').classList.add('open');
+        renderStatsTab('hoy');
+}
+
+// Helpers para listar movimientos y manejar clicks
+function attachStatCardHandlers() {
+    const cards = document.querySelectorAll('#stats-drawer .stat-card');
+    cards.forEach(card => {
+        card.addEventListener('click', () => {
+            const range = card.getAttribute('data-range');
+            const scope = card.getAttribute('data-scope');
+            const type = card.getAttribute('data-type'); // ingreso | gasto
+            const status = card.getAttribute('data-status'); // confirmed | pending
+            if (!range) return;
+            const [startISO, endISO] = range.split('|');
+            if (scope && scope.endsWith('-net')) {
+                const events = collectEventsInRange(startISO, endISO);
+                return openNetModal(events, `${prettyRange(startISO, endISO)} — Neto`);
+            }
+            const events = collectEventsInRange(startISO, endISO)
+                .filter(ev => (!type || ev.event.type === type) &&
+                               (!status || (status === 'confirmed' ? !!ev.event.confirmed : !ev.event.confirmed))
+                );
+            openMovementsModal(events, `${prettyRange(startISO, endISO)} — ${labelFor(type, status)}`);
+        });
+    });
+}
+
+function attachWeekRowHandlers() {
+    document.querySelectorAll('#stats-drawer .stats-row').forEach(row => {
+        row.style.cursor = 'pointer';
+        row.addEventListener('click', () => {
+            const [startISO, endISO] = (row.getAttribute('data-range')||'|').split('|');
+            const events = collectEventsInRange(startISO, endISO);
+            openNetModal(events, `Semana ${prettyRange(startISO, endISO)}`);
+        });
+    });
+}
+
+function attachAnnualRowHandlers() {
+    document.querySelectorAll('#stats-drawer .annual-row').forEach(cell => {
+        cell.parentElement.style.cursor = 'pointer';
+        cell.parentElement.addEventListener('click', () => {
+            const [fromM, toM, size] = (cell.getAttribute('data-group')||'||').split('|').map(Number);
+            const year = new Date().getFullYear();
+            const start = new Date(year, fromM - 1, 1).toISOString().slice(0,10);
+            const end = new Date(year, toM, 0).toISOString().slice(0,10);
+            const events = collectEventsInRange(start, end);
+            openNetModal(events, `Meses ${fromM}–${toM}`);
+        });
+    });
+}
+
+function attachAnnualTotalRowHandlers() {
+    const row = document.querySelector('#stats-drawer .annual-total-row');
+    if (!row) return;
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => {
+        const year = Number(row.getAttribute('data-full-year')) || (new Date()).getFullYear();
+        const start = new Date(year, 0, 1).toISOString().slice(0,10);
+        const end = new Date(year, 12, 0).toISOString().slice(0,10);
+        const events = collectEventsInRange(start, end);
+        openNetModal(events, `Total anual ${year}`);
+    });
+}
+function collectEventsInRange(startISO, endISO) {
+    const start = new Date(startISO + 'T00:00:00');
+    const end = new Date(endISO + 'T23:59:59');
+    const all = [];
+    try {
+        const data = JSON.parse(localStorage.getItem(`events:${getCurrentUserId()}`) || '{}');
+        Object.keys(data).forEach(iso => {
+            const d = new Date(iso + 'T00:00:00');
+            if (d >= start && d <= end) {
+                (data[iso]||[]).forEach((e, idx) => all.push({ dateISO: iso, index: idx, event: e }));
+            }
+        });
+    } catch (_) {}
+    // Orden cronológico por fecha y createdAt si existe
+    all.sort((a,b) => {
+        if (a.dateISO !== b.dateISO) return a.dateISO < b.dateISO ? -1 : 1;
+        const ca = a.event.createdAt || '';
+        const cb = b.event.createdAt || '';
+        return ca < cb ? -1 : (ca > cb ? 1 : 0);
+    });
+    return all;
+}
+
+function labelFor(type, status) {
+    const t = type === 'ingreso' ? 'Ingresos' : 'Gastos';
+    const s = status === 'confirmed' ? 'confirmados' : 'pendientes';
+    return `${t} ${s}`;
+}
+
+function prettyRange(startISO, endISO) {
+    return startISO === endISO ? startISO : `${startISO} a ${endISO}`;
+}
+
+async function openMovementsModal(items, title) {
+        const rows = items.map(({dateISO, event}) => {
+        const amt = event.confirmed ? (event.confirmedAmount ?? event.amount ?? 0) : (event.amount ?? 0);
+        const badge = event.confirmed ? '✅' : '⌛';
+        return `<tr>
+          <td>${dateISO}</td>
+          <td>${escapeHtml(event.title || '')}</td>
+          <td>${event.type === 'ingreso' ? 'Ingreso' : (event.type === 'gasto' ? 'Gasto' : 'Evento')}</td>
+          <td style="text-align:right">${renderMoney(amt)}</td>
+          <td>${badge}</td>
+        </tr>`;
+    }).join('');
+
+    const total = items.reduce((s, {event}) => s + Number(event.confirmed ? (event.confirmedAmount ?? event.amount ?? 0) : (event.amount ?? 0)), 0);
+
+    await Swal.fire({
+        title,
+                width: 720,
+                html: `<div style="text-align:left; max-height:60vh; overflow:auto;">
+          <table class="table-clean" style="margin-bottom:8px">
+            <thead><tr><th>Fecha</th><th>Título</th><th>Tipo</th><th>Importe</th><th>Estado</th></tr></thead>
+            <tbody>${rows || '<tr><td colspan="5"><em>Sin movimientos</em></td></tr>'}</tbody>
+            <tfoot><tr><th colspan="3" style="text-align:right">Total</th><th style="text-align:right">${renderMoney(total)}</th><th></th></tr></tfoot>
+          </table>
+        </div>`,
+        confirmButtonText: 'Cerrar'
+    });
+}
+
+async function openNetModal(items, title) {
+    const incomes = items.filter(x => x.event.type === 'ingreso');
+    const expenses = items.filter(x => x.event.type === 'gasto');
+
+    const makeRows = (arr) => arr.map(({dateISO, event}) => {
+        const amt = event.confirmed ? (event.confirmedAmount ?? event.amount ?? 0) : (event.amount ?? 0);
+        const badge = event.confirmed ? '✅' : '⌛';
+        return `<tr>
+          <td>${dateISO}</td>
+          <td>${escapeHtml(event.title || '')}</td>
+          <td>${badge}</td>
+          <td style="text-align:right">${renderMoney(amt)}</td>
+        </tr>`;
+    }).join('');
+
+    const sum = (arr) => arr.reduce((s, {event}) => s + Number(event.confirmed ? (event.confirmedAmount ?? event.amount ?? 0) : (event.amount ?? 0)), 0);
+    const incTotal = sum(incomes); const expTotal = sum(expenses);
+
+        await Swal.fire({
+        title,
+                width: 760,
+                html: `<div style="text-align:left; max-height:60vh; overflow:auto;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; min-width:600px;">
+                    <div>
+            <h3 style="margin:0 0 6px 0;">Ingresos</h3>
+            <table class="table-clean">
+              <thead><tr><th>Fecha</th><th>Título</th><th>Estado</th><th>Importe</th></tr></thead>
+              <tbody>${makeRows(incomes) || '<tr><td colspan="4"><em>Sin ingresos</em></td></tr>'}</tbody>
+              <tfoot><tr><th colspan="3" style="text-align:right">Total</th><th style="text-align:right">${renderMoney(incTotal)}</th></tr></tfoot>
+            </table>
+          </div>
+          <div>
+            <h3 style="margin:0 0 6px 0;">Gastos</h3>
+            <table class="table-clean">
+              <thead><tr><th>Fecha</th><th>Título</th><th>Estado</th><th>Importe</th></tr></thead>
+              <tbody>${makeRows(expenses) || '<tr><td colspan="4"><em>Sin gastos</em></td></tr>'}</tbody>
+              <tfoot><tr><th colspan="3" style="text-align:right">Total</th><th style="text-align:right">${renderMoney(expenses.reduce((s,{event})=>s+Number(event.confirmed?(event.confirmedAmount??event.amount??0):(event.amount??0)),0))}</th></tr></tfoot>
+            </table>
+          </div>
+                    </div>
+                </div>
+                <div style="margin-top:8px;text-align:right"><strong>Neto:</strong> ${renderMoney(incTotal - expTotal)}</div>`,
+        confirmButtonText: 'Cerrar'
+    });
+}
+
+function closeStatsDrawer() {
+        const overlay = document.getElementById('stats-drawer-overlay');
+        const drawer = document.getElementById('stats-drawer');
+        if (overlay) overlay.style.display = 'none';
+        if (drawer) drawer.classList.remove('open');
+}
+
+function renderStatsTab(tab) {
+        const body = document.getElementById('stats-body');
+        if (!body) return;
+
+        const now = new Date();
+        const todayISO = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().slice(0,10);
+        const year = now.getFullYear();
+        const month = now.getMonth();
+
+        if (tab === 'hoy') {
+                const { acc, netConfirmed, netPending } = computeDailyStats(todayISO);
+                    body.innerHTML = `
+                    <div class="stat-grid">
+                            <div class="stat-card" data-scope="day" data-range="${todayISO}|${todayISO}" data-type="ingreso" data-status="confirmed"><div class="stat-title">Ingresos confirmados</div><div class="stat-value income">${renderMoney(acc.confirmed.income)}</div></div>
+                            <div class="stat-card" data-scope="day" data-range="${todayISO}|${todayISO}" data-type="gasto" data-status="confirmed"><div class="stat-title">Gastos confirmados</div><div class="stat-value expense">${renderMoney(acc.confirmed.expense)}</div></div>
+                            <div class="stat-card" data-scope="day" data-range="${todayISO}|${todayISO}" data-type="ingreso" data-status="pending"><div class="stat-title">Ingresos pendientes</div><div class="stat-value income">${renderMoney(acc.pending.income)}</div></div>
+                            <div class="stat-card" data-scope="day" data-range="${todayISO}|${todayISO}" data-type="gasto" data-status="pending"><div class="stat-title">Gastos pendientes</div><div class="stat-value expense">${renderMoney(acc.pending.expense)}</div></div>
+                            <div class="stat-card" data-scope="day-net" data-range="${todayISO}|${todayISO}" style="grid-column: span 2"><div class="stat-title">Neto (confirmado / pendiente)</div><div class="stat-value net">${renderMoney(netConfirmed)} / ${renderMoney(netPending)}</div></div>
+                    </div>`;
+                    attachStatCardHandlers();
+                return;
+        }
+
+        if (tab === 'semanas') {
+                const weeks = computeWeeklyStatsForMonth(year, month);
+                        let total = { cInc:0, cExp:0, pInc:0, pExp:0 };
+                        const rows = weeks.map(w => {
+                                total.cInc += w.acc.confirmed.income; total.cExp += w.acc.confirmed.expense;
+                                total.pInc += w.acc.pending.income; total.pExp += w.acc.pending.expense;
+                        const title = `Semana ${w.week}`;
+                                const startISO = w.range[0].toISOString().slice(0,10);
+                                const endISO = w.range[1].toISOString().slice(0,10);
+                                return `<tr class="stats-row" data-range="${startISO}|${endISO}">
+                            <td>${title}</td>
+                            <td class="income">${renderMoney(w.acc.confirmed.income)}</td>
+                            <td class="expense">${renderMoney(w.acc.confirmed.expense)}</td>
+                            <td class="income">${renderMoney(w.acc.pending.income)}</td>
+                            <td class="expense">${renderMoney(w.acc.pending.expense)}</td>
+                        </tr>`;
+                }).join('');
+                        const totalRow = `<tr style="font-weight:600">
+                                <td>Total mes</td>
+                                <td class="income">${renderMoney(total.cInc)}</td>
+                                <td class="expense">${renderMoney(total.cExp)}</td>
+                                <td class="income">${renderMoney(total.pInc)}</td>
+                                <td class="expense">${renderMoney(total.pExp)}</td>
+                        </tr>`;
+                        body.innerHTML = `
+                    <table class="table-clean">
+                        <thead><tr><th>Semana</th><th>Ing. conf.</th><th>Gast. conf.</th><th>Ing. pend.</th><th>Gast. pend.</th></tr></thead>
+                                <tbody>${rows}${totalRow}</tbody>
+                    </table>`;
+                        attachWeekRowHandlers();
+                return;
+        }
+
+        if (tab === 'mes') {
+                // Selector de periodo (mes/año) y render dinámico
+                const monthVal = `${year}-${String(month+1).padStart(2,'0')}`;
+                body.innerHTML = `
+                    <div style="margin-bottom:10px; display:flex; align-items:center; gap:8px;">
+                        <label for="month-picker">Periodo:</label>
+                        <input id="month-picker" type="month" value="${monthVal}" />
+                    </div>
+                    <div id="monthly-container"></div>`;
+
+                const renderMonthly = () => {
+                        const val = body.querySelector('#month-picker').value || monthVal;
+                        const [yy, mm] = val.split('-').map(Number);
+                        const selYear = yy; const selMonth = (mm || 1) - 1;
+                        const endISO = new Date(selYear, selMonth+1, 0).toISOString().slice(0,10);
+                        const isCurrentMonth = (selYear === year) && (selMonth === month);
+                        const startISO = isCurrentMonth ? todayISO : new Date(selYear, selMonth, 1).toISOString().slice(0,10);
+                        const acc = computeMonthlyFutureStats(selYear, selMonth, startISO);
+                        const netC = acc.confirmed.income - acc.confirmed.expense;
+                        const netP = acc.pending.income - acc.pending.expense;
+                        body.querySelector('#monthly-container').innerHTML = `
+                            <div class="stat-grid">
+                                <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="ingreso" data-status="confirmed"><div class="stat-title">Ingresos confirmados (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value income">${renderMoney(acc.confirmed.income)}</div></div>
+                                <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="gasto" data-status="confirmed"><div class="stat-title">Gastos confirmados (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value expense">${renderMoney(acc.confirmed.expense)}</div></div>
+                                <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="ingreso" data-status="pending"><div class="stat-title">Ingresos pendientes (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value income">${renderMoney(acc.pending.income)}</div></div>
+                                <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="gasto" data-status="pending"><div class="stat-title">Gastos pendientes (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value expense">${renderMoney(acc.pending.expense)}</div></div>
+                                <div class="stat-card" data-scope="month-net" data-range="${startISO}|${endISO}" style="grid-column: span 2"><div class="stat-title">Neto (confirmado / pendiente)</div><div class="stat-value net">${renderMoney(netC)} / ${renderMoney(netP)}</div></div>
+                            </div>`;
+                        attachStatCardHandlers();
+                };
+                body.querySelector('#month-picker').addEventListener('change', renderMonthly);
+                renderMonthly();
+                return;
+        }
+
+        if (tab === 'anio') {
+                const html = `
+                    <div style="margin-bottom:10px;">
+                        <label>Agrupación: 
+                            <select id="group-size">
+                                <option value="2">Bimestral</option>
+                                <option value="3" selected>Trimestral</option>
+                                <option value="6">Semestral</option>
+                                <option value="12">Anual</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="annual-container"></div>`;
+                body.innerHTML = html;
+                const renderAnnual = () => {
+                        const val = Number(body.querySelector('#group-size').value);
+                        const groups = computeAnnualStatsGroup(year, val);
+                    let total = { cInc:0, cExp:0, pInc:0, pExp:0, netC:0, netP:0 };
+                    const rows = groups.map(g => {
+                                const netC = g.acc.confirmed.income - g.acc.confirmed.expense;
+                                const netP = g.acc.pending.income - g.acc.pending.expense;
+                        total.cInc += g.acc.confirmed.income; total.cExp += g.acc.confirmed.expense;
+                        total.pInc += g.acc.pending.income; total.pExp += g.acc.pending.expense;
+                        total.netC += netC; total.netP += netP;
+                                return `<tr>
+                            <td class="annual-row" data-group="${g.fromMonth}|${g.toMonth}|${val}">${g.fromMonth}–${g.toMonth}</td>
+                                        <td class="income">${renderMoney(g.acc.confirmed.income)}</td>
+                                        <td class="expense">${renderMoney(g.acc.confirmed.expense)}</td>
+                                        <td class="income">${renderMoney(g.acc.pending.income)}</td>
+                                        <td class="expense">${renderMoney(g.acc.pending.expense)}</td>
+                                        <td class="net">${renderMoney(netC)} / ${renderMoney(netP)}</td>
+                                </tr>`;
+                        }).join('');
+                    const totalRow = `<tr class="annual-total-row" style="font-weight:600" data-full-year="${year}">
+                        <td class="annual-total">Total anual</td>
+                        <td class="income">${renderMoney(total.cInc)}</td>
+                        <td class="expense">${renderMoney(total.cExp)}</td>
+                        <td class="income">${renderMoney(total.pInc)}</td>
+                        <td class="expense">${renderMoney(total.pExp)}</td>
+                        <td class="net">${renderMoney(total.netC)} / ${renderMoney(total.netP)}</td>
+                    </tr>`;
+                    body.querySelector('#annual-container').innerHTML = `
+                            <table class="table-clean">
+                                <thead><tr><th>Meses</th><th>Ing. conf.</th><th>Gast. conf.</th><th>Ing. pend.</th><th>Gast. pend.</th><th>Neto (C/P)</th></tr></thead>
+                        <tbody>${rows}${totalRow}</tbody>
+                            </table>`;
+                    attachAnnualRowHandlers();
+                    attachAnnualTotalRowHandlers();
+                };
+                body.querySelector('#group-size').addEventListener('change', renderAnnual);
+                renderAnnual();
+        }
 }
 
 /**

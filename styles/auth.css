@@ -336,6 +336,41 @@ body.auth-page {
     line-height: 1.6;
 }
 
+/* ---------------- Toast móvil para recuperación ---------------- */
+.mobile-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 16px;
+    transform: translateX(-50%) translateY(30px);
+    background: #2d3748;
+    color: #f1f5f9;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.35);
+    width: calc(100% - 32px);
+    max-width: 520px;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    opacity: 0;
+    transition: transform .25s ease, opacity .25s ease;
+    z-index: 9999;
+}
+.mobile-toast.show { opacity:1; transform: translateX(-50%) translateY(0); }
+.mobile-toast__content { flex:1; }
+.mobile-toast__close {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+.mobile-toast__close:hover { background: rgba(255,255,255,0.25); }
+@media (min-width: 769px) { .mobile-toast { display:none; } }
+
 /* Success/Error Messages */
 .success-message,
 .error-message {

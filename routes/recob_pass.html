@@ -40,27 +40,7 @@
                     </button>
                 </div>
 
-                <!-- Step 2: Security question (optional) -->
-                <div class="form-step" id="step-2" style="display: none;">
-                    <div class="form-group">
-                        <label id="security-question-label">
-                            <span class="label-icon">❓</span>
-                            Pregunta de seguridad
-                        </label>
-                        <input 
-                            type="text" 
-                            id="security-answer" 
-                            name="security-answer" 
-                            placeholder="Tu respuesta"
-                            autocomplete="off"
-                        >
-                    </div>
-
-                    <button type="button" class="btn-primary btn-full" id="verify-answer-btn">
-                        <span class="btn-text">Verificar</span>
-                        <span class="btn-loader" style="display: none;">⏳</span>
-                    </button>
-                </div>
+                <!-- Paso 2 gestionado por correo: revisa tu email y usa el enlace enviado -->
 
                 <!-- Step 3: Reset password -->
                 <div class="form-step" id="step-3" style="display: none;">
@@ -142,16 +122,16 @@
                     <strong>Paso 1:</strong> Ingresa tu usuario o correo
                 </li>
                 <li>
-                    <strong>Paso 2:</strong> Verificación de identidad
+                    <strong>Paso 2:</strong> Revisa tu correo y abre el enlace de recuperación enviado
                 </li>
                 <li>
-                    <strong>Paso 3:</strong> Establece nueva contraseña
+                    <strong>Paso 3:</strong> Establece tu nueva contraseña en esta página
                 </li>
             </ul>
 
-            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,193,7,0.1); border-radius: 8px;">
+            <div style="margin-top: 1.5rem; padding: 1rem; background: rgba(255,193,7,0.07); border-radius: 8px;">
                 <p style="margin: 0; font-size: 0.9rem; color: #856404;">
-                    <strong>💡 Nota:</strong> Con correo enviaremos un enlace de recuperación.
+                    <strong>💡 Nota:</strong> El enlace que recibirás te devolverá a esta página para completar el cambio. Asegúrate de que la URL del enlace coincida con la página pública del sitio.
                 </p>
             </div>
         </div>

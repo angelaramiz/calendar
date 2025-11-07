@@ -8,18 +8,15 @@ import { supabase } from '../supabase-client.js';
 // DOM Elements
 const recoveryForm = document.getElementById('recovery-form');
 const usernameInput = document.getElementById('username');
-const securityAnswerInput = document.getElementById('security-answer');
 const newPasswordInput = document.getElementById('new-password');
 const confirmNewPasswordInput = document.getElementById('confirm-new-password');
 
 // Step containers
 const step1 = document.getElementById('step-1');
-const step2 = document.getElementById('step-2');
 const step3 = document.getElementById('step-3');
 
 // Buttons
 const verifyBtn = document.getElementById('verify-btn');
-const verifyAnswerBtn = document.getElementById('verify-answer-btn');
 const resetBtn = document.getElementById('reset-btn');
 
 // Toggle buttons
@@ -30,6 +27,7 @@ const toggleConfirmNewBtn = document.getElementById('toggle-confirm-new');
 const passwordStrengthDiv = document.getElementById('password-strength');
 const strengthFill = document.getElementById('strength-fill');
 const strengthText = document.getElementById('strength-text');
+const subtitleEl = document.querySelector('.auth-subtitle');
 
 // State
 let currentUser = null;
@@ -40,6 +38,8 @@ let currentStep = 1;
  */
 function initRecovery() {
     setupEventListeners();
+    updateSubtitleForStep(1);
+    showStepToast(1);
 
     // Manejar el flujo cuando el usuario entra desde el enlace de recuperación por email
     try {
@@ -48,6 +48,7 @@ function initRecovery() {
                 // Mostrar UI para establecer nueva contraseña
                 flagRecoveryLinkArrival();
                 showStep3();
+                showStepToast(3, '🔐 Enlace verificado. Establece tu nueva contraseña.');
             }
         });
     } catch (e) { /* ignore */ }
@@ -62,6 +63,7 @@ function initRecovery() {
             if (currentStep !== 3) {
                 flagRecoveryLinkArrival();
                 showStep3();
+                showStepToast(3, '🔐 Enlace verificado. Establece tu nueva contraseña.');
             }
         }, 400);
     }
@@ -74,8 +76,7 @@ function setupEventListeners() {
     // Step 1: Verify username
     recoveryForm.addEventListener('submit', handleStep1);
 
-    // Step 2: Verify security answer (if implemented)
-    verifyAnswerBtn.addEventListener('click', handleStep2);
+    // Step 2 removed: Supabase email link handles verification
 
     // Step 3: Reset password
     resetBtn.addEventListener('click', handleStep3);
@@ -118,6 +119,7 @@ async function handleStep1(e) {
                 html: `Te enviamos un enlace a <strong>${username}</strong> para restablecer tu contraseña.`,
                 confirmButtonText: 'Entendido'
             });
+            showStepToast(1, '📨 Te enviamos un enlace de recuperación. Revisa tu correo.');
             // Quedarse en esta página; el enlace te traerá de vuelta con sesión temporal
             return;
         }
@@ -164,6 +166,7 @@ async function handleStep1(e) {
             html: `Te enviamos un enlace a <strong>${currentUser.email}</strong> para restablecer tu contraseña.`,
             confirmButtonText: 'Entendido'
         });
+        showStepToast(1, '📨 Te enviamos un enlace de recuperación. Revisa tu correo.');
         // Quedarse en esta página; el enlace te traerá de vuelta con sesión temporal
 
     } catch (err) {
@@ -178,15 +181,7 @@ async function handleStep1(e) {
  */
 // Ya no se usa pregunta de seguridad: Supabase Auth gestiona el flujo por email
 
-/**
- * Show Step 2: Security question
- */
-function showStep2(question) { /* deprecated */ }
-
-/**
- * Handle Step 2: Verify security answer
- */
-async function handleStep2() { /* deprecated */ }
+// Step 2 (security question) removed — Supabase gestiona la verificación por email
 
 /**
  * Show Step 3: Reset password
@@ -195,8 +190,8 @@ function showStep3() {
     currentStep = 3;
     // Ocultar pasos anteriores
     if (step1) step1.style.display = 'none';
-    if (step2) step2.style.display = 'none';
     if (step3) step3.style.display = 'block';
+    updateSubtitleForStep(3);
 }
 
 /**
@@ -210,6 +205,56 @@ function flagRecoveryLinkArrival() {
     div.style.marginBottom = '1rem';
     div.innerHTML = '<strong>🔐 Enlace verificado.</strong> Ingresa tu nueva contraseña abajo.';
     step3?.insertBefore(div, step3.firstChild);
+}
+
+/**
+ * Actualiza el subtítulo según el paso actual
+ */
+function updateSubtitleForStep(step) {
+    if (!subtitleEl) return;
+    if (step === 1) subtitleEl.textContent = 'Ingresa tu usuario o correo para restablecer tu contraseña';
+    else if (step === 2) subtitleEl.textContent = 'Paso 2: Verificación de identidad';
+    else if (step === 3) subtitleEl.textContent = 'Paso 3: Establece tu nueva contraseña';
+}
+
+/**
+ * Muestra un toast móvil con un tip/contexto del paso actual
+ */
+let __toastEl = null;
+let __toastTimer = null;
+function showStepToast(step, customMsg) {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    if (!isMobile) return; // toast sólo en móviles
+    const msg = customMsg || (
+        step === 1 ? 'Paso 1: Ingresa tu usuario o correo. Si usas correo, te enviaremos un enlace.' :
+        step === 2 ? 'Paso 2: Verificación de identidad.' :
+        'Paso 3: Establece tu nueva contraseña (mínimo 6 caracteres).'
+    );
+    if (!__toastEl) {
+        __toastEl = document.createElement('div');
+        __toastEl.className = 'mobile-toast';
+        __toastEl.innerHTML = `
+            <div class="mobile-toast__content"></div>
+            <button class="mobile-toast__close" aria-label="Cerrar">✕</button>
+        `;
+        document.body.appendChild(__toastEl);
+        __toastEl.querySelector('.mobile-toast__close').addEventListener('click', hideToast);
+        requestAnimationFrame(() => __toastEl.classList.add('show'));
+    }
+    const content = __toastEl.querySelector('.mobile-toast__content');
+    content.textContent = msg;
+    // auto hide
+    if (__toastTimer) clearTimeout(__toastTimer);
+    __toastTimer = setTimeout(hideToast, 7000);
+}
+
+function hideToast() {
+    if (!__toastEl) return;
+    __toastEl.classList.remove('show');
+    setTimeout(() => {
+        __toastEl?.remove();
+        __toastEl = null;
+    }, 250);
 }
 
 /**

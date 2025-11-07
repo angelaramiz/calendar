@@ -3,6 +3,7 @@
  */
 
 import { Calendar } from './calendar.js';
+import { openEventModal } from './modal.js';
 import { syncDownMonth, saveEvents } from './events.js';
 import { computeDailyStats, computeWeeklyStatsForMonth, computeMonthlyFutureStats, computeAnnualStatsGroup, renderMoney } from './stats.js';
 import { 
@@ -48,6 +49,30 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingsBtn) settingsBtn.addEventListener('click', openSettingsPanel);
     const statsBtn = document.getElementById('stats-btn');
     if (statsBtn) statsBtn.addEventListener('click', openStatsDrawer);
+
+    // Acciones rápidas: agregar ingreso/gasto para hoy
+    const quickIncome = document.getElementById('quick-add-income');
+    const quickExpense = document.getElementById('quick-add-expense');
+    const openForToday = (type) => {
+        const todayISO = new Date().toISOString().slice(0,10);
+        openEventModal(todayISO, (affected) => {
+            try { affected.forEach(d => calendarInstance?.updateCellIndicator(d)); } catch(_) {}
+        });
+        // Auto-disparar el botón adecuado después de abrir la modal
+        setTimeout(() => {
+            const container = document.querySelector('.swal2-popup');
+            if (!container) return;
+            if (type === 'ingreso') {
+                const btn = container.querySelector('#btn-add-income');
+                if (btn) btn.click();
+            } else if (type === 'gasto') {
+                const btn = container.querySelector('#btn-add-expense');
+                if (btn) btn.click();
+            }
+        }, 50);
+    };
+    if (quickIncome) quickIncome.addEventListener('click', () => openForToday('ingreso'));
+    if (quickExpense) quickExpense.addEventListener('click', () => openForToday('gasto'));
 
     // Mostrar guía de uso si es la primera vez de este usuario
     try { maybeShowOnboarding(); } catch (_) {}
@@ -175,21 +200,27 @@ async function openHelpGuide() {
     const steps = [
         {
             title: 'Bienvenido 👋',
-            html: `Organiza tus ingresos, gastos y eventos en un calendario simple.<br><br>
-                   • Clic en un día para agregar eventos<br>
-                   • Usa «Ingreso» o «Gasto» con repetición opcional<br>
+            html: `Organiza tus <strong>ingresos</strong> y <strong>gastos</strong> en un calendario simple.<br><br>
+                   • Clic en un día o usa la barra «➕ Ingreso / ➖ Gasto»<br>
+                   • Repetición opcional (semanal/mensual/anual)<br>
                    • Confirma y archiva cuando se cumplan`
         },
         {
-            title: 'Préstamos y notificaciones',
-            html: `Crea préstamos y sus contrapartes de pago automáticamente.<br><br>
-                   • Recibirás alertas de vencimientos<br>
-                   • El panel 🔔 te muestra pendientes`
+            title: 'Tipos de eventos e iconos',
+            html: `<div style='text-align:left'>
+                    <div style='display:flex;gap:12px;flex-wrap:wrap'>
+                      <div><span style='display:inline-block;width:12px;height:12px;background:#2ecc71;border-radius:50%;vertical-align:middle;margin-right:6px'></span>Ingreso</div>
+                      <div><span style='display:inline-block;width:12px;height:12px;background:#e74c3c;border-radius:3px;vertical-align:middle;margin-right:6px'></span>Gasto</div>
+                      <div><span style='display:inline-block;width:12px;height:12px;border:2px solid #f39c12;vertical-align:middle;margin-right:6px'></span>Préstamo</div>
+                      <div><span style='display:inline-block;width:12px;height:12px;background:#9b59b6;border-radius:50%;vertical-align:middle;margin-right:6px'></span>Compensación</div>
+                    </div>
+                    <div style='margin-top:8px;color:#555'>Pasa el mouse sobre un punto para ver detalles (monto, categoría, frecuencia...).</div>
+                   </div>`
         },
         {
-            title: 'Sincronización y seguridad',
-            html: `Tus datos se guardan por usuario para mantener tu historial.<br><br>
-                   • Botón ⚙️ para tema claro/oscuro, cerrar sesión y borrar eventos`
+            title: 'Préstamos, alertas y configuración',
+            html: `Crea préstamos con contrapartes automáticas y configura <strong>alertas</strong> 🔔 antes de vencimientos.<br><br>
+                   • Panel ⚙️: tema claro/oscuro, limpiar eventos y cerrar sesión`
         }
     ];
     for (const s of steps) {

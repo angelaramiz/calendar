@@ -46,10 +46,25 @@ function initRecovery() {
         supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'PASSWORD_RECOVERY') {
                 // Mostrar UI para establecer nueva contraseña
+                flagRecoveryLinkArrival();
                 showStep3();
             }
         });
     } catch (e) { /* ignore */ }
+
+    // Si la URL ya trae parámetros de recuperación (hash o query) y la sesión temporal está activa, intentar avanzar.
+    // Algunos navegadores pueden disparar el evento tarde; detectamos presencia de 'access_token' en el fragment/hash.
+    const hash = window.location.hash;
+    if (hash && /access_token=/.test(hash)) {
+        // Pequeño retraso para dar tiempo al cliente a procesar tokens y disparar el evento
+        setTimeout(() => {
+            // Si aún no estamos en step 3, forzar
+            if (currentStep !== 3) {
+                flagRecoveryLinkArrival();
+                showStep3();
+            }
+        }, 400);
+    }
 }
 
 /**
@@ -182,6 +197,19 @@ function showStep3() {
     if (step1) step1.style.display = 'none';
     if (step2) step2.style.display = 'none';
     if (step3) step3.style.display = 'block';
+}
+
+/**
+ * Agrega un banner informativo cuando se llegó desde el correo de recuperación
+ */
+function flagRecoveryLinkArrival() {
+    const form = document.getElementById('recovery-form');
+    if (!form || form.querySelector('.recovery-banner')) return;
+    const div = document.createElement('div');
+    div.className = 'success-message recovery-banner';
+    div.style.marginBottom = '1rem';
+    div.innerHTML = '<strong>🔐 Enlace verificado.</strong> Ingresa tu nueva contraseña abajo.';
+    step3?.insertBefore(div, step3.firstChild);
 }
 
 /**

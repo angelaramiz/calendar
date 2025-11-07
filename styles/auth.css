@@ -397,9 +397,28 @@ body.auth-page {
         font-size: 1.75rem;
     }
 
+    /* Ocultar la card lateral y mostrar una versión inline dentro del formulario */
     .info-card {
         display: none;
     }
+    .form-tips {
+        display: block;
+        background: rgba(255,255,255,0.98);
+        padding: 0.8rem 1rem;
+        border-radius: 10px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+        margin-bottom: 0.5rem;
+    }
+    .form-tips summary {
+        font-weight: 700;
+        cursor: pointer;
+        margin-bottom: 6px;
+        list-style: none;
+        outline: none;
+    }
+    .form-tips[open] { padding-bottom: 0.6rem; }
+    .form-tips .features-list { gap: 0.4rem; margin-top: 6px; }
+    .form-tips .features-list li { font-size: 0.92rem; line-height: 1.4; }
 }
 
 @media (max-width: 480px) {

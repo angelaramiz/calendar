@@ -3,7 +3,9 @@
  * Gestiona alertas para eventos próximos, vencimientos, etc.
  */
 
-import { loadEvents } from './events.js';
+import { getCalendarDataForMonth } from './pattern-scheduler.js';
+import { getPlans } from './plans-v2.js';
+import { getLoans } from './loans-v2.js';
 
 /**
  * Configuración de notificaciones guardada en localStorage
@@ -62,9 +64,9 @@ function getDefaultNotificationSettings() {
 /**
  * Guarda una alerta personalizada para un evento
  */
-export function addEventAlert(dateISO, eventIndex, alertConfig) {
+export function addEventAlert(eventId, eventType, alertConfig) {
     const alerts = loadEventAlerts();
-    const key = `${dateISO}-${eventIndex}`;
+    const key = `${eventType}-${eventId}`;
     
     if (!alerts[key]) {
         alerts[key] = [];
@@ -101,13 +103,17 @@ export function saveEventAlerts(alerts) {
 
 /**
  * Obtiene todas las alertas pendientes para hoy y próximos días
+ * Sistema V2: usa patrones, movimientos, planes y préstamos
  */
-export function getPendingAlerts() {
-    const events = loadEvents();
-    const alerts = loadEventAlerts();
+export async function getPendingAlerts() {
     const settings = loadNotificationSettings();
     
     if (!settings.enabled) return [];
+    
+    const sessionData = localStorage.getItem('calendar_session');
+    const userId = sessionData ? JSON.parse(sessionData).userId : null;
+    
+    if (!userId) return [];
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -115,65 +121,136 @@ export function getPendingAlerts() {
     const pendingAlerts = [];
     const daysToCheck = settings.timing.daysBefore + 1;
     
-    for (let i = 0; i <= daysToCheck; i++) {
-        const checkDate = new Date(today);
-        checkDate.setDate(checkDate.getDate() + i);
-        const dateISO = checkDate.toISOString().slice(0, 10);
+    // Obtener datos del mes actual y siguiente
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth();
+    const nextMonth = currentMonth === 11 ? 0 : currentMonth + 1;
+    const nextYear = currentMonth === 11 ? currentYear + 1 : currentYear;
+    
+    try {
+        const currentMonthData = await getCalendarDataForMonth(userId, currentYear, currentMonth);
+        const nextMonthData = currentMonth !== nextMonth ? await getCalendarDataForMonth(userId, nextYear, nextMonth) : {};
+        const allData = { ...currentMonthData, ...nextMonthData };
         
-        const dayEvents = events[dateISO] || [];
-        
-        dayEvents.forEach((event, idx) => {
-            // Alerta de evento normal
-            if (settings.alerts.eventReminder && i <= settings.timing.daysBefore) {
-                pendingAlerts.push({
-                    type: 'event',
-                    priority: i === 0 ? 'high' : 'medium',
-                    date: dateISO,
-                    eventIndex: idx,
-                    event: event,
-                    message: i === 0 
-                        ? `Hoy: ${event.title}` 
-                        : `En ${i} día${i > 1 ? 's' : ''}: ${event.title}`,
-                    daysUntil: i
-                });
-            }
+        // Revisar cada día en el rango
+        for (let i = 0; i <= daysToCheck; i++) {
+            const checkDate = new Date(today);
+            checkDate.setDate(checkDate.getDate() + i);
+            const dateISO = checkDate.toISOString().slice(0, 10);
             
-            // Alerta de préstamo por vencer
-            if (settings.alerts.loanDue && event.loan && !event.loan.isCounterpart) {
-                if (i <= 3) { // 3 días antes del vencimiento
-                    pendingAlerts.push({
-                        type: 'loan',
-                        priority: i === 0 ? 'critical' : 'high',
-                        date: dateISO,
-                        eventIndex: idx,
-                        event: event,
-                        message: i === 0
-                            ? `⚠️ Vence hoy: Préstamo ${event.title}`
-                            : `💰 Vence en ${i} día${i > 1 ? 's' : ''}: ${event.title}`,
-                        daysUntil: i
-                    });
-                }
-            }
+            const dayData = allData[dateISO] || {};
             
-            // Alertas personalizadas
-            const customKey = `${dateISO}-${idx}`;
-            if (alerts[customKey]) {
-                alerts[customKey].forEach(alert => {
-                    if (shouldTriggerAlert(alert, dateISO)) {
+            // Alertas de ingresos proyectados (patrones)
+            if (settings.alerts.recurringEvent && dayData.projected_incomes) {
+                dayData.projected_incomes.forEach(projection => {
+                    // Solo alertar si NO tiene movimiento confirmado
+                    if (!projection.has_confirmed_movement) {
                         pendingAlerts.push({
-                            type: 'custom',
-                            priority: alert.priority || 'medium',
+                            type: 'projected',
+                            subtype: 'income',
+                            priority: i === 0 ? 'medium' : 'low',
                             date: dateISO,
-                            eventIndex: idx,
-                            event: event,
-                            message: alert.message || `Alerta: ${event.title}`,
+                            id: projection.pattern_id,
+                            title: projection.name,
+                            amount: projection.expected_amount,
+                            message: i === 0
+                                ? `Hoy (proyectado): 💵 ${projection.name}`
+                                : `En ${i} día${i > 1 ? 's' : ''} (proyectado): 💵 ${projection.name}`,
                             daysUntil: i,
-                            customConfig: alert
+                            icon: '💵'
                         });
                     }
                 });
             }
-        });
+            
+            // Alertas de gastos proyectados (patrones)
+            if (settings.alerts.recurringEvent && dayData.projected_expenses) {
+                dayData.projected_expenses.forEach(projection => {
+                    // Solo alertar si NO tiene movimiento confirmado
+                    if (!projection.has_confirmed_movement) {
+                        pendingAlerts.push({
+                            type: 'projected',
+                            subtype: 'expense',
+                            priority: i === 0 ? 'high' : 'medium',
+                            date: dateISO,
+                            id: projection.pattern_id,
+                            title: projection.name,
+                            amount: projection.expected_amount,
+                            message: i === 0
+                                ? `Hoy (pendiente): 💸 ${projection.name}`
+                                : `En ${i} día${i > 1 ? 's' : ''} (pendiente): 💸 ${projection.name}`,
+                            daysUntil: i,
+                            icon: '💸'
+                        });
+                    }
+                });
+            }
+            
+            // Alertas de préstamos
+            if (settings.alerts.loanDue && dayData.loan_movements) {
+                dayData.loan_movements.forEach(loan => {
+                    if (i <= 3) { // 3 días antes del vencimiento
+                        pendingAlerts.push({
+                            type: 'loan',
+                            priority: i === 0 ? 'critical' : 'high',
+                            date: dateISO,
+                            id: loan.loan_id,
+                            title: loan.title,
+                            amount: loan.confirmed_amount,
+                            message: i === 0
+                                ? `⚠️ Vence hoy: Préstamo ${loan.title}`
+                                : `💰 Vence en ${i} día${i > 1 ? 's' : ''}: ${loan.title}`,
+                            daysUntil: i,
+                            icon: '💰'
+                        });
+                    }
+                });
+            }
+        }
+        
+        // Alertas de metas/planes próximas a vencer
+        if (settings.alerts.eventReminder) {
+            try {
+                const plans = await getPlans();
+                const activePlans = plans.filter(p => p.status === 'active');
+                
+                activePlans.forEach(plan => {
+                    if (plan.requested_target_date) {
+                        const targetDate = new Date(plan.requested_target_date);
+                        targetDate.setHours(0, 0, 0, 0);
+                        const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
+                        
+                        // Alertar si está dentro del rango de días a revisar
+                        if (diffDays >= 0 && diffDays <= daysToCheck) {
+                            const progress = parseFloat(plan.progress_percent) || 0;
+                            const isAtRisk = progress < 50 && diffDays <= 7;
+                            
+                            pendingAlerts.push({
+                                type: 'plan',
+                                priority: isAtRisk ? 'high' : 'medium',
+                                date: plan.requested_target_date,
+                                id: plan.id,
+                                title: plan.title,
+                                amount: plan.target_amount,
+                                progress: progress,
+                                message: diffDays === 0
+                                    ? `🎯 Hoy vence: ${plan.title} (${progress.toFixed(0)}% completado)`
+                                    : `🎯 Vence en ${diffDays} día${diffDays > 1 ? 's' : ''}: ${plan.title} (${progress.toFixed(0)}% completado)`,
+                                daysUntil: diffDays,
+                                icon: '🎯',
+                                atRisk: isAtRisk
+                            });
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error loading plans for alerts:', error);
+            }
+        }
+        
+    } catch (error) {
+        console.error('Error getting pending alerts:', error);
+        return [];
     }
     
     // Ordenar por prioridad y fecha
@@ -218,30 +295,30 @@ export function displayAlerts(alerts, container) {
             low: '#95a5a6'
         }[alert.priority] || '#95a5a6';
         
-        const icon = {
-            event: '📅',
-            loan: '💰',
-            custom: '🔔'
-        }[alert.type] || '🔔';
+        const icon = alert.icon || '🔔';
+        
+        // Determinar color de fondo para alertas en riesgo
+        const bgColor = alert.atRisk ? '#fee2e2' : '#f9f9f9';
         
         return `
             <div class="alert-item" style="
                 border-left: 4px solid ${priorityColor};
                 padding: 10px 12px;
                 margin-bottom: 8px;
-                background: #f9f9f9;
+                background: ${bgColor};
                 border-radius: 4px;
                 cursor: pointer;
                 transition: background 0.2s;
-            " data-date="${alert.date}" data-index="${alert.eventIndex}">
+            " data-date="${alert.date}" data-id="${alert.id}" data-type="${alert.type}">
                 <div style="display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 1.2em;">${icon}</span>
                     <div style="flex: 1;">
                         <div style="font-weight: 600; color: ${priorityColor};">
                             ${alert.message}
                         </div>
-                        ${alert.event.amount ? `<div style="font-size: 0.9em; color: #666; margin-top: 4px;">Monto: $${alert.event.amount}</div>` : ''}
-                        ${alert.event.desc ? `<div style="font-size: 0.85em; color: #888; margin-top: 2px;">${alert.event.desc}</div>` : ''}
+                        ${alert.amount ? `<div style="font-size: 0.9em; color: #666; margin-top: 4px;">Monto: $${alert.amount}</div>` : ''}
+                        ${alert.progress !== undefined ? `<div style="font-size: 0.85em; color: #888; margin-top: 2px;">Progreso: ${alert.progress.toFixed(0)}%</div>` : ''}
+                        ${alert.atRisk ? `<div style="font-size: 0.85em; color: #e74c3c; margin-top: 2px; font-weight: 600;">⚠️ En riesgo de no cumplirse</div>` : ''}
                     </div>
                 </div>
             </div>
@@ -304,11 +381,11 @@ export function showBrowserNotification(title, options = {}) {
 /**
  * Inicializa el sistema de notificaciones
  */
-export function initNotificationSystem() {
+export async function initNotificationSystem() {
     const settings = loadNotificationSettings();
     
     if (settings.enabled && settings.timing.showOnStartup) {
-        const alerts = getPendingAlerts();
+        const alerts = await getPendingAlerts();
         
         if (alerts.length > 0) {
             // Mostrar badge de contador en la UI
@@ -346,9 +423,9 @@ export function updateNotificationBadge(count) {
 /**
  * Marca una alerta como vista/leída
  */
-export function markAlertAsRead(dateISO, eventIndex) {
+export function markAlertAsRead(eventId, eventType) {
     const readAlerts = loadReadAlerts();
-    const key = `${dateISO}-${eventIndex}`;
+    const key = `${eventType}-${eventId}`;
     
     if (!readAlerts[key]) {
         readAlerts[key] = {

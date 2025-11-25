@@ -113,8 +113,10 @@ function renderExpenseForm(suffix = '-gasto') {
  * @param {string} dateISO - Fecha en formato 'YYYY-MM-DD'
  * @param {Function} onUpdate - Callback para actualizar UI después de cambios
  */
-export function openEventModal(dateISO, onUpdate) {
-    let eventsList = getEventsForDate(dateISO);
+export async function openEventModal(dateISO, onUpdate) {
+    // Cargar eventos normales + eventos de planeación
+    const { getAllEventsForDate } = await import('./events.js');
+    let eventsList = await getAllEventsForDate(dateISO);
 
     /**
      * Renderiza la lista de eventos existentes
@@ -126,6 +128,16 @@ export function openEventModal(dateISO, onUpdate) {
         }
         
         const eventsHTML = eventsList.map((event, idx) => {
+            // Badge para eventos de planeación
+            let planningBadge = '';
+            if (event.isPlanningEvent) {
+                const planningLabels = {
+                    goal: '🎯 Meta',
+                    planned_expense: '📅 Planificado'
+                };
+                planningBadge = `<span class="freq-badge" style="background:#dbeafe;color:#1e40af;border-color:#3b82f6;margin-left:8px;">${planningLabels[event.planningType] || 'Planeación'}</span>`;
+            }
+            
             const freqBadge = event.frequency 
                 ? `<span class="freq-badge">${capitalize(event.frequency)}${event.interval && event.interval > 1 ? ' x' + event.interval : ''}</span>` 
                 : '';
@@ -159,20 +171,25 @@ export function openEventModal(dateISO, onUpdate) {
                 
                 return `
                 <div class="existing-event-swal" data-idx="${idx}" style="border:1px solid #eee;padding:8px;border-radius:6px;margin-bottom:8px;background:#f5f5f5;position:relative;opacity:0.85;">
-                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge} <span class="freq-badge" style="background:#e8e8e8;color:#666;border-color:#ddd;margin-left:8px;">📦 Historial</span></strong>
+                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge} ${planningBadge} <span class="freq-badge" style="background:#e8e8e8;color:#666;border-color:#ddd;margin-left:8px;">📦 Historial</span></strong>
                     <p style="margin:6px 0 0 0;color:#666">${escapeHTML(event.desc || '')}${extraInfo}${confirmedInfo}</p>
                 </div>
             `;
             }
 
-            return `
-                <div class="existing-event-swal" data-idx="${idx}" style="border:1px solid #eee;padding:8px;border-radius:6px;margin-bottom:8px;background:#fafafa;position:relative;">
-                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge}</strong>
-                    <p style="margin:6px 0 0 0;color:#444">${escapeHTML(event.desc || '')}${extraInfo}</p>
-                    <div style="position:absolute;right:8px;top:8px;display:flex;gap:6px">
+            // Eventos de planeación son solo visuales (no editables)
+            const actionButtons = event.isPlanningEvent 
+                ? '' 
+                : `<div style="position:absolute;right:8px;top:8px;display:flex;gap:6px">
                         <button data-idx="${idx}" class="swal-confirm" style="background:#3498db;color:#fff;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Confirmar</button>
                         <button data-idx="${idx}" class="swal-delete" style="background:#e55353;color:#fff;border:none;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:0.8rem;">Eliminar</button>
-                    </div>
+                    </div>`;
+            
+            return `
+                <div class="existing-event-swal" data-idx="${idx}" style="border:1px solid #eee;padding:8px;border-radius:6px;margin-bottom:8px;background:#fafafa;position:relative;">
+                    <strong>${escapeHTML(event.title)} ${freqBadge} ${loanBadge} ${planningBadge}</strong>
+                    <p style="margin:6px 0 0 0;color:#444">${escapeHTML(event.desc || '')}${extraInfo}</p>
+                    ${actionButtons}
                 </div>
             `;
         }).join('');

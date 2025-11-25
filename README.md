@@ -1,8 +1,32 @@
 # Calendario Interactivo Financiero
 
-Calendario interactivo avanzado con gestión de ingresos, gastos, **sistema de préstamos con intereses** y **notificaciones inteligentes**. Construido con vanilla JavaScript (ES6 modules), Web Components, HTML5 y CSS3.
+Calendario interactivo con gestión de ingresos, gastos, **préstamos con intereses** y **notificaciones inteligentes**. Backend con Supabase (PostgreSQL + API + Auth).
 
-## ✨ Nuevas Características (v2.0)
+## 🚀 Inicio Rápido
+
+### Setup Backend (15 minutos)
+1. **[Ver guía completa de Supabase](./docs/SUPABASE.md)** ⭐
+2. Crear proyecto en [supabase.com](https://supabase.com)
+3. Aplicar migraciones SQL en orden (ver `docs/migrations/`)
+4. Configurar credenciales en `js/config.js`
+
+### Setup Frontend
+1. Clonar repositorio
+2. Configurar `js/config.js` con credenciales de Supabase
+3. Abrir `index.html` en navegador o servidor local
+4. Registrar usuario y empezar a usar
+
+## 📚 Documentación
+
+- **[SUPABASE.md](./docs/SUPABASE.md)** - Setup completo de backend
+- **[AUTH.md](./docs/AUTH.md)** - Sistema de autenticación
+- **[migrations/](./docs/migrations/)** - Scripts SQL
+- **[components-guidelines.md](./docs/components-guidelines.md)** - Guía de desarrollo
+- **[nuevas-caracteristicas.md](./docs/nuevas-caracteristicas.md)** - Roadmap
+
+---
+
+## ✨ Características Principales
 
 ### 💰 Sistema de Préstamos Avanzado
 - **Cálculo automático de intereses** ($ y % auto-calculables)
@@ -11,173 +35,65 @@ Calendario interactivo avanzado con gestión de ingresos, gastos, **sistema de p
 - **División inteligente** de montos entre cuotas
 - **Tracking completo** con loanId único
 
-### � Sistema de Notificaciones
+### 🔔 Sistema de Notificaciones
 - **Alertas automáticas** para eventos próximos
 - **Notificaciones de vencimiento** de préstamos (críticas y de alta prioridad)
 - **Alertas personalizadas** por evento con 4 niveles de prioridad
 - **Notificaciones del navegador** (opcional con permiso)
 - **Panel centralizado** con badge contador
-- **Configuración completa** de timing y tipos de alertas
+- **Actualización cada 5 minutos**
 
-### 🎨 Mejoras Visuales
-- Indicadores diferenciados para ingresos (verde) y gastos (rojo)
-- Badge dorado para préstamos activos 💰
-- Indicador morado para contrapartes ↩️
-- Eventos archivados con estilo atenuado
-- Tooltips enriquecidos con toda la información
-- Vista detallada completa por evento
+### � Gestión Financiera
+- ✅ **Ingresos y Gastos** con categorías
+- ✅ **Montos esperados** vs **confirmados**
+- ✅ **Historial archivado** (eventos confirmados)
+- ✅ **Eventos recurrentes** (semanal, mensual, anual)
+- ✅ **Multi-usuario** con Row Level Security
+- ✅ **Sincronización automática** con Supabase
 
-## �📁 Estructura del Proyecto
+### 📊 Planeación y Metas (Próximamente)
+- 🔜 **Apartados/Envelopes** para ahorro
+- 🔜 **Metas financieras** con tracking
+- 🔜 **Gastos planificados** futuros
+- 🔜 **Eventos especiales** (vacaciones, regalos, etc)
+
+---
+
+## 📁 Estructura del Proyecto
 
 ```
 calendar/
-├── index.html                    # Página principal
-├── guia-uso.html                 # Guía de uso interactiva
-├── styles.css                    # Estilos globales
+├── index.html                    # Login
+├── routes/
+│   ├── main.html                 # Calendario principal (protegido)
+│   ├── register.html             # Registro
+│   └── recob_pass.html           # Recuperación
+├── styles/
+│   ├── styles.css                # Estilos principales
+│   └── auth.css                  # Estilos autenticación
 ├── docs/
-│   ├── nuevas-caracteristicas.md # Documentación completa de v2.0
-│   └── components-guidelines.md  # Guías de componentes
-└── js/                           # Módulos JavaScript
-    ├── main.js                   # Punto de entrada + integración notificaciones
-    ├── calendar.js               # Clase principal del calendario
-    ├── events.js                 # Gestión de eventos + contrapartes
-    ├── modal.js                  # Modales + alertas personalizadas
-    ├── recurrence.js             # Lógica de eventos recurrentes
-    ├── notifications.js          # 🆕 Sistema completo de notificaciones
+│   ├── SUPABASE.md               # ⭐ Guía setup backend
+│   ├── AUTH.md                   # Sistema autenticación
+│   ├── migrations/               # Scripts SQL en orden
+│   ├── components-guidelines.md  # Guía desarrollo
+│   └── nuevas-caracteristicas.md # Roadmap
+└── js/
+    ├── main.js                   # Entrada + notificaciones
+    ├── calendar.js               # Renderizado calendario
+    ├── events.js                 # CRUD eventos + contrapartes
+    ├── modal.js                  # Modales + UI
+    ├── notifications.js          # Sistema notificaciones
+    ├── database.js               # Capa datos Supabase
+    ├── supabase-client.js        # Cliente Supabase
+    ├── auth/
+    │   ├── login.js              # Login
+    │   ├── register.js           # Registro
+    │   └── recovery.js           # Recuperación
     ├── components/
-    │   ├── financial-form.js     # 🆕 Formulario avanzado con préstamos
-    │   └── frequency-toggle.js   # Toggle de frecuencia
-    └── librerias/
-        └── sweetalert2@11.js     # Librería de modales
-```
-
-## 🎯 Características Principales
-
-### Gestión Financiera
-- ✅ **Ingresos y Gastos** con categorías
-- ✅ **Montos esperados** vs **montos confirmados**
-- ✅ **Historial archivado** (eventos confirmados bloqueados)
-- ✅ **Categorización** automática por tipo
-
-### Préstamos
-- ✅ **Préstamo a favor** (dinero que prestas - gasto)
-- ✅ **Préstamo en contra** (dinero que te prestan - ingreso)
-- ✅ **Interés auto-calculable** (valor ↔ porcentaje)
-- ✅ **5 planes de pago** diferentes
-- ✅ **Contrapartes automáticas** con división de montos
-- ✅ **Notas adicionales** por préstamo
-
-### Notificaciones
-- ✅ **Alertas automáticas** según anticipación configurada
-- ✅ **Prioridades** (crítica, alta, media, baja)
-- ✅ **Badge contador** en tiempo real
-- ✅ **Click para abrir evento** directamente
-- ✅ **Actualización cada 5 minutos**
-- ✅ **Persistencia en localStorage**
-
-### Eventos Recurrentes
-- ✅ **Frecuencias**: semanal, mensual, anual
-- ✅ **Intervalo personalizado** (cada X períodos)
-- ✅ **Límite de ciclos** configurable
-- ✅ **Edición de futuras ocurrencias**
-
-### Persistencia y UI
-- ✅ **localStorage** - Sin backend necesario
-- ✅ **Indicadores visuales** diferenciados
-- ✅ **Tooltips informativos** con toda la metadata
-- ✅ **Modales elegantes** con SweetAlert2
-- ✅ **Web Components** para UI modular
-- ✅ **Responsive design** adaptable
-
-## 🏗️ Arquitectura Modular
-
-### `main.js`
-Punto de entrada de la aplicación:
-- Inicializa el calendario
-- Configura sistema de notificaciones
-- Crea panel de alertas en header
-- Actualización automática cada 5 minutos
-
-### `calendar.js`
-**Clase `Calendar`** - Renderización y navegación:
-- Generación del calendario mensual
-- Gestión de indicadores visuales
-- Tooltips enriquecidos con loan/confirmed info
-- Event listeners para interacción
-
-### `events.js`
-**Módulo de Eventos** - CRUD y lógica de negocio:
-- `addEvent()`, `updateEvent()`, `deleteEvent()`
-- `addRecurringEvents()` - Series recurrentes
-- `updateFutureOccurrences()` - Edición masiva
-- `createLoanCounterpartByLoanId()` - 🆕 Genera contrapartes con plan de pagos
-- `removeLoanCounterpartByLoanId()` - 🆕 Limpieza de contrapartes
-
-### `notifications.js` 🆕
-**Sistema de Notificaciones** - Alertas completas:
-- `initNotificationSystem()` - Inicialización
-- `getPendingAlerts()` - Obtiene alertas actuales
-- `addEventAlert()` - Crea alerta personalizada
-- `displayAlerts()` - Renderiza panel
-- `requestBrowserNotificationPermission()` - Permisos
-- `showBrowserNotification()` - Notificación nativa
-
-### `modal.js`
-**Interfaz de Modales** - Flujos de usuario:
-- `openEventModal()` - Modal principal del día
-- `openFinancialEventModal()` - Formulario de ingreso/gasto
-- `openEventDetailModal()` - Vista completa + botón de alerta
-- `openCustomAlertModal()` - 🆕 Crear alerta personalizada
-- `handleEventSave()` - Guardado con generación de loanId
-- Lógica de confirmación de montos
-
-### `components/financial-form.js` 🆕
-**Web Component** - Formulario avanzado:
-- Campos de título, descripción, monto, categoría
-- **Sección de préstamo colapsable**:
-  - Retorno esperado
-  - Interés ($ y % con auto-cálculo)
-  - Plan de pagos (5 opciones)
-  - Campos dinámicos según plan
-  - Notas adicionales
-- Desactiva frecuencia normal si préstamo activo
-- `setInitial()` para edición
-- Emite eventos `save` y `cancel`
-- `getEventsForDate()` - Obtiene eventos de una fecha
-- `escapeHTML()` - Previene XSS
-- `capitalize()` - Formatea strings
-
-### `modal.js`
-**Gestión de Modales** - Interfaz con SweetAlert2:
-- `openEventModal()` - Abre la modal para crear/ver eventos
-- Renderiza formularios con campos dinámicos
-- Valida datos de entrada
-- Maneja guardado y eliminación de eventos
-- Actualiza UI en tiempo real
-
-### `recurrence.js`
-**Lógica de Recurrencia** - Generación de fechas:
-- `generateRecurringDates()` - Genera array de fechas según:
-  - **Frecuencia**: semanal, mensual, anual
-  - **Intervalo**: cada N unidades (ej: cada 2 semanas)
-  - **Límite**: cantidad total de ocurrencias
-
-## 🚀 Inicio Rápido
-
-1. **Abre el calendario**
-   ```
-   Abre index.html en tu navegador
-   O consulta guia-uso.html para tutorial interactivo
-   ```
-
-2. **Crear un evento simple**
-   - Click en cualquier día
-   - Selecciona "Agregar ingreso" o "Agregar gasto"
-   - Completa título, monto, categoría
-   - Guarda
-
-3. **Crear un préstamo**
-   - Click en un día → Agregar gasto/ingreso
+    │   ├── financial-form.js     # Formulario préstamos
+    │   └── frequency-toggle.js   # Toggle frecuencia
+    └── lib/
+        └── sweetalert2@11.js     # Modales
    - Marca checkbox "Préstamo"
    - Completa campos avanzados:
      - Interés ($ o %)

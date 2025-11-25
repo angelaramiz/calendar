@@ -3,7 +3,7 @@
  */
 
 import { Calendar } from './calendar.js';
-import { openEventModal } from './modal.js';
+import { showCreateEventDialog } from './calendar-modals-v2.js';
 import { syncDownMonth, saveEvents } from './events.js';
 import { computeDailyStats, computeWeeklyStatsForMonth, computeMonthlyFutureStats, computeAnnualStatsGroup, renderMoney } from './stats.js';
 import { 
@@ -14,10 +14,14 @@ import {
     saveNotificationSettings,
     requestBrowserNotificationPermission
 } from './notifications.js';
+import { openPlanningModal, setUserId } from './planning-modals.js';
 
 // Current user session
 let currentUser = null;
 let calendarInstance = null;
+
+// Exportar currentUser para acceso global
+window.getCurrentUser = () => currentUser;
 
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
@@ -29,15 +33,19 @@ document.addEventListener('DOMContentLoaded', () => {
     calendarInstance = calendar;
 
     // Sincronizar solo el mes visible desde Supabase y refrescar indicadores
-    try {
-        const d = calendar.currentDate;
-        syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
-            calendar.refreshAllEventIndicators();
-        });
-    } catch (e) { /* ignore */ }
+    // DESHABILITADO: La tabla 'events' antigua ya no existe, ahora usamos sistema V2
+    // try {
+    //     const d = calendar.currentDate;
+    //     syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
+    //         calendar.refreshAllEventIndicators();
+    //     });
+    // } catch (e) { /* ignore */ }
     
-    // Inicializar sistema de notificaciones
-    initNotificationSystem();
+    // V2: Ya no es necesario llamar refreshAllEventIndicators aquí
+    // porque calendar.render() ya lo hace automáticamente
+    
+    // Inicializar sistema de notificaciones (async)
+    initNotificationSystem().catch(err => console.error('Error initializing notifications:', err));
     
     // Crear panel de notificaciones en el header
     createNotificationPanel();
@@ -49,27 +57,33 @@ document.addEventListener('DOMContentLoaded', () => {
     if (settingsBtn) settingsBtn.addEventListener('click', openSettingsPanel);
     const statsBtn = document.getElementById('stats-btn');
     if (statsBtn) statsBtn.addEventListener('click', openStatsDrawer);
+    const planningBtn = document.getElementById('planning-btn');
+    if (planningBtn) planningBtn.addEventListener('click', openPlanningModal);
 
     // Acciones rápidas: agregar ingreso/gasto para hoy
     const quickIncome = document.getElementById('quick-add-income');
     const quickExpense = document.getElementById('quick-add-expense');
     const openForToday = (type) => {
         const todayISO = new Date().toISOString().slice(0,10);
-        openEventModal(todayISO, (affected) => {
-            try { affected.forEach(d => calendarInstance?.updateCellIndicator(d)); } catch(_) {}
+        // Usar modal V2 directamente con el tipo seleccionado
+        import('./calendar-modals-v2.js').then(async (module) => {
+            // Mostrar directamente el modal de crear movimiento con el tipo específico
+            const typeMap = { 'ingreso': 'ingreso', 'gasto': 'gasto' };
+            await module.showCreateEventDialog(todayISO, () => {
+                calendarInstance?.refreshAllEventIndicators();
+            });
+            
+            // Auto-seleccionar el tipo después de un momento
+            setTimeout(() => {
+                const select = document.querySelector('.swal2-select');
+                if (select) {
+                    select.value = type === 'ingreso' ? 'movement-income' : 'movement-expense';
+                    // Trigger change event para proceder automáticamente
+                    const confirmBtn = document.querySelector('.swal2-confirm');
+                    if (confirmBtn) confirmBtn.click();
+                }
+            }, 100);
         });
-        // Auto-disparar el botón adecuado después de abrir la modal
-        setTimeout(() => {
-            const container = document.querySelector('.swal2-popup');
-            if (!container) return;
-            if (type === 'ingreso') {
-                const btn = container.querySelector('#btn-add-income');
-                if (btn) btn.click();
-            } else if (type === 'gasto') {
-                const btn = container.querySelector('#btn-add-expense');
-                if (btn) btn.click();
-            }
-        }, 50);
     };
     if (quickIncome) quickIncome.addEventListener('click', () => openForToday('ingreso'));
     if (quickExpense) quickExpense.addEventListener('click', () => openForToday('gasto'));
@@ -83,12 +97,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 5 * 60 * 1000);
 
     // Re-sincronizar al navegar entre meses
+    // DESHABILITADO: La tabla 'events' antigua ya no existe, ahora usamos sistema V2
+    // const reSync = () => {
+    //     const d = calendar.currentDate;
+    //     syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
+    //         calendar.refreshAllEventIndicators();
+    //     });
+    // };
+    
+    // V2: Refrescar indicadores directamente al cambiar de mes
     const reSync = () => {
-        const d = calendar.currentDate;
-        syncDownMonth(d.getFullYear(), d.getMonth()).then(() => {
-            calendar.refreshAllEventIndicators();
-        });
+        calendar.refreshAllEventIndicators();
     };
+    
     const prevBtn = document.getElementById('prev-month');
     const nextBtn = document.getElementById('next-month');
     if (prevBtn) prevBtn.addEventListener('click', () => setTimeout(reSync, 0));
@@ -107,6 +128,12 @@ function initUserSession() {
         }
 
         currentUser = JSON.parse(sessionData);
+        
+        // Inicializar el userId en el sistema de planeación
+        if (currentUser.userId) {
+            setUserId(currentUser.userId);
+        }
+        
         // Aplicar tema guardado por usuario (light/dark)
         applySavedTheme();
         
@@ -754,8 +781,8 @@ function createNotificationPanel() {
 /**
  * Actualiza el panel de notificaciones
  */
-function updateNotifications() {
-    const alerts = getPendingAlerts();
+async function updateNotifications() {
+    const alerts = await getPendingAlerts();
     const badge = document.getElementById('notification-badge');
     
     if (badge) {
@@ -771,8 +798,8 @@ function updateNotifications() {
 /**
  * Muestra el modal de notificaciones usando SweetAlert2
  */
-function showNotificationModal() {
-    const alerts = getPendingAlerts();
+async function showNotificationModal() {
+    const alerts = await getPendingAlerts();
     const settings = loadNotificationSettings();
     
     if (alerts.length === 0) {
@@ -814,25 +841,56 @@ function showNotificationModal() {
             // Añadir listeners a las alertas
             const alertItems = container.querySelectorAll('.alert-item');
             alertItems.forEach(item => {
-                item.addEventListener('click', function() {
+                item.addEventListener('click', async function() {
                     const date = this.dataset.date;
-                    const index = this.dataset.index;
-                    // Abrir modal del evento
-                    import('./modal.js').then(module => {
-                        module.openEventModal(date, (dates) => {
-                            // Callback de actualización
-                            console.log('Evento actualizado:', dates);
-                        });
-                    });
+                    const id = this.dataset.id;
+                    const type = this.dataset.type;
+                    
                     Swal.close();
+                    
+                    // Abrir modal correspondiente según el tipo
+                    const module = await import('./calendar-modals-v2.js');
+                    
+                    switch(type) {
+                        case 'movement':
+                            await module.showMovementDetails(id, () => {
+                                calendarInstance?.refreshAllEventIndicators();
+                            });
+                            break;
+                        case 'projected':
+                            // Para proyecciones, abrir el modal de la fecha
+                            await module.showCreateEventDialog(date, () => {
+                                calendarInstance?.refreshAllEventIndicators();
+                            });
+                            break;
+                        case 'plan':
+                            await module.showPlanDetails(id, () => {
+                                calendarInstance?.refreshAllEventIndicators();
+                            });
+                            break;
+                        case 'loan':
+                            await module.showLoanDetails(id, () => {
+                                calendarInstance?.refreshAllEventIndicators();
+                            });
+                            break;
+                        default:
+                            // Fallback: abrir modal de la fecha
+                            await module.showCreateEventDialog(date, () => {
+                                calendarInstance?.refreshAllEventIndicators();
+                            });
+                    }
                 });
                 
                 item.addEventListener('mouseenter', function() {
-                    this.style.background = '#e8e8e8';
+                    const bgColor = this.style.background;
+                    // Oscurecer el color de fondo al pasar el mouse
+                    this.style.background = bgColor.includes('fee2e2') ? '#fecaca' : '#e8e8e8';
                 });
                 
                 item.addEventListener('mouseleave', function() {
-                    this.style.background = '#f9f9f9';
+                    // Restaurar color original
+                    const atRisk = this.querySelector('[style*="En riesgo"]');
+                    this.style.background = atRisk ? '#fee2e2' : '#f9f9f9';
                 });
             });
             

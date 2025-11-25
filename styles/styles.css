@@ -219,6 +219,14 @@ td:hover { background-color: #f8f9fa; }
     justify-content: center;
 }
 
+/* Indicador de evento de planeación (metas y gastos planificados) */
+.event-indicator.event-planning {
+    background: #dbeafe;
+    border: 2px solid #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+    border-radius: 3px; /* cuadradito para diferenciar de eventos normales */
+}
+
 /* Badge de préstamo pequeño */
 .loan-badge {
     position: absolute;
@@ -226,6 +234,119 @@ td:hover { background-color: #f8f9fa; }
     right: -2px;
     font-size: 8px;
     line-height: 1;
+}
+
+/* ============================================================================
+   INDICADORES V2 (Pattern-based system)
+   ============================================================================ */
+
+/* Indicador sólido para movements confirmados */
+.solid-indicator {
+    opacity: 1;
+    border: none;
+}
+
+/* Indicador fantasma para projected events */
+.ghost-indicator {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px dashed;
+    background: transparent !important;
+    opacity: 0.5;
+    display: inline-block;
+    pointer-events: auto;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.ghost-indicator:hover {
+    opacity: 0.8;
+    transform: scale(1.2);
+}
+
+/* Indicador de loan movement (gold con glow) */
+.loan-indicator {
+    background: #fbbf24 !important;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    animation: glow-gold 2s ease-in-out infinite;
+}
+
+@keyframes glow-gold {
+    0%, 100% { box-shadow: 0 0 8px rgba(251, 191, 36, 0.6); }
+    50% { box-shadow: 0 0 12px rgba(251, 191, 36, 0.9); }
+}
+
+/* Indicador de plan movement (blue con glow) */
+.plan-indicator {
+    background: #3b82f6 !important;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.6);
+    animation: glow-blue 2s ease-in-out infinite;
+}
+
+@keyframes glow-blue {
+    0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.6); }
+    50% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.9); }
+}
+
+/* Indicador de plan target (flag marker) */
+.target-indicator {
+    position: absolute;
+    bottom: 2px;
+    left: 2px;
+    font-size: 16px;
+    cursor: pointer;
+    animation: pulse 2s infinite;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    z-index: 2;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+}
+
+.target-indicator:hover {
+    transform: scale(1.3);
+}
+
+/* Ajustes para múltiples indicadores en una celda */
+#calendar-body td {
+    position: relative;
+}
+
+#calendar-body td .event-indicator,
+#calendar-body td .ghost-indicator,
+#calendar-body td .loan-indicator,
+#calendar-body td .plan-indicator {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+}
+
+/* Stack horizontal de indicadores (hacia la izquierda) */
+#calendar-body td .event-indicator:nth-of-type(2),
+#calendar-body td .ghost-indicator:nth-of-type(2),
+#calendar-body td .loan-indicator:nth-of-type(2),
+#calendar-body td .plan-indicator:nth-of-type(2) {
+    right: 22px;
+}
+
+#calendar-body td .event-indicator:nth-of-type(3),
+#calendar-body td .ghost-indicator:nth-of-type(3),
+#calendar-body td .loan-indicator:nth-of-type(3),
+#calendar-body td .plan-indicator:nth-of-type(3) {
+    right: 36px;
+}
+
+#calendar-body td .event-indicator:nth-of-type(4),
+#calendar-body td .ghost-indicator:nth-of-type(4),
+#calendar-body td .loan-indicator:nth-of-type(4),
+#calendar-body td .plan-indicator:nth-of-type(4) {
+    right: 50px;
 }
 
 /* Modal overlay y cuadro (mejoras responsive) */

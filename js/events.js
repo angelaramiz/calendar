@@ -60,10 +60,15 @@ export function addEvent(dateISO, eventData) {
     if (!events[dateISO]) {
         events[dateISO] = [];
     }
-    events[dateISO].push({
-        ...eventData,
-        createdAt: new Date().toISOString()
-    });
+    // Evitar duplicados: mismo título (insensible a mayúsculas), mismo tipo y mismo monto en la misma fecha
+    if (!isDuplicateEvent(events, dateISO, eventData)) {
+        events[dateISO].push({
+            ...eventData,
+            createdAt: new Date().toISOString()
+        });
+    } else {
+        console.info('Evento duplicado detectado, omitiendo inserción:', eventData.title || eventData.desc || 'sin título');
+    }
     saveEvents(events);
 
     // Sincronizar con Supabase en segundo plano
@@ -175,11 +180,16 @@ export function createLoanCounterpartByLoanId(loanId) {
                     };
                     
                     if (!events[payment.date]) events[payment.date] = [];
-                    events[payment.date].push({ 
-                        ...counterpart, 
-                        createdAt: new Date().toISOString() 
-                    });
-                    createdDates.push(payment.date);
+                    // Evitar duplicados de contraparte (misma loanId)
+                    if (!isDuplicateEvent(events, payment.date, counterpart)) {
+                        events[payment.date].push({ 
+                            ...counterpart, 
+                            createdAt: new Date().toISOString() 
+                        });
+                        createdDates.push(payment.date);
+                    } else {
+                        console.info('Contrapartida ya existe para loanId, omitiendo:', loanId, 'fecha', payment.date);
+                    }
                 });
                 
                 saveEvents(events);
@@ -226,19 +236,62 @@ export function addRecurringEvents(dates, eventData) {
     // ensure we have a seriesId to group recurring occurrences
     const seriesId = eventData.seriesId || (`series-${Date.now().toString(36)}-${Math.floor(Math.random()*10000)}`);
     dates.forEach(date => {
-        if (!events[date]) {
-            events[date] = [];
-        }
-        events[date].push({
+        if (!events[date]) events[date] = [];
+        const evWithMeta = {
             ...eventData,
             occurrenceDate: date,
             seriesId,
             createdAt: new Date().toISOString()
-        });
+        };
+        if (!isDuplicateEvent(events, date, evWithMeta)) {
+            events[date].push(evWithMeta);
+        } else {
+            console.info('Omitiendo evento recurrente duplicado en', date, evWithMeta.title || 'sin título');
+        }
     });
     saveEvents(events);
     if (ENABLE_SUPABASE_SYNC) {
         syncDatesToSupabase(dates).catch(() => {});
+    }
+}
+
+/**
+ * Comprueba si un evento ya existe en una fecha determinada.
+ * Criterio de duplicado (configurable):
+ *  - mismo user-visible title (trim, lowercase) AND
+ *  - mismo tipo (ingreso/gasto/evento) AND
+ *  - mismo amount (ambos nulos o ambos iguales) OR mismo loan.loanId cuando exista
+ */
+function isDuplicateEvent(eventsObj, dateISO, candidate) {
+    try {
+        const arr = eventsObj[dateISO] || [];
+        const candTitle = (candidate.title || candidate.desc || '').toString().trim().toLowerCase();
+        const candType = (candidate.type || '').toString();
+        const candAmount = candidate.amount !== undefined && candidate.amount !== null ? Number(candidate.amount) : null;
+        const candLoanId = candidate.loan && candidate.loan.loanId ? candidate.loan.loanId : null;
+
+        for (const ev of arr) {
+            const evTitle = (ev.title || ev.desc || '').toString().trim().toLowerCase();
+            const evType = (ev.type || '').toString();
+            const evAmount = ev.amount !== undefined && ev.amount !== null ? Number(ev.amount) : null;
+            const evLoanId = ev.loan && ev.loan.loanId ? ev.loan.loanId : null;
+
+            // Si hay loanId y coinciden, consideramos duplicado
+            if (candLoanId && evLoanId && candLoanId === evLoanId) return true;
+
+            // Comparar título + tipo + monto
+            if (candTitle && evTitle && candTitle === evTitle && candType === evType) {
+                // ambos nulos o iguales
+                if ((candAmount === null && evAmount === null) || (candAmount !== null && evAmount !== null && candAmount === evAmount)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    } catch (e) {
+        // en caso de error conservador: no marcar como duplicado
+        console.warn('Error comprobando duplicado:', e);
+        return false;
     }
 }
 
@@ -363,6 +416,90 @@ export function getEventsForDate(dateISO) {
 }
 
 /**
+ * Obtiene eventos de planeación para una fecha (metas y gastos planificados)
+ * @param {string} dateISO - Fecha en formato ISO
+ * @returns {Promise<Array>} Array de eventos de planeación
+ */
+export async function getPlanningEventsForDate(dateISO) {
+    if (!ENABLE_SUPABASE_SYNC) return [];
+    
+    try {
+        const userId = getCurrentUserId();
+        if (!userId || userId === 'anon') return [];
+
+        const planningEvents = [];
+
+        // Obtener metas con fecha objetivo en esta fecha (excluir achieved y cancelled)
+        const { data: goals } = await supabase
+            .from('plans')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('target_date', dateISO)
+            .neq('status', 'achieved')
+            .neq('status', 'cancelled');
+
+        if (goals && goals.length > 0) {
+            goals.forEach(goal => {
+                planningEvents.push({
+                    title: `🎯 Meta: ${goal.title}`,
+                    desc: `Objetivo: $${goal.target_amount} | Ahorrado: $${goal.saved_amount || 0}`,
+                    type: 'evento',
+                    amount: goal.target_amount,
+                    category: 'goal',
+                    isPlanningEvent: true,
+                    planningType: 'goal',
+                    planningId: goal.id,
+                    confirmed: false,
+                    archived: false
+                });
+            });
+        }
+
+        // Obtener gastos planificados para esta fecha (excluir done y cancelled)
+        // NOTA: En V2, los gastos proyectados se obtienen de expense_patterns, no de una tabla de planificados
+        // Por ahora, comentado hasta implementar la lógica de proyección
+        const expenses = [];
+        // const { data: expenses } = await supabase
+        //     .from('expense_patterns')
+        //     .select('*')
+        //     .eq('user_id', userId);
+
+        if (expenses && expenses.length > 0) {
+            expenses.forEach(expense => {
+                planningEvents.push({
+                    title: `📅 Gasto planificado: ${expense.title}`,
+                    desc: expense.description || '',
+                    type: 'gasto',
+                    amount: expense.amount,
+                    category: expense.category || 'general',
+                    isPlanningEvent: true,
+                    planningType: 'planned_expense',
+                    planningId: expense.id,
+                    confirmed: false,
+                    archived: false
+                });
+            });
+        }
+
+        return planningEvents;
+    } catch (error) {
+        console.error('Error al cargar eventos de planeación:', error);
+        return [];
+    }
+}
+
+/**
+ * Obtiene todos los eventos para una fecha (normales + planeación)
+ * @param {string} dateISO - Fecha en formato ISO
+ * @returns {Promise<Array>} Array combinado de eventos
+ */
+export async function getAllEventsForDate(dateISO) {
+    const normalEvents = getEventsForDate(dateISO);
+    const planningEvents = await getPlanningEventsForDate(dateISO);
+    return [...normalEvents, ...planningEvents];
+}
+
+/**
  * Escapa HTML para prevenir XSS
  * @param {string} str - String a escapar
  * @returns {string} String escapado
@@ -425,50 +562,57 @@ async function syncDatesToSupabase(dates) {
     const events = loadEvents();
 
     // Borrar filas existentes de esas fechas para el usuario y reinsertar estado actual
+    // DESHABILITADO: La tabla 'events' ya no existe en V2
+    // En V2, usar movements para eventos confirmados y patterns para recurrentes
     try {
-        // Delete
-        const { error: delError } = await supabase
-            .from('events')
-            .delete()
-            .eq('user_id', userId)
-            .in('date', dates);
-        if (delError) {
-            console.warn('No se pudo eliminar para resincronizar:', delError.message);
-        }
+        // // Delete
+        // const { error: delError } = await supabase
+        //     .from('events')
+        //     .delete()
+        //     .eq('user_id', userId)
+        //     .in('date', dates);
+        // if (delError) {
+        //     console.warn('No se pudo eliminar para resincronizar:', delError.message);
+        // }
 
 
         // Insertar evento por evento para poder asociar préstamos
-        for (const dateISO of dates) {
-            const list = events[dateISO] || [];
-            for (const ev of list) {
-                const row = mapEventToRow(userId, dateISO, ev);
-                const { data: insertedEvent, error: insErr } = await supabase
-                    .from('events')
-                    .insert([row])
-                    .select('*')
-                    .single();
-                if (insErr) {
-                    console.warn('No se pudo insertar evento:', insErr.message);
-                    continue;
-                }
+        // DESHABILITADO: La tabla 'events' ya no existe en V2
+        // TODO: Implementar guardado en movements o patterns según el tipo de evento
+        console.warn('syncDatesToSupabase está deshabilitado - migrar a V2 (movements/patterns)');
+        // return; // Salir sin hacer nada
+        
+        // for (const dateISO of dates) {
+        //     const list = events[dateISO] || [];
+        //     for (const ev of list) {
+        //         const row = mapEventToRow(userId, dateISO, ev);
+        //         const { data: insertedEvent, error: insErr } = await supabase
+        //             .from('events')
+        //             .insert([row])
+        //             .select('*')
+        //             .single();
+        //         if (insErr) {
+        //             console.warn('No se pudo insertar evento:', insErr.message);
+        //             continue;
+        //         }
 
-                // Si el evento tiene datos de préstamo y NO es contraparte, crear préstamo
-                if (ev.loan && !ev.loan.isCounterpart) {
-                    const loanRow = mapLoanToRow(userId, insertedEvent.id, ev);
-                    const { data: insertedLoan, error: loanErr } = await supabase
-                        .from('loans')
-                        .insert([loanRow])
-                        .select('*')
-                        .single();
-                    if (loanErr) {
-                        console.warn('No se pudo insertar préstamo:', loanErr.message);
-                    } else {
-                        // Opcional: referenciar loan_id en el evento
-                        await supabase.from('events').update({ loan_id: insertedLoan.id }).eq('id', insertedEvent.id);
-                    }
-                }
-            }
-        }
+        //         // Si el evento tiene datos de préstamo y NO es contraparte, crear préstamo
+        //         if (ev.loan && !ev.loan.isCounterpart) {
+        //             const loanRow = mapLoanToRow(userId, insertedEvent.id, ev);
+        //             const { data: insertedLoan, error: loanErr } = await supabase
+        //                 .from('loans')
+        //                 .insert([loanRow])
+        //                 .select('*')
+        //                 .single();
+        //             if (loanErr) {
+        //                 console.warn('No se pudo insertar préstamo:', loanErr.message);
+        //             } else {
+        //                 // Opcional: referenciar loan_id en el evento
+        //                 // await supabase.from('events').update({ loan_id: insertedLoan.id }).eq('id', insertedEvent.id);
+        //             }
+        //         }
+        //     }
+        // }
     } catch (e) {
         console.warn('Error sincronizando con Supabase:', e);
     }
@@ -502,49 +646,53 @@ export async function syncDownAllEventsForUser() {
     const userId = session.userId;
     if (!userId) return;
 
-    try {
-        const { data, error } = await supabase
-            .from('events')
-            .select('*')
-            .eq('user_id', userId);
-        if (error) {
-            console.warn('No se pudo leer eventos desde Supabase:', error.message);
-            return;
-        }
+    // DESHABILITADO: La tabla 'events' ya no existe en V2
+    console.warn('syncDownAllEventsForUser está deshabilitado - usar sistema V2');
+    // return;
+    
+    // try {
+    //     const { data, error } = await supabase
+    //         .from('events')
+    //         .select('*')
+    //         .eq('user_id', userId);
+    //     if (error) {
+    //         console.warn('No se pudo leer eventos desde Supabase:', error.message);
+    //         return;
+    //     }
 
-        const grouped = {};
-        (data || []).forEach(row => {
-            const dateISO = row.date;
-            if (!grouped[dateISO]) grouped[dateISO] = [];
-            grouped[dateISO].push({
-                title: row.title,
-                desc: row.description || '',
-                type: row.type,
-                amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
-                category: row.category || '',
-                confirmed: !!row.confirmed,
-                archived: !!row.archived,
-                confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
-                frequency: row.frequency || '',
-                interval: row.interval || 1,
-                limit: row.limit_count || 0,
-                occurrenceDate: row.occurrence_date || row.date,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-                // marcar préstamo para indicador en UI
-                loan: (row.loan_id || row.is_loan_counterpart) ? {
-                    isCounterpart: !!row.is_loan_counterpart,
-                    loanId: row.loan_id || null
-                } : undefined
-            });
-        });
+        // const grouped = {};
+        // (data || []).forEach(row => {
+        //     const dateISO = row.date;
+        //     if (!grouped[dateISO]) grouped[dateISO] = [];
+        //     grouped[dateISO].push({
+        //         title: row.title,
+        //         desc: row.description || '',
+        //         type: row.type,
+        //         amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
+        //         category: row.category || '',
+        //         confirmed: !!row.confirmed,
+        //         archived: !!row.archived,
+        //         confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
+        //         frequency: row.frequency || '',
+        //         interval: row.interval || 1,
+        //         limit: row.limit_count || 0,
+        //         occurrenceDate: row.occurrence_date || row.date,
+        //         createdAt: row.created_at,
+        //         updatedAt: row.updated_at,
+        //         // marcar préstamo para indicador en UI
+        //         loan: (row.loan_id || row.is_loan_counterpart) ? {
+        //             isCounterpart: !!row.is_loan_counterpart,
+        //             loanId: row.loan_id || null
+        //         } : undefined
+        //     });
+        // });
 
-        // Reemplazar almacenamiento local del usuario
-        const key = getEventsStorageKey();
-        localStorage.setItem(key, JSON.stringify(grouped));
-    } catch (e) {
-        console.warn('Error en syncDownAllEventsForUser:', e);
-    }
+        // // Reemplazar almacenamiento local del usuario
+        // const key = getEventsStorageKey();
+        // localStorage.setItem(key, JSON.stringify(grouped));
+    // } catch (e) {
+    //     console.warn('Error en syncDownAllEventsForUser:', e);
+    // }
 }
 
 export async function syncDownMonth(year, month) {
@@ -560,56 +708,60 @@ export async function syncDownMonth(year, month) {
     const startISO = start.toISOString().slice(0, 10);
     const endISO = end.toISOString().slice(0, 10);
 
-    try {
-        const { data, error } = await supabase
-            .from('events')
-            .select('*')
-            .eq('user_id', userId)
-            .gte('date', startISO)
-            .lte('date', endISO);
-        if (error) {
-            console.warn('No se pudo leer eventos del mes desde Supabase:', error.message);
-            return;
-        }
+    // DESHABILITADO: La tabla 'events' ya no existe en V2
+    console.warn('syncDownMonth está deshabilitado - usar getCalendarDataForMonth de V2');
+    return;
+    
+    // try {
+    //     const { data, error } = await supabase
+    //         .from('events')
+    //         .select('*')
+    //         .eq('user_id', userId)
+    //         .gte('date', startISO)
+    //         .lte('date', endISO);
+    //     if (error) {
+    //         console.warn('No se pudo leer eventos del mes desde Supabase:', error.message);
+    //         return;
+    //     }
 
-        // cargar eventos actuales y limpiar solo las fechas del mes
-        const key = getEventsStorageKey();
-        const current = JSON.parse(localStorage.getItem(key) || '{}');
-        // eliminar claves del mes
-        const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
-        Object.keys(current).forEach(k => {
-            if (k.startsWith(monthPrefix)) delete current[k];
-        });
+        // // cargar eventos actuales y limpiar solo las fechas del mes
+        // const key = getEventsStorageKey();
+        // const current = JSON.parse(localStorage.getItem(key) || '{}');
+        // // eliminar claves del mes
+        // const monthPrefix = `${year}-${String(month + 1).padStart(2, '0')}-`;
+        // Object.keys(current).forEach(k => {
+        //     if (k.startsWith(monthPrefix)) delete current[k];
+        // });
 
-        // agregar los del servidor
-        (data || []).forEach(row => {
-            const dateISO = row.date;
-            if (!current[dateISO]) current[dateISO] = [];
-            current[dateISO].push({
-                title: row.title,
-                desc: row.description || '',
-                type: row.type,
-                amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
-                category: row.category || '',
-                confirmed: !!row.confirmed,
-                archived: !!row.archived,
-                confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
-                frequency: row.frequency || '',
-                interval: row.interval || 1,
-                limit: row.limit_count || 0,
-                occurrenceDate: row.occurrence_date || row.date,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at,
-                // marcar préstamo para indicador en UI
-                loan: (row.loan_id || row.is_loan_counterpart) ? {
-                    isCounterpart: !!row.is_loan_counterpart,
-                    loanId: row.loan_id || null
-                } : undefined
-            });
-        });
+        // // agregar los del servidor
+        // (data || []).forEach(row => {
+        //     const dateISO = row.date;
+        //     if (!current[dateISO]) current[dateISO] = [];
+        //     current[dateISO].push({
+        //         title: row.title,
+        //         desc: row.description || '',
+        //         type: row.type,
+        //         amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
+        //         category: row.category || '',
+        //         confirmed: !!row.confirmed,
+        //         archived: !!row.archived,
+        //         confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : null,
+        //         frequency: row.frequency || '',
+        //         interval: row.interval || 1,
+        //         limit: row.limit_count || 0,
+        //         occurrenceDate: row.occurrence_date || row.date,
+        //         createdAt: row.created_at,
+        //         updatedAt: row.updated_at,
+        //         // marcar préstamo para indicador en UI
+        //         loan: (row.loan_id || row.is_loan_counterpart) ? {
+        //             isCounterpart: !!row.is_loan_counterpart,
+        //             loanId: row.loan_id || null
+        //         } : undefined
+        //     });
+        // });
 
-        localStorage.setItem(key, JSON.stringify(current));
-    } catch (e) {
-        console.warn('Error en syncDownMonth:', e);
-    }
+        // localStorage.setItem(key, JSON.stringify(current));
+    // } catch (e) {
+    //     console.warn('Error en syncDownMonth:', e);
+    // }
 }

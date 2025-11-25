@@ -1,10 +1,11 @@
 /**
  * Módulo del Calendario
- * Gestiona la renderización y navegación del calendario
+ * Gestiona la renderización y navegación del calendario (V2)
  */
 
-import { loadEvents } from './events.js';
-import { openEventModal } from './modal.js';
+import { loadEvents, getAllEventsForDate } from './events.js';
+import { showConfirmProjectedDialog, showMovementDetails, showLoanDetails, showPlanDetails, showCreateEventDialog } from './calendar-modals-v2.js';
+import { getCalendarDataForMonth } from './pattern-scheduler.js';
 
 export class Calendar {
     constructor(containerId) {
@@ -116,41 +117,281 @@ export class Calendar {
     /**
      * Actualiza el indicador de eventos para una celda específica
      */
-    updateCellIndicator(dateISO) {
-        const events = loadEvents();
+    async updateCellIndicator(dateISO) {
         const cell = document.querySelector(`#calendar-body td[data-date="${dateISO}"]`);
         
         if (!cell) return;
 
-        // Eliminar indicadores previos
-        cell.querySelectorAll('.event-indicator').forEach(n => n.remove());
+        // Evitar llamadas concurrentes para la misma celda
+        if (!this._updatingCells) this._updatingCells = new Set();
+        if (this._updatingCells.has(dateISO)) {
+            // console.log(`⏩ Skipping duplicate update for ${dateISO}`);
+            return;
+        }
+        this._updatingCells.add(dateISO);
 
-        const eventsList = events[dateISO];
-        if (eventsList && eventsList.length) {
-            eventsList.forEach(event => {
-                const indicator = this.createEventIndicator(event);
+        try {
+            // NO limpiar aquí - refreshAllEventIndicators ya limpia antes de llamar a esta función
+            // Si se llama individualmente (ej: después de editar), sí limpiamos
+            const shouldClean = !this._isBatchUpdate;
+            if (shouldClean) {
+                cell.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
+            }
+
+            // Obtener datos V2 del mes
+            const sessionData = localStorage.getItem('calendar_session');
+        const userId = sessionData ? JSON.parse(sessionData).userId : 'anon';
+        const year = this.currentDate.getFullYear();
+        const month = this.currentDate.getMonth();
+        const calendarData = await getCalendarDataForMonth(userId, year, month);
+        
+        const dayData = calendarData[dateISO];
+        if (!dayData) return;
+
+        // 1. Renderizar PROJECTED EVENTS (fantasmas - dashed)
+        // Solo mostrar si NO tienen movimiento confirmado
+        if (dayData.projected_incomes && dayData.projected_incomes.length > 0) {
+            dayData.projected_incomes.forEach(proj => {
+                if (!proj.has_confirmed_movement) {
+                    const indicator = this.createGhostIndicator(proj, 'income');
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        if (dayData.projected_expenses && dayData.projected_expenses.length > 0) {
+            dayData.projected_expenses.forEach(proj => {
+                if (!proj.has_confirmed_movement) {
+                    const indicator = this.createGhostIndicator(proj, 'expense');
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        // 2. Renderizar LOAN MOVEMENTS (gold glow)
+        if (dayData.loan_movements && dayData.loan_movements.length > 0) {
+            dayData.loan_movements.forEach(mov => {
+                const indicator = this.createLoanIndicator(mov);
                 cell.appendChild(indicator);
             });
+        }
+
+        // 3. Renderizar PLAN MOVEMENTS (blue glow)
+        if (dayData.plan_movements && dayData.plan_movements.length > 0) {
+            dayData.plan_movements.forEach(mov => {
+                const indicator = this.createPlanMovementIndicator(mov);
+                cell.appendChild(indicator);
+            });
+        }
+
+        // 4. Renderizar REGULAR MOVEMENTS (solid circles)
+        if (dayData.confirmed_movements && dayData.confirmed_movements.length > 0) {
+            dayData.confirmed_movements.forEach(mov => {
+                // Los loan_movements y plan_movements ya se renderizaron arriba
+                // Solo renderizar los movimientos regulares aquí
+                if (!mov.loan_id && !mov.plan_id) {
+                    const indicator = this.createSolidIndicator(mov);
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        // 5. Renderizar PLAN TARGETS (flag marker)
+        if (dayData.plan_targets && dayData.plan_targets.length > 0) {
+            dayData.plan_targets.forEach(plan => {
+                const indicator = this.createPlanTargetIndicator(plan);
+                cell.appendChild(indicator);
+            });
+        }
+        
+        } finally {
+            // Liberar el lock de esta celda
+            if (this._updatingCells) {
+                this._updatingCells.delete(dateISO);
+            }
         }
     }
 
     /**
-     * Crea un indicador visual de evento
+     * Crea un indicador sólido para movements confirmados (solid circle)
+     */
+    createSolidIndicator(movement) {
+        const span = document.createElement('span');
+        span.className = 'event-indicator solid-indicator';
+        
+        // Color según tipo
+        if (movement.type === 'ingreso') {
+            span.classList.add('event-income');
+            span.style.background = '#10b981'; // green
+        } else if (movement.type === 'gasto') {
+            span.classList.add('event-expense');
+            span.style.background = '#ef4444'; // red
+        } else {
+            span.style.background = '#6b7280'; // gray para ajustes
+        }
+
+        // Tooltip
+        let tooltip = `${movement.title}\n`;
+        tooltip += `💵 $${movement.confirmed_amount}`;
+        if (movement.expected_amount && movement.expected_amount !== movement.confirmed_amount) {
+            tooltip += ` (Esperado: $${movement.expected_amount})`;
+        }
+        if (movement.category) tooltip += `\n🏷️ ${movement.category}`;
+        if (movement.description) tooltip += `\n📝 ${movement.description}`;
+        
+        span.title = tooltip;
+        span.dataset.movementId = movement.id;
+        span.dataset.type = 'movement';
+        
+        // Sin click handler - el click en la celda abrirá el modal principal
+        
+        return span;
+    }
+
+    /**
+     * Crea un indicador de loan movement (gold glow)
+     */
+    createLoanIndicator(movement) {
+        const span = document.createElement('span');
+        span.className = 'event-indicator loan-indicator';
+        span.style.background = '#fbbf24'; // amber/gold
+        span.style.boxShadow = '0 0 8px rgba(251, 191, 36, 0.6)';
+
+        let tooltip = `💰 Préstamo\n${movement.title}\n`;
+        tooltip += `💵 $${movement.confirmed_amount}`;
+        if (movement.description) tooltip += `\n📝 ${movement.description}`;
+        
+        span.title = tooltip;
+        span.dataset.movementId = movement.id;
+        span.dataset.loanId = movement.loan_id;
+        span.dataset.type = 'loan-movement';
+        
+        // Sin click handler - el click en la celda abrirá el modal principal
+        
+        return span;
+    }
+
+    /**
+     * Crea un indicador de plan movement (blue glow)
+     */
+    createPlanMovementIndicator(movement) {
+        const span = document.createElement('span');
+        span.className = 'event-indicator plan-indicator';
+        span.style.background = '#3b82f6'; // blue
+        span.style.boxShadow = '0 0 8px rgba(59, 130, 246, 0.6)';
+
+        let tooltip = `🎯 Ahorro para plan\n${movement.title}\n`;
+        tooltip += `💵 $${movement.confirmed_amount}`;
+        if (movement.description) tooltip += `\n📝 ${movement.description}`;
+        
+        span.title = tooltip;
+        span.dataset.movementId = movement.id;
+        span.dataset.planId = movement.plan_id;
+        span.dataset.type = 'plan-movement';
+        
+        // Sin click handler - el click en la celda abrirá el modal principal
+        
+        return span;
+    }
+
+    /**
+     * Crea un indicador de plan target (flag marker)
+     */
+    createPlanTargetIndicator(plan) {
+        const span = document.createElement('span');
+        span.className = 'target-indicator';
+        span.textContent = '🏁';
+        span.style.fontSize = '16px';
+        span.style.position = 'absolute';
+        span.style.bottom = '2px';
+        span.style.left = '2px';
+        span.style.cursor = 'pointer';
+        span.style.animation = 'pulse 2s infinite';
+
+        let tooltip = `🎯 Meta: ${plan.title}\n`;
+        tooltip += `💰 Objetivo: $${plan.target_amount}`;
+        
+        // Aquí usamos saved_amount y progress_percent de la vista plans_with_progress
+        if (plan.saved_amount !== undefined) {
+            tooltip += `\n💵 Ahorrado: $${plan.saved_amount}`;
+            tooltip += `\n📊 Progreso: ${plan.progress_percent}%`;
+        }
+        
+        if (plan.description) tooltip += `\n📝 ${plan.description}`;
+        
+        span.title = tooltip;
+        span.dataset.planId = plan.id;
+        span.dataset.type = 'plan-target';
+        
+        // Sin click handler - el click en la celda abrirá el modal principal
+        
+        return span;
+    }
+
+    /**
+     * Crea un indicador fantasma para projected events (dashed circle)
+     */
+    createGhostIndicator(projection, type) {
+        const span = document.createElement('span');
+        span.className = 'ghost-indicator';
+        
+        // Color según tipo
+        if (type === 'income') {
+            span.style.borderColor = '#10b981'; // green
+        } else {
+            span.style.borderColor = '#ef4444'; // red
+        }
+        
+        span.style.border = '2px dashed';
+        span.style.background = 'transparent';
+        span.style.opacity = '0.5';
+
+        let tooltip = `⚪ Proyectado\n${projection.name}\n`;
+        tooltip += `💵 $${projection.expected_amount}`;
+        if (projection.category) tooltip += `\n🏷️ ${projection.category}`;
+        if (projection.description) tooltip += `\n📝 ${projection.description}`;
+        
+        span.title = tooltip;
+        span.dataset.projectionDate = projection.date;
+        span.dataset.patternId = projection.pattern_id;
+        span.dataset.patternType = projection.pattern_type;
+        span.dataset.type = 'projected';
+        
+        // Sin click handler - el click en la celda abrirá el modal principal
+        
+        return span;
+    }
+
+    /**
+     * Crea un indicador visual de evento (LEGACY - para compatibilidad)
      */
     createEventIndicator(event) {
         const span = document.createElement('span');
         span.className = 'event-indicator';
         
-        // Agregar clase específica según el tipo
-        if (event.type === 'ingreso') {
-            span.classList.add('event-income');
-        } else if (event.type === 'gasto') {
-            span.classList.add('event-expense');
-        }
-        
-        // Si está archivado (historial), agregar clase especial
-        if (event.archived) {
-            span.classList.add('event-archived');
+        // Eventos de planeación tienen estilo especial
+        if (event.isPlanningEvent) {
+            span.classList.add('event-planning');
+            // Color azul claro para metas, azul oscuro para gastos planificados
+            if (event.planningType === 'goal') {
+                span.style.background = '#dbeafe';
+                span.style.borderColor = '#3b82f6';
+            } else if (event.planningType === 'planned_expense') {
+                span.style.background = '#bfdbfe';
+                span.style.borderColor = '#2563eb';
+            }
+        } else {
+            // Agregar clase específica según el tipo de evento normal
+            if (event.type === 'ingreso') {
+                span.classList.add('event-income');
+            } else if (event.type === 'gasto') {
+                span.classList.add('event-expense');
+            }
+            
+            // Si está archivado (historial), agregar clase especial
+            if (event.archived) {
+                span.classList.add('event-archived');
+            }
         }
         
         // Si es un préstamo, agregar indicador visual
@@ -178,6 +419,12 @@ export class Calendar {
         
         // Construir tooltip enriquecido
         let tooltip = `${event.title}`;
+        
+        // Para eventos de planeación, agregar tipo
+        if (event.isPlanningEvent) {
+            const typeLabel = event.planningType === 'goal' ? '🎯 Meta' : '📅 Gasto Planificado';
+            tooltip = `${typeLabel}\n${tooltip}`;
+        }
         
         if (event.desc) {
             tooltip += `\n📝 ${event.desc}`;
@@ -245,17 +492,25 @@ export class Calendar {
     /**
      * Actualiza todos los indicadores de eventos
      */
-    refreshAllEventIndicators() {
-        // Limpiar todos los indicadores
+    async refreshAllEventIndicators() {
+        // Limpiar TODOS los tipos de indicadores antes de renderizar
         document.querySelectorAll('#calendar-body td').forEach(td => {
-            td.querySelectorAll('.event-indicator').forEach(n => n.remove());
+            td.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
         });
 
-        // Recrear indicadores desde storage
-        const events = loadEvents();
-        Object.keys(events).forEach(dateISO => {
-            this.updateCellIndicator(dateISO);
-        });
+        // Obtener todas las fechas visibles en el calendario
+        const cellsWithDates = Array.from(document.querySelectorAll('#calendar-body td[data-date]'));
+        
+        // Marcar como batch update para evitar limpieza redundante en updateCellIndicator
+        this._isBatchUpdate = true;
+        
+        // Actualizar indicadores en paralelo para mejor rendimiento
+        await Promise.all(
+            cellsWithDates.map(cell => this.updateCellIndicator(cell.dataset.date))
+        );
+        
+        // Resetear flag
+        this._isBatchUpdate = false;
     }
 
     /**
@@ -267,9 +522,9 @@ export class Calendar {
                 const dateISO = e.currentTarget.dataset.date;
                 if (!dateISO) return;
 
-                openEventModal(dateISO, (affectedDates) => {
-                    // Callback para actualizar UI después de cambios
-                    affectedDates.forEach(date => this.updateCellIndicator(date));
+                // Usar modal V2 para crear eventos
+                showCreateEventDialog(dateISO, () => {
+                    this.refreshAllEventIndicators();
                 });
             });
         });

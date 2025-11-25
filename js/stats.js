@@ -1,4 +1,6 @@
 // Módulo de estadísticas básicas
+// ADVERTENCIA: Este módulo usa el sistema V1 (events en localStorage)
+// TODO: Migrar a V2 usando movements, income_patterns, expense_patterns desde Supabase
 import { loadEvents } from './events.js';
 
 function parseISO(dateISO) { return new Date(dateISO + 'T00:00:00'); }
@@ -24,6 +26,7 @@ function emptyAcc() {
 }
 
 export function computeDailyStats(todayISO) {
+  console.warn('computeDailyStats usa sistema V1 - los datos pueden estar desactualizados');
   const events = loadEvents();
   const acc = emptyAcc();
   const list = events[todayISO] || [];

@@ -58,6 +58,57 @@ body {
 }
 body.dark-theme .user-pill { background:#0b1220; color:#cbd5e1; }
 
+/* Balance Indicator Pill */
+.balance-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: linear-gradient(135deg, #e0f2fe 0%, #dbeafe 100%);
+    border: 1px solid #7dd3fc;
+    color: #0369a1;
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.balance-pill:hover {
+    background: linear-gradient(135deg, #bae6fd 0%, #93c5fd 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
+}
+.balance-pill .balance-label { font-weight: 400; opacity: 0.8; }
+.balance-pill .balance-value { font-weight: 600; }
+.balance-pill.positive { 
+    background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+    border-color: #34d399;
+    color: #047857;
+}
+.balance-pill.negative { 
+    background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+    border-color: #f87171;
+    color: #b91c1c;
+}
+body.dark-theme .balance-pill {
+    background: linear-gradient(135deg, #0c4a6e 0%, #0e7490 100%);
+    border-color: #22d3ee;
+    color: #e0f2fe;
+}
+body.dark-theme .balance-pill:hover {
+    background: linear-gradient(135deg, #155e75 0%, #0891b2 100%);
+}
+body.dark-theme .balance-pill.positive {
+    background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+    border-color: #10b981;
+    color: #a7f3d0;
+}
+body.dark-theme .balance-pill.negative {
+    background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%);
+    border-color: #f87171;
+    color: #fecaca;
+}
+
 /* Toolbar de acciones principales */
 .toolbar { display:flex; justify-content:flex-start; margin: 8px 0 16px 0; }
 .toolbar-group { display:flex; gap:8px; flex-wrap: wrap; }

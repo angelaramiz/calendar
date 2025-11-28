@@ -79,7 +79,7 @@ export async function createPlan(planData) {
         // Validar datos
         validatePlanData(planData);
 
-        // 1. Crear el plan
+        // 1. Crear el plan - incluir suggested_target_date si ya viene calculada
         const plan = {
             user_id: user.id,
             title: planData.title,
@@ -87,6 +87,7 @@ export async function createPlan(planData) {
             category: planData.category || null,
             target_amount: parseFloat(planData.target_amount),
             requested_target_date: planData.requested_target_date || null,
+            suggested_target_date: planData.suggested_target_date || null, // Usar la fecha sugerida pre-calculada
             priority: planData.priority || 3,
             status: planData.status || 'planned',
             auto_create_reminder: planData.auto_create_reminder || false,
@@ -106,8 +107,8 @@ export async function createPlan(planData) {
             await assignIncomeSources(createdPlan.id, planData.income_sources);
         }
 
-        // 3. Calcular fecha sugerida si hay income sources
-        if (planData.income_sources && planData.income_sources.length > 0) {
+        // 3. Recalcular fecha sugerida si NO venía pre-calculada y hay income sources
+        if (!planData.suggested_target_date && planData.income_sources && planData.income_sources.length > 0) {
             const suggestedDate = await calculateSuggestedTargetDate(createdPlan.id);
             if (suggestedDate) {
                 await updatePlan(createdPlan.id, { suggested_target_date: suggestedDate });
@@ -541,5 +542,226 @@ export async function getPlanCategories() {
     } catch (error) {
         console.error('Error fetching plan categories:', error);
         return [];
+    }
+}
+
+// ============================================================================
+// CONTRIBUCIONES A PLANES
+// ============================================================================
+
+/**
+ * Agrega una contribución (ingreso) a un plan
+ * Crea un movimiento vinculado al plan para que se refleje en saved_amount
+ */
+export async function addContributionToPlan(planId, amount, description = 'Aporte a planeación', date = null) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuario no autenticado');
+
+        // Verificar que el plan existe y está activo
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
+        if (plan.status === 'cancelled') throw new Error('No se puede aportar a un plan cancelado');
+        if (plan.status === 'completed') throw new Error('El plan ya está completado');
+
+        // Crear movimiento de tipo "ingreso" vinculado al plan
+        // NOTA: La vista plans_with_progress suma movimientos de tipo 'gasto' con plan_id,
+        // pero semánticamente un aporte es un ingreso. Usamos 'gasto' para que se sume.
+        const movementDate = date || new Date().toISOString().split('T')[0];
+        
+        const { data: movement, error } = await supabase
+            .from('movements')
+            .insert([{
+                user_id: user.id,
+                plan_id: planId,
+                title: description,
+                description: `Aporte a planeación: ${plan.title}`,
+                type: 'gasto', // Usamos 'gasto' porque la vista suma este tipo
+                date: movementDate,
+                expected_amount: amount,
+                confirmed_amount: amount,
+                confirmed: true
+            }])
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        // Verificar si la meta se completó
+        const updatedPlan = await getPlanById(planId);
+        if (updatedPlan && parseFloat(updatedPlan.progress_percent) >= 100) {
+            // Actualizar estado a completado
+            await updatePlan(planId, { status: 'completed' });
+        }
+
+        return movement;
+    } catch (error) {
+        console.error('Error adding contribution to plan:', error);
+        throw error;
+    }
+}
+
+/**
+ * Recalcula las fechas de un plan considerando ingresos extraordinarios
+ * Actualiza suggested_target_date basándose en el progreso actual y contribución mensual
+ */
+export async function recalculatePlanDates(planId) {
+    try {
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
+
+        // Si ya está completado, no recalcular
+        if (parseFloat(plan.progress_percent) >= 100) {
+            await updatePlan(planId, { 
+                status: 'completed',
+                suggested_target_date: new Date().toISOString().split('T')[0]
+            });
+            return await getPlanById(planId);
+        }
+
+        // Calcular contribución mensual esperada de los income sources
+        let monthlyContribution = 0;
+
+        if (plan.income_sources && plan.income_sources.length > 0) {
+            for (const source of plan.income_sources) {
+                const pattern = source.income_pattern;
+                if (!pattern || !pattern.active) continue;
+
+                let monthlyOccurrences = 0;
+                
+                if (pattern.frequency === 'daily') {
+                    monthlyOccurrences = 30 / (pattern.interval || 1);
+                } else if (pattern.frequency === 'weekly') {
+                    monthlyOccurrences = 4.33 / (pattern.interval || 1);
+                } else if (pattern.frequency === 'biweekly') {
+                    monthlyOccurrences = 2.17 / (pattern.interval || 1);
+                } else if (pattern.frequency === 'monthly') {
+                    monthlyOccurrences = 1 / (pattern.interval || 1);
+                } else if (pattern.frequency === 'yearly') {
+                    monthlyOccurrences = (1 / 12) / (pattern.interval || 1);
+                }
+
+                let contribution = 0;
+                if (source.allocation_type === 'percent') {
+                    contribution = parseFloat(pattern.base_amount) * parseFloat(source.allocation_value) * monthlyOccurrences;
+                } else if (source.allocation_type === 'fixed') {
+                    contribution = parseFloat(source.allocation_value) * monthlyOccurrences;
+                }
+
+                monthlyContribution += contribution;
+            }
+        }
+
+        // Calcular monto restante
+        const remaining = parseFloat(plan.remaining_amount) || (parseFloat(plan.target_amount) - (parseFloat(plan.saved_amount) || 0));
+        
+        if (remaining <= 0) {
+            // Ya alcanzado
+            const today = new Date().toISOString().split('T')[0];
+            await updatePlan(planId, { suggested_target_date: today, status: 'completed' });
+            return await getPlanById(planId);
+        }
+
+        let suggestedDate;
+        
+        if (monthlyContribution > 0) {
+            // Calcular meses restantes
+            const monthsNeeded = Math.ceil(remaining / monthlyContribution);
+            const today = new Date();
+            suggestedDate = new Date(today);
+            suggestedDate.setMonth(suggestedDate.getMonth() + monthsNeeded);
+        } else {
+            // Sin contribución mensual, mantener la fecha actual o usar la solicitada
+            suggestedDate = plan.requested_target_date ? new Date(plan.requested_target_date) : new Date();
+        }
+
+        await updatePlan(planId, { 
+            suggested_target_date: suggestedDate.toISOString().split('T')[0] 
+        });
+
+        return await getPlanById(planId);
+    } catch (error) {
+        console.error('Error recalculating plan dates:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene el historial de contribuciones de un plan
+ */
+export async function getPlanContributions(planId) {
+    try {
+        const { data, error } = await supabase
+            .from('movements')
+            .select('*')
+            .eq('plan_id', planId)
+            .order('date', { ascending: false });
+
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Error fetching plan contributions:', error);
+        throw error;
+    }
+}
+
+/**
+ * Retira dinero de un plan (para gastos)
+ * Crea un movimiento negativo vinculado al plan
+ */
+export async function withdrawFromPlan(planId, amount, description = 'Retiro de planeación', date = null) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuario no autenticado');
+
+        // Verificar que el plan existe
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
+
+        // Verificar que hay saldo suficiente
+        const savedAmount = parseFloat(plan.saved_amount) || 0;
+        if (amount > savedAmount) {
+            throw new Error(`Saldo insuficiente. Disponible: $${savedAmount.toFixed(2)}`);
+        }
+
+        // Crear movimiento de retiro (ingreso negativo o ajuste)
+        // Para decrementar el saved_amount, usamos un movimiento con confirmed_amount negativo
+        // O creamos un movimiento de tipo 'ingreso' que se resta
+        const movementDate = date || new Date().toISOString().split('T')[0];
+        
+        // Eliminamos el aporte previo creando un movimiento con monto negativo
+        // La vista plans_with_progress suma los confirmed_amount de tipo 'gasto' con plan_id
+        // Entonces para restar, insertamos un movement con confirmed_amount negativo
+        const { data: movement, error } = await supabase
+            .from('movements')
+            .insert([{
+                user_id: user.id,
+                plan_id: planId,
+                title: description,
+                description: `Retiro de planeación: ${plan.title}`,
+                type: 'gasto', // Mismo tipo que los aportes para que la suma funcione
+                date: movementDate,
+                expected_amount: -amount, // Negativo para que reste
+                confirmed_amount: -amount, // Negativo para que reste
+                confirmed: true
+            }])
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        // Actualizar estado del plan si es necesario
+        const updatedPlan = await getPlanById(planId);
+        if (updatedPlan) {
+            // Si el plan estaba completado y ahora ya no, volver a estado activo
+            if (plan.status === 'completed' && parseFloat(updatedPlan.progress_percent) < 100) {
+                await updatePlan(planId, { status: 'active' });
+            }
+        }
+
+        return movement;
+    } catch (error) {
+        console.error('Error withdrawing from plan:', error);
+        throw error;
     }
 }

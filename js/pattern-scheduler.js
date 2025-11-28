@@ -355,6 +355,125 @@ async function getPlansWithTargetDate(userId, rangeStart, rangeEnd) {
     return data || [];
 }
 
+/**
+ * Obtiene savings_patterns con frecuencia programada
+ */
+async function getScheduledSavingsPatterns(userId, rangeStart, rangeEnd) {
+    if (!userId || userId === 'anon') return [];
+    
+    const startISO = toISODateString(rangeStart);
+    const endISO = toISODateString(rangeEnd);
+    
+    const { data, error } = await supabase
+        .from('savings_patterns')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('active', true)
+        .not('frequency', 'is', null) // Solo los que tienen frecuencia programada
+        .or(`start_date.is.null,start_date.lte.${endISO}`)
+        .or(`end_date.is.null,end_date.gte.${startISO}`);
+    
+    if (error) {
+        console.error('Error al obtener scheduled savings_patterns:', error);
+        return [];
+    }
+    
+    return data || [];
+}
+
+/**
+ * Genera ocurrencias para un savings_pattern programado
+ */
+function generateSavingsOccurrences(pattern, rangeStart, rangeEnd) {
+    const occurrences = [];
+    
+    if (!pattern.frequency) return occurrences;
+    
+    const startDate = pattern.start_date ? new Date(pattern.start_date) : rangeStart;
+    const endDate = pattern.end_date ? new Date(pattern.end_date) : rangeEnd;
+    
+    // Clampar al rango del mes
+    const effectiveStart = clampDate(startDate, rangeStart, rangeEnd);
+    const effectiveEnd = clampDate(endDate, rangeStart, rangeEnd);
+    
+    let current = new Date(effectiveStart);
+    
+    // Ajustar al día correcto según frecuencia
+    if (pattern.frequency === 'weekly' || pattern.frequency === 'biweekly') {
+        // Ajustar al día de la semana
+        if (pattern.day_of_week !== null && pattern.day_of_week !== undefined) {
+            const dayDiff = pattern.day_of_week - current.getDay();
+            if (dayDiff < 0) {
+                current.setDate(current.getDate() + dayDiff + 7);
+            } else {
+                current.setDate(current.getDate() + dayDiff);
+            }
+        }
+    } else if (pattern.frequency === 'monthly') {
+        // Ajustar al día del mes
+        if (pattern.day_of_month !== null && pattern.day_of_month !== undefined) {
+            current.setDate(Math.min(pattern.day_of_month, new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()));
+        }
+    }
+    
+    const interval = pattern.interval_value || 1;
+    let iterCount = 0;
+    const maxIterations = 100;
+    
+    while (current <= effectiveEnd && iterCount < maxIterations) {
+        iterCount++;
+        
+        if (current >= effectiveStart && current <= effectiveEnd) {
+            const dateStr = toISODateString(current);
+            
+            // Calcular el monto basado en el tipo de asignación
+            let amount = 0;
+            if (pattern.allocation_type === 'fixed') {
+                amount = parseFloat(pattern.allocation_value) || 0;
+            } else if (pattern.allocation_type === 'percent') {
+                // Para porcentaje, necesitaríamos el ingreso vinculado
+                // Por ahora mostramos como "pendiente de calcular"
+                amount = null; 
+            }
+            
+            occurrences.push({
+                date: dateStr,
+                savings_pattern_id: pattern.id,
+                name: pattern.name,
+                description: pattern.description || 'Ahorro programado',
+                expected_amount: amount,
+                allocation_type: pattern.allocation_type,
+                allocation_value: pattern.allocation_value,
+                current_balance: parseFloat(pattern.current_balance) || 0,
+                target_amount: pattern.target_amount ? parseFloat(pattern.target_amount) : null,
+                type: 'savings', // Para identificar en el calendario
+                is_projected: true
+            });
+        }
+        
+        // Avanzar al siguiente
+        switch (pattern.frequency) {
+            case 'weekly':
+                current = addDays(current, 7 * interval);
+                break;
+            case 'biweekly':
+                current = addDays(current, 14 * interval);
+                break;
+            case 'monthly':
+                current.setMonth(current.getMonth() + interval);
+                if (pattern.day_of_month) {
+                    current.setDate(Math.min(pattern.day_of_month, new Date(current.getFullYear(), current.getMonth() + 1, 0).getDate()));
+                }
+                break;
+            case 'yearly':
+                current.setFullYear(current.getFullYear() + interval);
+                break;
+        }
+    }
+    
+    return occurrences;
+}
+
 // ============================================================================
 // FUNCIÓN PRINCIPAL: OBTENER DATOS DEL CALENDARIO
 // ============================================================================
@@ -366,6 +485,7 @@ async function getPlansWithTargetDate(userId, rangeStart, rangeEnd) {
  * - Ocurrencias proyectadas desde patrones
  * - Movements confirmados (separados por tipo: regular, loan, plan)
  * - Plan targets (fechas objetivo de metas)
+ * - Savings patterns programados
  * 
  * Retorna objeto con estructura:
  * {
@@ -376,7 +496,8 @@ async function getPlansWithTargetDate(userId, rangeStart, rangeEnd) {
  *     plan_movements: [...],            // subset con plan_id
  *     plan_targets: [...],              // metas con target_date en esta fecha
  *     projected_incomes: [...],         // ocurrencias proyectadas de income_patterns
- *     projected_expenses: [...]         // ocurrencias proyectadas de expense_patterns
+ *     projected_expenses: [...],        // ocurrencias proyectadas de expense_patterns
+ *     projected_savings: [...]          // ocurrencias proyectadas de savings_patterns
  *   },
  *   ...
  * }
@@ -390,12 +511,13 @@ export async function getCalendarDataForMonth(userId, year, month) {
     const monthEnd = endOfMonth(year, month);
     
     try {
-        // 1) Obtener patrones activos, movements y planes
-        const [incomePatterns, expensePatterns, movements, plans] = await Promise.all([
+        // 1) Obtener patrones activos, movements, planes y ahorros programados
+        const [incomePatterns, expensePatterns, movements, plans, savingsPatterns] = await Promise.all([
             getIncomePatterns(userId, monthStart, monthEnd),
             getExpensePatterns(userId, monthStart, monthEnd),
             getMovements(userId, monthStart, monthEnd),
-            getPlansWithTargetDate(userId, monthStart, monthEnd)
+            getPlansWithTargetDate(userId, monthStart, monthEnd),
+            getScheduledSavingsPatterns(userId, monthStart, monthEnd)
         ]);
         
         // 2) Crear índice de movements por fecha y patrón
@@ -456,6 +578,7 @@ export async function getCalendarDataForMonth(userId, year, month) {
         // 4) Generar ocurrencias proyectadas de patrones
         const projectedIncomes = [];
         const projectedExpenses = [];
+        const projectedSavings = [];
         
         // Ingresos proyectados
         for (const p of incomePatterns) {
@@ -503,6 +626,20 @@ export async function getCalendarDataForMonth(userId, year, month) {
             }
         }
         
+        // Ahorros proyectados (programados)
+        for (const sp of savingsPatterns) {
+            const occurrences = generateSavingsOccurrences(sp, monthStart, monthEnd);
+            for (const occ of occurrences) {
+                // Verificar si ya hay un movement de ahorro para este patrón en esta fecha
+                const existingMovement = (movementsByDate[occ.date] || []).find(
+                    m => m.category === 'Ahorro' && m.title?.includes(sp.name)
+                );
+                occ.has_confirmed_movement = !!existingMovement;
+                occ.confirmed_movement = existingMovement || null;
+                projectedSavings.push(occ);
+            }
+        }
+        
         // 5) Preparar estructura final por día
         const days = {};
         
@@ -515,7 +652,8 @@ export async function getCalendarDataForMonth(userId, year, month) {
                 plan_movements: planMovementsByDate[key] || [],
                 plan_targets: planTargetsByDate[key] || [],
                 projected_incomes: projectedIncomes.filter(e => e.date === key),
-                projected_expenses: projectedExpenses.filter(e => e.date === key)
+                projected_expenses: projectedExpenses.filter(e => e.date === key),
+                projected_savings: projectedSavings.filter(e => e.date === key)
             };
         }
         

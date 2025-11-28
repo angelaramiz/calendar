@@ -3,7 +3,7 @@
  */
 
 import { Calendar } from './calendar.js';
-import { showCreateEventDialog } from './calendar-modals-v2.js';
+import { showCreateEventDialog, showBalanceSummaryDialog } from './calendar-modals-v2.js';
 import { syncDownMonth, saveEvents } from './events.js';
 import { computeDailyStats, computeWeeklyStatsForMonth, computeMonthlyFutureStats, computeAnnualStatsGroup, renderMoney } from './stats.js';
 import { 
@@ -15,6 +15,7 @@ import {
     requestBrowserNotificationPermission
 } from './notifications.js';
 import { openPlanningModal, setUserId } from './planning-modals.js';
+import { getConfirmedBalanceSummary, formatCurrency } from './balance.js';
 
 // Current user session
 let currentUser = null;
@@ -143,6 +144,10 @@ function initUserSession() {
             userNameElement.textContent = currentUser.name || currentUser.username;
         }
 
+        // Setup balance indicator
+        setupBalanceIndicator();
+        updateBalanceIndicator();
+
         // Setup logout button
         const logoutBtn = document.getElementById('logout-btn');
         if (logoutBtn) {
@@ -198,6 +203,58 @@ async function handleLogout() {
         window.location.href = '../index.html';
     }
 }
+
+/**
+ * Setup balance indicator click handler
+ */
+function setupBalanceIndicator() {
+    const balanceIndicator = document.getElementById('balance-indicator');
+    if (balanceIndicator) {
+        balanceIndicator.addEventListener('click', () => {
+            showBalanceSummaryDialog();
+        });
+    }
+}
+
+/**
+ * Update balance indicator with current confirmed balance
+ */
+async function updateBalanceIndicator() {
+    const balanceValueEl = document.getElementById('balance-value');
+    const balancePill = document.getElementById('balance-indicator');
+    
+    if (!balanceValueEl || !balancePill) return;
+    
+    try {
+        const summary = await getConfirmedBalanceSummary();
+        const balance = summary?.balance || 0;
+        
+        // Update value
+        balanceValueEl.textContent = formatCurrency(balance);
+        
+        // Update styling based on balance
+        balancePill.classList.remove('positive', 'negative');
+        if (balance > 0) {
+            balancePill.classList.add('positive');
+        } else if (balance < 0) {
+            balancePill.classList.add('negative');
+        }
+    } catch (err) {
+        console.error('Error updating balance indicator:', err);
+        balanceValueEl.textContent = '$0.00';
+    }
+}
+
+// Export updateBalanceIndicator for use after transactions
+export { updateBalanceIndicator };
+
+// Listen for balance update events from anywhere in the app
+window.addEventListener('balance-updated', () => {
+    updateBalanceIndicator();
+});
+
+// Global function to trigger balance update from anywhere
+window.refreshBalanceIndicator = updateBalanceIndicator;
 
 /**
  * Get current user ID for database queries

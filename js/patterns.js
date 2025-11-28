@@ -302,8 +302,329 @@ export async function deleteExpensePattern(id, hard = false) {
 }
 
 // ============================================================================
+// EXPENSE PATTERN INCOME SOURCES
+// ============================================================================
+
+/**
+ * Obtiene un expense_pattern por ID con sus income sources
+ */
+export async function getExpensePatternWithSources(id) {
+    try {
+        const { data: pattern, error: patternError } = await supabase
+            .from('expense_patterns')
+            .select('*')
+            .eq('id', id)
+            .single();
+
+        if (patternError) throw patternError;
+
+        // Obtener income sources asignadas
+        const { data: sources, error: sourcesError } = await supabase
+            .from('expense_pattern_income_sources')
+            .select(`
+                *,
+                income_pattern:income_patterns(*)
+            `)
+            .eq('expense_pattern_id', id);
+
+        if (sourcesError) throw sourcesError;
+
+        pattern.income_sources = sources || [];
+        return pattern;
+    } catch (error) {
+        console.error('Error fetching expense pattern with sources:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene todos los expense_patterns con sus income sources
+ */
+export async function getExpensePatternsWithSources(activeOnly = false) {
+    try {
+        let query = supabase
+            .from('expense_patterns')
+            .select('*')
+            .order('name', { ascending: true });
+
+        if (activeOnly) {
+            query = query.eq('active', true);
+        }
+
+        const { data: patterns, error: patternsError } = await query;
+        if (patternsError) throw patternsError;
+
+        // Obtener todas las income sources de una vez
+        const patternIds = patterns.map(p => p.id);
+        const { data: allSources, error: sourcesError } = await supabase
+            .from('expense_pattern_income_sources')
+            .select(`
+                *,
+                income_pattern:income_patterns(*)
+            `)
+            .in('expense_pattern_id', patternIds);
+
+        if (sourcesError) throw sourcesError;
+
+        // Agrupar sources por expense_pattern_id
+        const sourcesByPattern = {};
+        for (const source of (allSources || [])) {
+            if (!sourcesByPattern[source.expense_pattern_id]) {
+                sourcesByPattern[source.expense_pattern_id] = [];
+            }
+            sourcesByPattern[source.expense_pattern_id].push(source);
+        }
+
+        // Asignar sources a cada pattern
+        for (const pattern of patterns) {
+            pattern.income_sources = sourcesByPattern[pattern.id] || [];
+        }
+
+        return patterns;
+    } catch (error) {
+        console.error('Error fetching expense patterns with sources:', error);
+        throw error;
+    }
+}
+
+/**
+ * Asigna income sources a un expense_pattern
+ */
+export async function assignIncomeSourcesToExpensePattern(expensePatternId, sources) {
+    try {
+        // Validar sources
+        validateIncomeSources(sources);
+
+        // Preparar datos
+        const incomeSources = sources.map(source => ({
+            expense_pattern_id: expensePatternId,
+            income_pattern_id: source.income_pattern_id,
+            allocation_type: source.allocation_type,
+            allocation_value: parseFloat(source.allocation_value),
+            notes: source.notes || null
+        }));
+
+        const { data, error } = await supabase
+            .from('expense_pattern_income_sources')
+            .insert(incomeSources)
+            .select();
+
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.error('Error assigning income sources to expense pattern:', error);
+        throw error;
+    }
+}
+
+/**
+ * Actualiza una income source de un expense_pattern
+ */
+export async function updateExpensePatternIncomeSource(sourceId, updates) {
+    try {
+        const source = {};
+
+        if (updates.allocation_type !== undefined) source.allocation_type = updates.allocation_type;
+        if (updates.allocation_value !== undefined) source.allocation_value = parseFloat(updates.allocation_value);
+        if (updates.notes !== undefined) source.notes = updates.notes;
+
+        const { data, error } = await supabase
+            .from('expense_pattern_income_sources')
+            .update(source)
+            .eq('id', sourceId)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    } catch (error) {
+        console.error('Error updating expense pattern income source:', error);
+        throw error;
+    }
+}
+
+/**
+ * Elimina una income source de un expense_pattern
+ */
+export async function removeExpensePatternIncomeSource(sourceId) {
+    try {
+        const { error } = await supabase
+            .from('expense_pattern_income_sources')
+            .delete()
+            .eq('id', sourceId);
+
+        if (error) throw error;
+        return true;
+    } catch (error) {
+        console.error('Error removing expense pattern income source:', error);
+        throw error;
+    }
+}
+
+/**
+ * Reemplaza todas las income sources de un expense_pattern
+ */
+export async function replaceExpensePatternIncomeSources(expensePatternId, newSources) {
+    try {
+        // 1. Eliminar sources existentes
+        await supabase
+            .from('expense_pattern_income_sources')
+            .delete()
+            .eq('expense_pattern_id', expensePatternId);
+
+        // 2. Agregar nuevas sources
+        if (newSources && newSources.length > 0) {
+            await assignIncomeSourcesToExpensePattern(expensePatternId, newSources);
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Error replacing expense pattern income sources:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene los income sources de un expense_pattern
+ */
+export async function getExpensePatternIncomeSources(expensePatternId) {
+    try {
+        const { data, error } = await supabase
+            .from('expense_pattern_income_sources')
+            .select(`
+                *,
+                income_pattern:income_patterns(*)
+            `)
+            .eq('expense_pattern_id', expensePatternId);
+
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Error fetching expense pattern income sources:', error);
+        throw error;
+    }
+}
+
+/**
+ * Calcula el monto cubierto mensual de un expense_pattern
+ * basándose en las income sources asignadas
+ */
+export async function calculateExpensePatternCoverage(expensePatternId) {
+    try {
+        const pattern = await getExpensePatternWithSources(expensePatternId);
+        if (!pattern || !pattern.income_sources || pattern.income_sources.length === 0) {
+            return {
+                expense_amount: parseFloat(pattern?.base_amount || 0),
+                covered_amount: 0,
+                coverage_percent: 0,
+                sources_breakdown: []
+            };
+        }
+
+        let totalCovered = 0;
+        const sourcesBreakdown = [];
+
+        for (const source of pattern.income_sources) {
+            const incomePattern = source.income_pattern;
+            if (!incomePattern || !incomePattern.active) continue;
+
+            // Convertir frecuencia a monto mensual
+            let monthlyOccurrences = 0;
+            
+            if (incomePattern.frequency === 'daily') {
+                monthlyOccurrences = 30 / (incomePattern.interval || 1);
+            } else if (incomePattern.frequency === 'weekly') {
+                monthlyOccurrences = 4 / (incomePattern.interval || 1);
+            } else if (incomePattern.frequency === 'monthly') {
+                monthlyOccurrences = 1 / (incomePattern.interval || 1);
+            } else if (incomePattern.frequency === 'yearly') {
+                monthlyOccurrences = (1 / 12) / (incomePattern.interval || 1);
+            }
+
+            // Calcular contribución mensual de este income pattern
+            let contribution = 0;
+            if (source.allocation_type === 'percent') {
+                contribution = parseFloat(incomePattern.base_amount) * parseFloat(source.allocation_value) * monthlyOccurrences;
+            } else if (source.allocation_type === 'fixed') {
+                contribution = parseFloat(source.allocation_value) * monthlyOccurrences;
+            }
+
+            totalCovered += contribution;
+            sourcesBreakdown.push({
+                income_pattern_id: incomePattern.id,
+                income_pattern_name: incomePattern.name,
+                allocation_type: source.allocation_type,
+                allocation_value: source.allocation_value,
+                monthly_contribution: contribution
+            });
+        }
+
+        // Calcular monto mensual del gasto
+        let expenseMonthlyAmount = 0;
+        if (pattern.frequency === 'daily') {
+            expenseMonthlyAmount = parseFloat(pattern.base_amount) * (30 / (pattern.interval || 1));
+        } else if (pattern.frequency === 'weekly') {
+            expenseMonthlyAmount = parseFloat(pattern.base_amount) * (4 / (pattern.interval || 1));
+        } else if (pattern.frequency === 'monthly') {
+            expenseMonthlyAmount = parseFloat(pattern.base_amount) / (pattern.interval || 1);
+        } else if (pattern.frequency === 'yearly') {
+            expenseMonthlyAmount = parseFloat(pattern.base_amount) / (12 * (pattern.interval || 1));
+        }
+
+        const coveragePercent = expenseMonthlyAmount > 0 
+            ? Math.min((totalCovered / expenseMonthlyAmount) * 100, 100)
+            : 0;
+
+        return {
+            expense_amount: expenseMonthlyAmount,
+            covered_amount: totalCovered,
+            coverage_percent: Math.round(coveragePercent * 100) / 100,
+            sources_breakdown: sourcesBreakdown
+        };
+    } catch (error) {
+        console.error('Error calculating expense pattern coverage:', error);
+        throw error;
+    }
+}
+
+// ============================================================================
 // VALIDACIÓN
 // ============================================================================
+
+/**
+ * Valida las income sources para expense_patterns
+ */
+function validateIncomeSources(sources) {
+    if (!Array.isArray(sources)) {
+        throw new Error('income_sources debe ser un array');
+    }
+
+    for (const source of sources) {
+        if (!source.income_pattern_id) {
+            throw new Error('income_pattern_id es requerido');
+        }
+        if (!source.allocation_type) {
+            throw new Error('allocation_type es requerido');
+        }
+        if (source.allocation_value === undefined || source.allocation_value === null) {
+            throw new Error('allocation_value es requerido');
+        }
+
+        const validTypes = ['percent', 'fixed'];
+        if (!validTypes.includes(source.allocation_type)) {
+            throw new Error(`allocation_type inválido. Debe ser: ${validTypes.join(', ')}`);
+        }
+
+        const value = parseFloat(source.allocation_value);
+        if (value <= 0) {
+            throw new Error('allocation_value debe ser mayor a 0');
+        }
+
+        if (source.allocation_type === 'percent' && value > 1) {
+            throw new Error('allocation_value para percent debe estar entre 0 y 1 (ejemplo: 0.25 para 25%)');
+        }
+    }
+}
 
 /**
  * Valida los datos de un patrón

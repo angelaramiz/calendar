@@ -21,10 +21,10 @@ export async function openAssignIncomesToGoalModal(goalId, currentUserId) {
       return;
     }
 
-    const remaining = parseFloat(goal.target_amount) - parseFloat(goal.saved_amount || 0);
+    const remaining = parseFloat(goal.target_amount) - parseFloat(goal.current_amount || 0);
 
     await Swal.fire({
-      title: `💰 Asignar Ingresos a: ${goal.title}`,
+      title: `💰 Asignar Ingresos a: ${goal.name || goal.title}`,
       html: `
         <div class="assign-incomes-modal">
           <div class="goal-summary">
@@ -34,7 +34,7 @@ export async function openAssignIncomesToGoalModal(goalId, currentUserId) {
             </div>
             <div class="summary-row">
               <span>Ahorrado:</span>
-              <strong>${Planning.formatCurrency(goal.saved_amount || 0)}</strong>
+              <strong>${Planning.formatCurrency(goal.current_amount || 0)}</strong>
             </div>
             <div class="summary-row">
               <span>Falta:</span>

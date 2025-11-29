@@ -1,5 +1,6 @@
 /**
- * Envelope Form Component - Formulario para crear/editar apartados de ahorro
+ * Envelope Form Component - Formulario para crear/editar apartados (V2)
+ * Campos V2: name, description, category, budget_amount, current_amount, period_type, active
  */
 
 class EnvelopeForm extends HTMLElement {
@@ -23,18 +24,17 @@ class EnvelopeForm extends HTMLElement {
     const isEdit = !!this.envelopeData;
     const envelope = this.envelopeData || {};
 
-    const colors = [
-      { value: '#6366f1', name: 'Azul' },
-      { value: '#8b5cf6', name: 'Morado' },
-      { value: '#ec4899', name: 'Rosa' },
-      { value: '#f43f5e', name: 'Rojo' },
-      { value: '#f97316', name: 'Naranja' },
-      { value: '#eab308', name: 'Amarillo' },
-      { value: '#22c55e', name: 'Verde' },
-      { value: '#14b8a6', name: 'Turquesa' }
+    const periodTypes = [
+      { value: 'weekly', name: 'Semanal' },
+      { value: 'biweekly', name: 'Quincenal' },
+      { value: 'monthly', name: 'Mensual' },
+      { value: 'yearly', name: 'Anual' }
     ];
 
-    const icons = ['💰', '🏠', '🚗', '✈️', '🎓', '💡', '🎁', '🏥', '🛒', '💳', '📱', '🎮'];
+    const categories = [
+      'Hogar', 'Transporte', 'Alimentación', 'Entretenimiento', 
+      'Salud', 'Educación', 'Viajes', 'Ahorro', 'Emergencias', 'Otros'
+    ];
 
     this.innerHTML = `
       <div class="envelope-form">
@@ -52,47 +52,56 @@ class EnvelopeForm extends HTMLElement {
         </div>
 
         <div class="form-group">
-          <label for="envelope-target">Monto Objetivo</label>
-          <input 
-            type="number" 
-            id="envelope-target" 
-            value="${envelope.target_amount || ''}" 
-            placeholder="0.00" 
-            step="0.01"
-            min="0"
-          />
-          <small>Opcional - Define cuánto quieres ahorrar en este apartado</small>
+          <label for="envelope-description">Descripción</label>
+          <textarea 
+            id="envelope-description" 
+            placeholder="Descripción opcional del apartado"
+            rows="2"
+          >${envelope.description || ''}</textarea>
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <label for="envelope-color">Color</label>
-            <select id="envelope-color">
-              ${colors.map(c => `
-                <option value="${c.value}" ${envelope.color === c.value ? 'selected' : ''}>
-                  ${c.name}
-                </option>
-              `).join('')}
-            </select>
+            <label for="envelope-budget">Monto Presupuestado *</label>
+            <input 
+              type="number" 
+              id="envelope-budget" 
+              value="${envelope.budget_amount || ''}" 
+              placeholder="0.00" 
+              step="0.01"
+              min="0.01"
+              required
+            />
           </div>
 
           <div class="form-group">
-            <label for="envelope-icon">Ícono</label>
-            <select id="envelope-icon">
-              ${icons.map(icon => `
-                <option value="${icon}" ${(envelope.emoji || envelope.icon) === icon ? 'selected' : ''}>
-                  ${icon}
+            <label for="envelope-period">Período</label>
+            <select id="envelope-period">
+              ${periodTypes.map(p => `
+                <option value="${p.value}" ${envelope.period_type === p.value ? 'selected' : ''}>
+                  ${p.name}
                 </option>
               `).join('')}
             </select>
           </div>
         </div>
 
+        <div class="form-group">
+          <label for="envelope-category">Categoría</label>
+          <select id="envelope-category">
+            <option value="">Sin categoría</option>
+            ${categories.map(c => `
+              <option value="${c}" ${envelope.category === c ? 'selected' : ''}>
+                ${c}
+              </option>
+            `).join('')}
+          </select>
+        </div>
+
         <div class="envelope-preview">
-          <div class="envelope-card" style="border-color: ${envelope.color || '#6366f1'}">
-            <div class="envelope-icon">${envelope.emoji || envelope.icon || '💰'}</div>
+          <div class="envelope-card">
             <div class="envelope-name">${envelope.name || 'Nombre del apartado'}</div>
-            <div class="envelope-balance">$${envelope.current_balance?.toFixed(2) || '0.00'}</div>
+            <div class="envelope-balance">$${(envelope.current_amount || 0).toFixed(2)}</div>
           </div>
         </div>
 
@@ -100,14 +109,12 @@ class EnvelopeForm extends HTMLElement {
           <div class="envelope-progress">
             <div class="progress-info">
               <span>Balance Actual</span>
-              <span class="progress-amount">$${envelope.current_balance?.toFixed(2) || '0.00'}${envelope.target_amount ? ` / $${envelope.target_amount.toFixed(2)}` : ''}</span>
+              <span class="progress-amount">$${(envelope.current_amount || 0).toFixed(2)} / $${(envelope.budget_amount || 0).toFixed(2)}</span>
             </div>
-            ${envelope.target_amount ? `
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: ${this.calculateProgress(envelope)}%; background: ${envelope.color || '#6366f1'}"></div>
-              </div>
-              <div class="progress-percentage">${this.calculateProgress(envelope)}%</div>
-            ` : ''}
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${this.calculateProgress(envelope)}%"></div>
+            </div>
+            <div class="progress-percentage">${this.calculateProgress(envelope)}%</div>
           </div>
         ` : ''}
 
@@ -121,28 +128,16 @@ class EnvelopeForm extends HTMLElement {
     `;
 
     this.setupPreviewUpdates();
-    // Attach event listeners after rendering
     this.attachEventListeners();
   }
 
   setupPreviewUpdates() {
     const nameInput = this.querySelector('#envelope-name');
-    const colorInput = this.querySelector('#envelope-color');
-    const iconInput = this.querySelector('#envelope-icon');
     const preview = this.querySelector('.envelope-card');
-    const previewIcon = preview?.querySelector('.envelope-icon');
     const previewName = preview?.querySelector('.envelope-name');
 
     nameInput?.addEventListener('input', (e) => {
       if (previewName) previewName.textContent = e.target.value || 'Nombre del apartado';
-    });
-
-    colorInput?.addEventListener('change', (e) => {
-      if (preview) preview.style.borderColor = e.target.value;
-    });
-
-    iconInput?.addEventListener('change', (e) => {
-      if (previewIcon) previewIcon.textContent = e.target.value;
     });
   }
 
@@ -172,6 +167,7 @@ class EnvelopeForm extends HTMLElement {
 
   validateForm() {
     const name = this.querySelector('#envelope-name').value.trim();
+    const budget = parseFloat(this.querySelector('#envelope-budget').value);
 
     if (!name) {
       Swal.fire({
@@ -182,35 +178,44 @@ class EnvelopeForm extends HTMLElement {
       return false;
     }
 
+    if (!budget || budget <= 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Campo Requerido',
+        text: 'Por favor ingresa un monto presupuestado mayor a 0'
+      });
+      return false;
+    }
+
     return true;
   }
 
   getFormData() {
     const isEdit = !!this.envelopeData;
-    const targetAmount = parseFloat(this.querySelector('#envelope-target').value);
+    const budgetAmount = parseFloat(this.querySelector('#envelope-budget').value);
     
     const formData = {
       name: this.querySelector('#envelope-name').value.trim(),
-      type: 'savings', // Tipo por defecto, puede ser savings, sinking_fund o budget
-      target_amount: targetAmount > 0 ? targetAmount : null,
-      color: this.querySelector('#envelope-color').value,
-      icon: this.querySelector('#envelope-icon').value,
-      is_active: true
+      description: this.querySelector('#envelope-description').value.trim() || null,
+      category: this.querySelector('#envelope-category').value || null,
+      budget_amount: budgetAmount,
+      period_type: this.querySelector('#envelope-period').value || 'monthly',
+      active: true
     };
 
     if (isEdit) {
       formData.id = this.envelopeData.id;
-      formData.current_balance = this.envelopeData.current_balance || 0;
+      formData.current_amount = this.envelopeData.current_amount || 0;
     } else {
-      formData.current_balance = 0;
+      formData.current_amount = 0;
     }
 
     return formData;
   }
 
   calculateProgress(envelope) {
-    if (!envelope || !envelope.target_amount || envelope.target_amount === 0) return 0;
-    return Math.min(Math.round((envelope.current_balance / envelope.target_amount) * 100), 100);
+    if (!envelope || !envelope.budget_amount || envelope.budget_amount === 0) return 0;
+    return Math.min(Math.round((envelope.current_amount / envelope.budget_amount) * 100), 100);
   }
 }
 

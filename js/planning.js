@@ -64,7 +64,8 @@ export async function getEnvelopes(userId) {
 }
 
 /**
- * Crear nuevo envelope
+ * Crear nuevo envelope (V2)
+ * Campos V2: name, description, category, budget_amount, current_amount, period_type, active
  */
 export async function createEnvelope(userId, envelopeData) {
   try {
@@ -76,8 +77,8 @@ export async function createEnvelope(userId, envelopeData) {
       throw new Error('El nombre del apartado es requerido');
     }
 
-    if (envelopeData.target_amount && envelopeData.target_amount < 0) {
-      throw new Error('El monto objetivo no puede ser negativo');
+    if (!envelopeData.budget_amount || envelopeData.budget_amount <= 0) {
+      throw new Error('El monto presupuestado debe ser mayor a 0');
     }
 
     logInfo('ENVELOPES', 'createEnvelope', { userId, name: envelopeData.name });
@@ -85,12 +86,12 @@ export async function createEnvelope(userId, envelopeData) {
     const insertData = {
       user_id: userId,
       name: envelopeData.name.trim(),
-      type: envelopeData.type || 'savings',
-      target_amount: envelopeData.target_amount || null,
-      current_balance: 0,
-      color: envelopeData.color || '#6366f1',
-      emoji: envelopeData.icon || envelopeData.emoji || '💰',
-      is_active: true
+      description: envelopeData.description?.trim() || null,
+      category: envelopeData.category || null,
+      budget_amount: parseFloat(envelopeData.budget_amount),
+      current_amount: parseFloat(envelopeData.current_amount) || 0,
+      period_type: envelopeData.period_type || 'monthly',
+      active: true
     };
 
     const { data, error } = await supabase
@@ -113,7 +114,7 @@ export async function createEnvelope(userId, envelopeData) {
 }
 
 /**
- * Actualizar envelope
+ * Actualizar envelope (V2)
  */
 export async function updateEnvelope(envelopeId, updates) {
   try {
@@ -125,16 +126,21 @@ export async function updateEnvelope(envelopeId, updates) {
       throw new Error('El nombre no puede estar vacío');
     }
 
-    if (updates.target_amount !== undefined && updates.target_amount < 0) {
-      throw new Error('El monto objetivo no puede ser negativo');
+    if (updates.budget_amount !== undefined && updates.budget_amount <= 0) {
+      throw new Error('El monto presupuestado debe ser mayor a 0');
     }
 
     logInfo('ENVELOPES', 'updateEnvelope', { envelopeId, updates });
 
-    // Limpiar campos
-    const cleanUpdates = { ...updates };
-    if (cleanUpdates.name) cleanUpdates.name = cleanUpdates.name.trim();
-    if (cleanUpdates.description) cleanUpdates.description = cleanUpdates.description.trim();
+    // Limpiar campos - mapear solo campos V2 válidos
+    const cleanUpdates = {};
+    if (updates.name !== undefined) cleanUpdates.name = updates.name.trim();
+    if (updates.description !== undefined) cleanUpdates.description = updates.description?.trim() || null;
+    if (updates.category !== undefined) cleanUpdates.category = updates.category;
+    if (updates.budget_amount !== undefined) cleanUpdates.budget_amount = parseFloat(updates.budget_amount);
+    if (updates.current_amount !== undefined) cleanUpdates.current_amount = parseFloat(updates.current_amount);
+    if (updates.period_type !== undefined) cleanUpdates.period_type = updates.period_type;
+    if (updates.active !== undefined) cleanUpdates.active = updates.active;
 
     const { data, error } = await supabase
       .from('envelopes')
@@ -169,7 +175,7 @@ export async function deleteEnvelope(envelopeId) {
 
     const { error } = await supabase
       .from('envelopes')
-      .update({ is_active: false })
+      .update({ active: false })
       .eq('id', envelopeId);
 
     if (error) {
@@ -185,7 +191,8 @@ export async function deleteEnvelope(envelopeId) {
 }
 
 /**
- * Agregar transacción a envelope
+ * Agregar transacción a envelope (V2)
+ * En V2 no hay tabla envelope_transactions, se actualiza current_amount directamente
  */
 export async function addEnvelopeTransaction(userId, transactionData) {
   try {
@@ -207,60 +214,47 @@ export async function addEnvelopeTransaction(userId, transactionData) {
 
     logInfo('ENVELOPES', 'addEnvelopeTransaction', { userId, transactionData });
 
-    // Mapear tipo de transacción al formato de BD
-    const kindMap = {
-      'deposit': 'fund',
-      'withdrawal': 'withdraw'
-    };
-    
-    const kind = kindMap[transactionData.transaction_type] || transactionData.transaction_type;
+    // Obtener el envelope actual
+    const { data: envelope, error: fetchError } = await supabase
+      .from('envelopes')
+      .select('current_amount')
+      .eq('id', transactionData.envelope_id)
+      .single();
 
-    if (!['fund', 'withdraw', 'transfer_in', 'transfer_out', 'adjustment'].includes(kind)) {
-      throw new Error(`Tipo de transacción inválido: ${kind}`);
+    if (fetchError || !envelope) {
+      throw new Error('Apartado no encontrado');
     }
 
-    // Verificar que hay suficiente balance para retiros
-    if (kind === 'withdraw') {
-      const { data: envelope } = await supabase
-        .from('envelopes')
-        .select('current_balance')
-        .eq('id', transactionData.envelope_id)
-        .single();
+    const currentAmount = parseFloat(envelope.current_amount) || 0;
+    const amount = parseFloat(transactionData.amount);
+    let newAmount;
 
-      if (!envelope) {
-        throw new Error('Apartado no encontrado');
+    // Calcular nuevo monto según tipo de transacción
+    if (transactionData.transaction_type === 'deposit' || transactionData.transaction_type === 'fund') {
+      newAmount = currentAmount + amount;
+    } else if (transactionData.transaction_type === 'withdrawal' || transactionData.transaction_type === 'withdraw') {
+      if (currentAmount < amount) {
+        throw new Error(`Balance insuficiente. Disponible: ${currentAmount}`);
       }
-
-      if (envelope.current_balance < transactionData.amount) {
-        throw new Error(`Balance insuficiente. Disponible: ${envelope.current_balance}`);
-      }
+      newAmount = currentAmount - amount;
+    } else {
+      throw new Error(`Tipo de transacción inválido: ${transactionData.transaction_type}`);
     }
-    
-    const insertData = {
-      user_id: userId,
-      envelope_id: transactionData.envelope_id,
-      amount: transactionData.amount,
-      kind: kind,
-      date: transactionData.date || new Date().toISOString().split('T')[0],
-      notes: transactionData.description?.trim() || null,
-      related_event_id: transactionData.related_event_id || null
-    };
 
+    // Actualizar current_amount del envelope
     const { data, error } = await supabase
-      .from('envelope_transactions')
-      .insert(insertData)
+      .from('envelopes')
+      .update({ current_amount: newAmount })
+      .eq('id', transactionData.envelope_id)
       .select()
       .single();
 
     if (error) {
-      logError('ENVELOPES', 'addEnvelopeTransaction', error, insertData);
-      throw new Error(`Error al agregar transacción: ${error.message}`);
+      logError('ENVELOPES', 'addEnvelopeTransaction', error, transactionData);
+      throw new Error(`Error al actualizar apartado: ${error.message}`);
     }
 
-    // Actualizar balance del envelope
-    await updateEnvelopeBalance(transactionData.envelope_id);
-
-    logInfo('ENVELOPES', 'addEnvelopeTransaction', `Created transaction ${data.id}`);
+    logInfo('ENVELOPES', 'addEnvelopeTransaction', `Updated envelope ${transactionData.envelope_id} to ${newAmount}`);
     return data;
   } catch (error) {
     logError('ENVELOPES', 'addEnvelopeTransaction', error, { userId, transactionData });
@@ -269,74 +263,13 @@ export async function addEnvelopeTransaction(userId, transactionData) {
 }
 
 /**
- * Actualizar balance de envelope basado en transacciones
- */
-async function updateEnvelopeBalance(envelopeId) {
-  try {
-    logInfo('ENVELOPES', 'updateEnvelopeBalance', { envelopeId });
-
-    const { data: transactions, error: txError } = await supabase
-      .from('envelope_transactions')
-      .select('amount, kind')
-      .eq('envelope_id', envelopeId);
-
-    if (txError) {
-      logError('ENVELOPES', 'updateEnvelopeBalance', txError, { envelopeId });
-      throw txError;
-    }
-
-    const balance = transactions?.reduce((sum, t) => {
-      return t.kind === 'fund' || t.kind === 'transfer_in'
-        ? sum + parseFloat(t.amount)
-        : sum - parseFloat(t.amount);
-    }, 0) || 0;
-
-    const { error: updateError } = await supabase
-      .from('envelopes')
-      .update({ current_balance: balance })
-      .eq('id', envelopeId);
-
-    if (updateError) {
-      logError('ENVELOPES', 'updateEnvelopeBalance', updateError, { envelopeId });
-      throw updateError;
-    }
-
-    logInfo('ENVELOPES', 'updateEnvelopeBalance', { envelopeId, newBalance: balance });
-  } catch (error) {
-    logError('ENVELOPES', 'updateEnvelopeBalance', error, { envelopeId });
-    throw error;
-  }
-}
-
-/**
  * Obtener transacciones de un envelope
+ * V2: No hay tabla envelope_transactions, retorna array vacío
+ * Las transacciones se reflejan directamente en current_amount
  */
 export async function getEnvelopeTransactions(envelopeId) {
-  try {
-    if (!envelopeId) {
-      logWarning('ENVELOPES', 'getEnvelopeTransactions', 'envelopeId is required');
-      return [];
-    }
-
-    logInfo('ENVELOPES', 'getEnvelopeTransactions', { envelopeId });
-
-    const { data, error } = await supabase
-      .from('envelope_transactions')
-      .select('*')
-      .eq('envelope_id', envelopeId)
-      .order('date', { ascending: false });
-
-    if (error) {
-      logError('ENVELOPES', 'getEnvelopeTransactions', error, { envelopeId });
-      return [];
-    }
-
-    logInfo('ENVELOPES', 'getEnvelopeTransactions', `Found ${data?.length || 0} transactions`);
-    return data || [];
-  } catch (error) {
-    logError('ENVELOPES', 'getEnvelopeTransactions', error, { envelopeId });
-    return [];
-  }
+  logWarning('ENVELOPES', 'getEnvelopeTransactions', 'V2: No hay historial de transacciones, use current_amount directamente');
+  return [];
 }
 
 // ==================== GOALS (METAS) ====================
@@ -399,10 +332,10 @@ export async function createGoal(userId, goalData) {
 
     const insertData = {
       user_id: userId,
-      title: title,
+      name: title,
       description: goalData.description?.trim() || null,
       target_amount: parseFloat(goalData.target_amount),
-      saved_amount: 0,
+      current_amount: 0,
       target_date: goalData.target_date || goalData.due_date || null,
       priority: priority,
       status: 'active'
@@ -531,32 +464,34 @@ export async function addGoalFunding(userId, fundingData) {
 
     logInfo('GOALS', 'addGoalFunding', { userId, goalId: fundingData.goal_id, amount: fundingData.amount });
 
-    const insertData = {
-      user_id: userId,
-      goal_id: fundingData.goal_id,
-      amount: parseFloat(fundingData.amount),
-      date: fundingData.funding_date || new Date().toISOString().split('T')[0],
-      source: fundingData.source || 'manual',
-      notes: fundingData.notes?.trim() || null,
-      envelope_id: fundingData.envelope_id || null,
-      related_event_id: fundingData.related_event_id || null
-    };
+    // V2: No existe goal_funding, actualizar current_amount directamente
+    // Primero obtener el current_amount actual
+    const { data: plan, error: planError } = await supabase
+      .from('plans')
+      .select('current_amount')
+      .eq('id', fundingData.goal_id)
+      .single();
+    
+    if (planError) {
+      logError('GOALS', 'addGoalFunding', planError, { goalId: fundingData.goal_id });
+      throw new Error(`Error al obtener meta: ${planError.message}`);
+    }
+
+    const newAmount = parseFloat(plan.current_amount || 0) + parseFloat(fundingData.amount);
 
     const { data, error } = await supabase
-      .from('goal_funding')
-      .insert(insertData)
+      .from('plans')
+      .update({ current_amount: newAmount })
+      .eq('id', fundingData.goal_id)
       .select()
       .single();
 
     if (error) {
-      logError('GOALS', 'addGoalFunding', error, insertData);
+      logError('GOALS', 'addGoalFunding', error, { goalId: fundingData.goal_id, newAmount });
       throw new Error(`Error al agregar fondeo: ${error.message}`);
     }
 
-    // Actualizar saved_amount de la meta
-    await updateGoalProgress(fundingData.goal_id);
-
-    logInfo('GOALS', 'addGoalFunding', `Created funding ${data.id}`);
+    logInfo('GOALS', 'addGoalFunding', `Updated plan ${data.id} to ${newAmount}`);
     return data;
   } catch (error) {
     logError('GOALS', 'addGoalFunding', error, { userId, fundingData });
@@ -565,70 +500,22 @@ export async function addGoalFunding(userId, fundingData) {
 }
 
 /**
- * Actualizar progreso de meta basado en fondeos
+ * Actualizar progreso de meta 
+ * V2: current_amount ya se actualiza directamente, esta función es un placeholder
  */
 async function updateGoalProgress(goalId) {
-  try {
-    logInfo('GOALS', 'updateGoalProgress', { goalId });
-
-    const { data: fundings, error: fundError } = await supabase
-      .from('goal_funding')
-      .select('amount')
-      .eq('goal_id', goalId);
-
-    if (fundError) {
-      logError('GOALS', 'updateGoalProgress', fundError, { goalId });
-      throw fundError;
-    }
-
-    const savedAmount = fundings?.reduce((sum, f) => sum + parseFloat(f.amount), 0) || 0;
-
-    const { error: updateError } = await supabase
-      .from('plans')
-      .update({ saved_amount: savedAmount })
-      .eq('id', goalId);
-
-    if (updateError) {
-      logError('GOALS', 'updateGoalProgress', updateError, { goalId });
-      throw updateError;
-    }
-
-    logInfo('GOALS', 'updateGoalProgress', { goalId, savedAmount });
-  } catch (error) {
-    logError('GOALS', 'updateGoalProgress', error, { goalId });
-    throw error;
-  }
+  // En V2, el current_amount se actualiza directamente en addGoalFunding
+  // Esta función se mantiene por compatibilidad
+  logInfo('GOALS', 'updateGoalProgress', { goalId, note: 'V2: current_amount se actualiza directamente' });
 }
 
 /**
  * Obtener fondeos de una meta
+ * V2: No existe goal_funding, retornar array vacío
  */
 export async function getGoalFundings(goalId) {
-  try {
-    if (!goalId) {
-      logWarning('GOALS', 'getGoalFundings', 'goalId is required');
-      return [];
-    }
-
-    logInfo('GOALS', 'getGoalFundings', { goalId });
-
-    const { data, error } = await supabase
-      .from('goal_funding')
-      .select('*')
-      .eq('goal_id', goalId)
-      .order('date', { ascending: false });
-
-    if (error) {
-      logError('GOALS', 'getGoalFundings', error, { goalId });
-      return [];
-    }
-
-    logInfo('GOALS', 'getGoalFundings', `Found ${data?.length || 0} fundings`);
-    return data || [];
-  } catch (error) {
-    logError('GOALS', 'getGoalFundings', error, { goalId });
-    return [];
-  }
+  console.warn('getGoalFundings está deshabilitado - no existe goal_funding en V2');
+  return [];
 }
 
 // ==================== PLANNED EXPENSES (GASTOS PLANIFICADOS) ====================
@@ -882,21 +769,21 @@ export async function getPlanningDashboard(userId) {
     ]);
 
     const activeGoals = goals.filter(g => g.status === 'active');
-    const activeEnvelopes = envelopes.filter(e => e.is_active);
+    const activeEnvelopes = envelopes.filter(e => e.active);
     const pendingExpenses = plannedExpenses.filter(e => e.status === 'planned' || e.status === 'scheduled');
 
     const dashboard = {
       goals: {
         total: activeGoals.length,
-        completed: activeGoals.filter(g => (g.saved_amount || 0) >= g.target_amount).length,
+        completed: activeGoals.filter(g => (g.current_amount || 0) >= g.target_amount).length,
         totalTarget: activeGoals.reduce((sum, g) => sum + (parseFloat(g.target_amount) || 0), 0),
-        totalCurrent: activeGoals.reduce((sum, g) => sum + (parseFloat(g.saved_amount) || 0), 0),
+        totalCurrent: activeGoals.reduce((sum, g) => sum + (parseFloat(g.current_amount) || 0), 0),
         items: activeGoals
       },
       envelopes: {
         total: activeEnvelopes.length,
-        totalBalance: activeEnvelopes.reduce((sum, e) => sum + (parseFloat(e.current_balance) || 0), 0),
-        totalTarget: activeEnvelopes.reduce((sum, e) => sum + (parseFloat(e.target_amount) || 0), 0),
+        totalBalance: activeEnvelopes.reduce((sum, e) => sum + (parseFloat(e.current_amount) || 0), 0),
+        totalBudget: activeEnvelopes.reduce((sum, e) => sum + (parseFloat(e.budget_amount) || 0), 0),
         items: activeEnvelopes
       },
       plannedExpenses: {
@@ -931,7 +818,7 @@ export async function getPlanningDashboard(userId) {
       envelopes: {
         total: 0,
         totalBalance: 0,
-        totalTarget: 0,
+        totalBudget: 0,
         items: []
       },
       plannedExpenses: {
@@ -946,28 +833,12 @@ export async function getPlanningDashboard(userId) {
 
 /**
  * Vincular evento real con gasto planificado
+ * @deprecated V2: No disponible, movements no tiene planned_expense_id
  */
 export async function linkEventToPlannedExpense(eventId, plannedExpenseId) {
-  // Actualizar evento para incluir referencia
-  const { error: eventError } = await supabase
-    .from('events')
-    .update({ planned_expense_id: plannedExpenseId })
-    .eq('id', eventId);
-
-  if (eventError) {
-    console.error('Error vinculando evento:', eventError);
-    throw eventError;
-  }
-
-  // Obtener monto del evento
-  const { data: event } = await supabase
-    .from('events')
-    .select('amount')
-    .eq('id', eventId)
-    .single();
-
-  // Marcar gasto planificado como completado con monto real
-  await completePlannedExpense(plannedExpenseId, event?.amount);
+  logWarning('EXPENSES', 'linkEventToPlannedExpense', 'DEPRECATED: V2 no soporta esta funcionalidad');
+  // En V2, solo completamos el gasto planificado sin vincular
+  await completePlannedExpense(plannedExpenseId);
 }
 
 /**
@@ -975,17 +846,18 @@ export async function linkEventToPlannedExpense(eventId, plannedExpenseId) {
  */
 export function calculateGoalProgress(goal) {
   if (!goal || !goal.target_amount) return 0;
-  const savedAmount = goal.saved_amount || 0;
-  const progress = (savedAmount / goal.target_amount) * 100;
+  const currentAmount = goal.current_amount || 0;
+  const progress = (currentAmount / goal.target_amount) * 100;
   return Math.min(Math.round(progress), 100);
 }
 
 /**
- * Calcular progreso de envelope (porcentaje)
+ * Calcular progreso de envelope (porcentaje) - V2
+ * Compara current_amount vs budget_amount
  */
 export function calculateEnvelopeProgress(envelope) {
-  if (!envelope || !envelope.target_amount) return 0;
-  const progress = (envelope.current_balance / envelope.target_amount) * 100;
+  if (!envelope || !envelope.budget_amount) return 0;
+  const progress = (envelope.current_amount / envelope.budget_amount) * 100;
   return Math.min(Math.round(progress), 100);
 }
 
@@ -1011,311 +883,69 @@ export function formatCurrency(amount) {
 }
 
 // ==================== VINCULACIÓN CON INGRESOS ====================
+// NOTA V2: Estas funciones están deprecadas. En V2, movements no tiene campos
+// goal_id, envelope_id, planned_expense_id. Use los sistemas de fondeo directo
+// como addGoalFunding() o addEnvelopeTransaction() en su lugar.
 
 /**
- * Obtener ingresos disponibles (eventos tipo income sin asignar)
+ * Obtener ingresos disponibles
+ * @deprecated V2: Use movements directamente con getMovements()
  */
 export async function getAvailableIncomes(userId, options = {}) {
-  try {
-    if (!userId) {
-      logWarning('INCOMES', 'getAvailableIncomes', 'userId is required');
-      return [];
-    }
-
-    logInfo('INCOMES', 'getAvailableIncomes', { userId });
-
-    const { startDate, endDate, includeAssigned = false } = options;
-
-    let query = supabase
-      .from('events')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('type', 'ingreso')
-      .order('date', { ascending: false });
-
-    if (startDate) {
-      query = query.gte('date', startDate);
-    }
-
-    if (endDate) {
-      query = query.lte('date', endDate);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      logError('INCOMES', 'getAvailableIncomes', error, { userId });
-      return [];
-    }
-
-    // Filtrar ingresos sin asignar si se requiere
-    let incomes = data || [];
-    if (!includeAssigned) {
-      incomes = incomes.filter(income => !income.goal_id && !income.planned_expense_id && !income.envelope_id);
-    }
-
-    logInfo('INCOMES', 'getAvailableIncomes', `Found ${incomes.length} available incomes`);
-    return incomes;
-  } catch (error) {
-    logError('INCOMES', 'getAvailableIncomes', error, { userId });
-    return [];
-  }
+  logWarning('INCOMES', 'getAvailableIncomes', 'DEPRECATED: V2 no soporta vinculación de ingresos. Use movements.');
+  return [];
 }
 
 /**
  * Asignar ingreso a meta
+ * @deprecated V2: Use addGoalFunding() directamente
  */
 export async function assignIncomeToGoal(incomeEventId, goalId, amount = null) {
-  try {
-    if (!incomeEventId || !goalId) {
-      throw new Error('incomeEventId y goalId son requeridos');
-    }
-
-    logInfo('INCOMES', 'assignIncomeToGoal', { incomeEventId, goalId, amount });
-
-    // Obtener el evento de ingreso
-    const { data: income, error: incomeError } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', incomeEventId)
-      .single();
-
-    if (incomeError) {
-      throw new Error(`Error al obtener ingreso: ${incomeError.message}`);
-    }
-
-    if (income.type !== 'ingreso') {
-      throw new Error('El evento debe ser de tipo ingreso');
-    }
-
-    // Usar el monto del ingreso o el monto especificado
-    const amountToAssign = amount || income.amount;
-
-    // Actualizar el evento para vincularlo con la meta
-    const { error: updateError } = await supabase
-      .from('events')
-      .update({ goal_id: goalId })
-      .eq('id', incomeEventId);
-
-    if (updateError) {
-      throw new Error(`Error al vincular ingreso: ${updateError.message}`);
-    }
-
-    // Agregar fondeo a la meta
-    await addGoalFunding(goalId, {
-      date: income.date,
-      amount: amountToAssign,
-      source: 'income',
-      related_event_id: incomeEventId,
-      notes: `Fondeo desde ingreso: ${income.title}`
-    });
-
-    logInfo('INCOMES', 'assignIncomeToGoal', `Assigned income ${incomeEventId} to goal ${goalId}`);
-    return true;
-  } catch (error) {
-    logError('INCOMES', 'assignIncomeToGoal', error, { incomeEventId, goalId });
-    throw error;
-  }
+  logWarning('INCOMES', 'assignIncomeToGoal', 'DEPRECATED: V2 no soporta vinculación. Use addGoalFunding().');
+  throw new Error('V2: Use addGoalFunding() para fondear metas directamente');
 }
 
 /**
  * Asignar ingreso a gasto planificado
+ * @deprecated V2: No disponible
  */
 export async function assignIncomeToPlannedExpense(incomeEventId, expenseId, amount = null) {
-  try {
-    if (!incomeEventId || !expenseId) {
-      throw new Error('incomeEventId y expenseId son requeridos');
-    }
-
-    logInfo('INCOMES', 'assignIncomeToPlannedExpense', { incomeEventId, expenseId, amount });
-
-    // Obtener el evento de ingreso
-    const { data: income, error: incomeError } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', incomeEventId)
-      .single();
-
-    if (incomeError) {
-      throw new Error(`Error al obtener ingreso: ${incomeError.message}`);
-    }
-
-    if (income.type !== 'ingreso') {
-      throw new Error('El evento debe ser de tipo ingreso');
-    }
-
-    // Actualizar el evento para vincularlo con el gasto planificado
-    const { error: updateError } = await supabase
-      .from('events')
-      .update({ planned_expense_id: expenseId })
-      .eq('id', incomeEventId);
-
-    if (updateError) {
-      throw new Error(`Error al vincular ingreso: ${updateError.message}`);
-    }
-
-    logInfo('INCOMES', 'assignIncomeToPlannedExpense', `Assigned income ${incomeEventId} to expense ${expenseId}`);
-    return true;
-  } catch (error) {
-    logError('INCOMES', 'assignIncomeToPlannedExpense', error, { incomeEventId, expenseId });
-    throw error;
-  }
+  logWarning('INCOMES', 'assignIncomeToPlannedExpense', 'DEPRECATED: V2 no soporta esta funcionalidad.');
+  throw new Error('V2: Funcionalidad no disponible');
 }
 
 /**
  * Asignar ingreso a apartado (envelope)
+ * @deprecated V2: Use addEnvelopeTransaction() directamente
  */
 export async function assignIncomeToEnvelope(incomeEventId, envelopeId, amount = null) {
-  try {
-    if (!incomeEventId || !envelopeId) {
-      throw new Error('incomeEventId y envelopeId son requeridos');
-    }
-
-    logInfo('INCOMES', 'assignIncomeToEnvelope', { incomeEventId, envelopeId, amount });
-
-    // Obtener el evento de ingreso
-    const { data: income, error: incomeError } = await supabase
-      .from('events')
-      .select('*')
-      .eq('id', incomeEventId)
-      .single();
-
-    if (incomeError) {
-      throw new Error(`Error al obtener ingreso: ${incomeError.message}`);
-    }
-
-    if (income.type !== 'ingreso') {
-      throw new Error('El evento debe ser de tipo ingreso');
-    }
-
-    // Usar el monto del ingreso o el monto especificado
-    const amountToAssign = amount || income.amount;
-
-    // Actualizar el evento para vincularlo con el apartado
-    const { error: updateError } = await supabase
-      .from('events')
-      .update({ envelope_id: envelopeId })
-      .eq('id', incomeEventId);
-
-    if (updateError) {
-      throw new Error(`Error al vincular ingreso: ${updateError.message}`);
-    }
-
-    // Agregar transacción al apartado
-    await addEnvelopeTransaction(envelopeId, {
-      kind: 'fund',
-      amount: amountToAssign,
-      date: income.date,
-      notes: `Fondeo desde ingreso: ${income.title}`,
-      related_event_id: incomeEventId
-    });
-
-    logInfo('INCOMES', 'assignIncomeToEnvelope', `Assigned income ${incomeEventId} to envelope ${envelopeId}`);
-    return true;
-  } catch (error) {
-    logError('INCOMES', 'assignIncomeToEnvelope', error, { incomeEventId, envelopeId });
-    throw error;
-  }
+  logWarning('INCOMES', 'assignIncomeToEnvelope', 'DEPRECATED: V2 no soporta vinculación. Use addEnvelopeTransaction().');
+  throw new Error('V2: Use addEnvelopeTransaction() para fondear apartados directamente');
 }
 
 /**
  * Obtener ingresos asignados a una meta
+ * @deprecated V2: No disponible
  */
 export async function getGoalAssignedIncomes(goalId) {
-  try {
-    if (!goalId) {
-      throw new Error('goalId es requerido');
-    }
-
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('goal_id', goalId)
-      .eq('type', 'ingreso')
-      .order('date', { ascending: false });
-
-    if (error) {
-      // Error específico: columna no existe
-      if (error.code === '42703') {
-        logError('INCOMES', 'getGoalAssignedIncomes', 
-          new Error('⚠️ MIGRACIÓN REQUERIDA: Ejecuta docs/migrations/05-income-linking.sql en Supabase'), 
-          { goalId, originalError: error });
-        throw new Error('Funcionalidad no disponible. Contacta al administrador para ejecutar la migración de base de datos.');
-      }
-      logError('INCOMES', 'getGoalAssignedIncomes', error, { goalId });
-      return [];
-    }
-
-    return data || [];
-  } catch (error) {
-    logError('INCOMES', 'getGoalAssignedIncomes', error, { goalId });
-    throw error; // Re-lanzar para que el modal lo maneje
-  }
+  logWarning('INCOMES', 'getGoalAssignedIncomes', 'DEPRECATED: V2 no soporta vinculación de ingresos.');
+  return [];
 }
 
 /**
  * Desvincular ingreso
+ * @deprecated V2: No disponible
  */
 export async function unassignIncome(incomeEventId) {
-  try {
-    if (!incomeEventId) {
-      throw new Error('incomeEventId es requerido');
-    }
-
-    logInfo('INCOMES', 'unassignIncome', { incomeEventId });
-
-    const { error } = await supabase
-      .from('events')
-      .update({ 
-        goal_id: null, 
-        planned_expense_id: null, 
-        envelope_id: null 
-      })
-      .eq('id', incomeEventId);
-
-    if (error) {
-      throw new Error(`Error al desvincular ingreso: ${error.message}`);
-    }
-
-    logInfo('INCOMES', 'unassignIncome', `Unassigned income ${incomeEventId}`);
-    return true;
-  } catch (error) {
-    logError('INCOMES', 'unassignIncome', error, { incomeEventId });
-    throw error;
-  }
+  logWarning('INCOMES', 'unassignIncome', 'DEPRECATED: V2 no soporta vinculación de ingresos.');
+  return true;
 }
 
 /**
  * Obtener ingresos asignados a un gasto planificado
+ * @deprecated V2: No disponible
  */
 export async function getExpenseAssignedIncomes(expenseId) {
-  try {
-    if (!expenseId) {
-      throw new Error('expenseId es requerido');
-    }
-
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('planned_expense_id', expenseId)
-      .eq('type', 'ingreso')
-      .order('date', { ascending: false });
-
-    if (error) {
-      // Error específico: columna no existe
-      if (error.code === '42703') {
-        logError('INCOMES', 'getExpenseAssignedIncomes', 
-          new Error('⚠️ MIGRACIÓN REQUERIDA: Ejecuta docs/migrations/05-income-linking.sql en Supabase'), 
-          { expenseId, originalError: error });
-        throw new Error('Funcionalidad no disponible. Contacta al administrador para ejecutar la migración de base de datos.');
-      }
-      logError('INCOMES', 'getExpenseAssignedIncomes', error, { expenseId });
-      return [];
-    }
-
-    return data || [];
-  } catch (error) {
-    logError('INCOMES', 'getExpenseAssignedIncomes', error, { expenseId });
-    throw error; // Re-lanzar para que el modal lo maneje
-  }
+  logWarning('INCOMES', 'getExpenseAssignedIncomes', 'DEPRECATED: V2 no soporta vinculación de ingresos.');
+  return [];
 }

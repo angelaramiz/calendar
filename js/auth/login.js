@@ -4,7 +4,6 @@
  */
 
 import { supabase } from '../supabase-client.js';
-import { syncDownAllEventsForUser } from '../events.js';
 
 // DOM Elements
 const loginForm = document.getElementById('login-form');
@@ -231,17 +230,8 @@ async function handleSuccessfulLogin(user) {
     // Save session
     localStorage.setItem('calendar_session', JSON.stringify(session));
 
-    // One-time migration: mover datos globales de localStorage a espacio del usuario
+    // Migrar configuraciones de notificaciones si existen globales (V2)
     try {
-        const userEventsKey = `events:${user.id}`;
-        const globalEvents = localStorage.getItem('events');
-        const userEvents = localStorage.getItem(userEventsKey);
-        if (globalEvents && (!userEvents || userEvents === '{}')) {
-            localStorage.setItem(userEventsKey, globalEvents);
-            localStorage.removeItem('events');
-        }
-
-        // Migrar alertas y configuraciones si existen globales
         const notifKey = `notificationSettings:${user.id}`;
         const globalNotif = localStorage.getItem('notificationSettings');
         if (globalNotif && !localStorage.getItem(notifKey)) {
@@ -262,8 +252,12 @@ async function handleSuccessfulLogin(user) {
             localStorage.setItem(readAlertsKey, globalReadAlerts);
             localStorage.removeItem('readAlerts');
         }
+        
+        // Limpiar datos legacy V1 (events en localStorage) 
+        localStorage.removeItem('events');
+        localStorage.removeItem(`events:${user.id}`);
     } catch (e) {
-        console.warn('Aviso: no se pudo migrar datos locales globales al espacio del usuario:', e);
+        console.warn('Aviso: no se pudo migrar configuraciones:', e);
     }
 
     // Handle remember me
@@ -282,10 +276,7 @@ async function handleSuccessfulLogin(user) {
         showConfirmButton: false
     });
 
-    // Sincronización inicial desde Supabase -> local (reemplaza eventos del usuario)
-    try { await syncDownAllEventsForUser(); } catch (e) { /* ignore */ }
-
-    // Redirect to main
+    // Redirect to main (V2 usa Supabase directamente, no necesita sincronización legacy)
     window.location.href = 'routes/main.html';
 }
 

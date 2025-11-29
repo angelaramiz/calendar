@@ -3,6 +3,7 @@
  * Modales para el sistema V2 (confirmar ocurrencias, ver detalles)
  */
 
+import { supabase } from './supabase-client.js';
 import { confirmPatternOccurrence } from './movements.js';
 import { getMovementById, updateMovement, deleteMovement } from './movements.js';
 import { getLoanById } from './loans-v2.js';
@@ -620,34 +621,30 @@ async function showEditMovementDialog(movement, onUpdated) {
 // ============================================================================
 
 /**
- * Muestra detalles completos de un préstamo
+ * Muestra detalles completos de un préstamo (V2)
  */
 export async function showLoanDetails(loanId, onUpdated) {
     try {
-        const { getLoanById, getLoanProgress } = await import('./loans-v2.js');
+        const { getLoanById, getLoanProgress, getLoanPayments } = await import('./loans-v2.js');
         const loan = await getLoanById(loanId);
         if (!loan) {
             throw new Error('Préstamo no encontrado');
         }
 
         const progress = await getLoanProgress(loanId);
-        const kindLabel = loan.kind === 'favor' ? '➡️ Presté dinero' : '⬅️ Me prestaron';
-        const paymentPlanLabel = {
-            single: '📅 Pago único',
-            recurring: '🔄 Pagos recurrentes',
-            custom: '📋 Fechas personalizadas'
-        }[loan.payment_plan];
+        const payments = await getLoanPayments(loanId);
+        const typeLabel = loan.type === 'given' ? '➡️ Presté dinero' : '⬅️ Me prestaron';
 
         const result = await Swal.fire({
-            title: `${kindLabel}: ${loan.person_name}`,
+            title: `${typeLabel}: ${loan.counterparty}`,
             html: `
                 <div style="text-align: left; padding: 10px;">
                     ${loan.description ? `<p style="color: #666; margin-bottom: 15px;">${loan.description}</p>` : ''}
                     
                     <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                         <div style="margin-bottom: 10px;">
-                            <strong>Monto total:</strong> 
-                            <span style="color: #f59e0b; font-size: 1.3em;">$${loan.amount}</span>
+                            <strong>Monto original:</strong> 
+                            <span style="color: #f59e0b; font-size: 1.3em;">$${loan.original_amount}</span>
                         </div>
                         
                         <div style="margin-bottom: 10px;">
@@ -669,46 +666,34 @@ export async function showLoanDetails(loanId, onUpdated) {
                             </p>
                         </div>
                         
-                        <div style="margin-bottom: 10px;">
-                            <strong>Plan de pago:</strong> ${paymentPlanLabel}
-                        </div>
-                        
-                        ${loan.payment_plan === 'single' ? `
+                        ${loan.due_date ? `
                             <div style="margin-bottom: 10px;">
-                                <strong>Días para recuperar:</strong> ${loan.recovery_days} días
-                            </div>
-                        ` : ''}
-                        
-                        ${loan.payment_plan === 'recurring' ? `
-                            <div style="margin-bottom: 10px;">
-                                <strong>Frecuencia:</strong> ${loan.payment_frequency} cada ${loan.payment_interval}
-                            </div>
-                            <div style="margin-bottom: 10px;">
-                                <strong>Número de pagos:</strong> ${loan.payment_count}
+                                <strong>Fecha vencimiento:</strong> ${new Date(loan.due_date).toLocaleDateString('es-ES')}
                             </div>
                         ` : ''}
                         
                         <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #d97706;">
-                            <strong>Pagos registrados:</strong> ${loan.payment_movements?.length || 0}
+                            <strong>Pagos registrados:</strong> ${payments.length || 0}
                         </div>
                     </div>
 
-                    ${loan.origin_movement ? `
+                    ${loan.loan_date ? `
                         <div style="background: #f3f4f6; padding: 10px; border-radius: 8px; margin-bottom: 10px;">
                             <strong>Fecha del préstamo:</strong><br/>
-                            ${new Date(loan.origin_movement.date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                            ${new Date(loan.loan_date).toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                         </div>
                     ` : ''}
                     
-                    ${loan.payment_movements && loan.payment_movements.length > 0 ? `
+                    ${payments && payments.length > 0 ? `
                         <div style="background: #f3f4f6; padding: 10px; border-radius: 8px;">
                             <strong>Historial de pagos:</strong>
                             <ul style="margin: 10px 0; padding-left: 20px;">
-                                ${loan.payment_movements.map(mov => `
+                                ${payments.slice(0, 5).map(mov => `
                                     <li style="margin-bottom: 5px;">
-                                        ${new Date(mov.date).toLocaleDateString('es-ES')} - $${mov.confirmed_amount}
+                                        ${new Date(mov.date).toLocaleDateString('es-ES')} - $${mov.confirmed_amount || mov.expected_amount}
                                     </li>
                                 `).join('')}
+                                ${payments.length > 5 ? `<li>...y ${payments.length - 5} más</li>` : ''}
                             </ul>
                         </div>
                     ` : ''}
@@ -772,15 +757,15 @@ export async function showLoanDetails(loanId, onUpdated) {
 }
 
 /**
- * Modal para registrar un pago de préstamo
+ * Modal para registrar un pago de préstamo (V2)
  */
 async function showRegisterLoanPaymentDialog(loan, onUpdated) {
     const { registerLoanPayment, getLoanProgress } = await import('./loans-v2.js');
     const progress = await getLoanProgress(loan.id);
     
-    // Para préstamos a favor, cargar patrones de ahorro
+    // Para préstamos dados (given), cargar patrones de ahorro
     let savingsPatterns = [];
-    if (loan.kind === 'favor') {
+    if (loan.type === 'given') {
         try {
             savingsPatterns = await getSavingsPatterns(true);
         } catch (e) {
@@ -788,8 +773,8 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
         }
     }
     
-    // HTML de destino para préstamos a favor
-    const destinationHTML = loan.kind === 'favor' && savingsPatterns.length > 0 ? `
+    // HTML de destino para préstamos dados
+    const destinationHTML = loan.type === 'given' && savingsPatterns.length > 0 ? `
         <div style="margin-top: 15px; padding: 12px; background: #f0fdf4; border-radius: 8px; border: 1px solid #86efac;">
             <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #166534;">
                 💰 ¿Dónde guardar este dinero?
@@ -817,12 +802,12 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
     ` : '';
     
     const { value: formValues } = await Swal.fire({
-        title: `💸 Registrar Pago - ${loan.person_name}`,
+        title: `💸 Registrar Pago - ${loan.counterparty}`,
         html: `
             <div style="text-align: left; padding: 10px;">
                 <div style="background: #f3f4f6; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
-                    <p><strong>Tipo:</strong> ${loan.kind === 'favor' ? 'A favor (te deben)' : 'En contra (debes pagar)'}</p>
-                    <p><strong>Total:</strong> $${loan.amount}</p>
+                    <p><strong>Tipo:</strong> ${loan.type === 'given' ? 'A favor (te deben)' : 'En contra (debes pagar)'}</p>
+                    <p><strong>Total:</strong> $${loan.original_amount}</p>
                     <p><strong>Restante:</strong> $${progress.remaining.toFixed(2)}</p>
                 </div>
 
@@ -871,7 +856,7 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
 
                 <div style="background: #dbeafe; padding: 10px; border-radius: 8px; font-size: 0.9em;">
                     <p style="margin: 0; color: #1e40af;">
-                        ${loan.kind === 'favor' 
+                        ${loan.type === 'given' 
                             ? '💰 Se registrará un <strong>ingreso</strong> (dinero que recibes)' 
                             : '💸 Se registrará un <strong>gasto</strong> (dinero que pagas)'}
                     </p>
@@ -887,7 +872,7 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
         width: '550px',
         didOpen: () => {
             // Toggle visibilidad del selector de ahorro
-            if (loan.kind === 'favor' && savingsPatterns.length > 0) {
+            if (loan.type === 'given' && savingsPatterns.length > 0) {
                 const radios = document.querySelectorAll('input[name="loan-destination"]');
                 const savingsContainer = document.getElementById('loan-savings-container');
                 radios.forEach(radio => {
@@ -916,10 +901,10 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
                 return false;
             }
             
-            // Para préstamos a favor, obtener destino
+            // Para préstamos dados, obtener destino
             let destination = 'balance';
             let savingsPatternId = null;
-            if (loan.kind === 'favor') {
+            if (loan.type === 'given') {
                 const selectedDestination = document.querySelector('input[name="loan-destination"]:checked');
                 if (selectedDestination) {
                     destination = selectedDestination.value;
@@ -948,13 +933,13 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
             
             const newProgress = await getLoanProgress(loan.id);
             
-            // Si es préstamo a favor y el destino es ahorro, crear depósito
-            if (loan.kind === 'favor' && formValues.destination === 'savings' && formValues.savingsPatternId) {
+            // Si es préstamo dado y el destino es ahorro, crear depósito
+            if (loan.type === 'given' && formValues.destination === 'savings' && formValues.savingsPatternId) {
                 try {
                     await createSavingsDeposit(
                         formValues.savingsPatternId,
                         formValues.amount,
-                        `Pago de préstamo de ${loan.person_name}`
+                        `Pago de préstamo de ${loan.counterparty}`
                     );
                     
                     await Swal.fire({
@@ -1026,15 +1011,16 @@ export async function showPlanDetails(planId, onUpdated) {
             throw new Error('Plan no encontrado');
         }
 
+        // V2: usar current_amount en lugar de saved_amount, name en lugar de title
         const progress = parseFloat(plan.progress_percent) || 0;
-        const savedAmount = parseFloat(plan.saved_amount) || 0;
+        const savedAmount = parseFloat(plan.current_amount) || 0;
         const targetAmount = parseFloat(plan.target_amount);
         const remainingAmount = targetAmount - savedAmount;
         const progressColor = progress >= 100 ? '#10b981' : progress >= 50 ? '#3b82f6' : '#f59e0b';
         const isCompleted = progress >= 100;
 
         const result = await Swal.fire({
-            title: `🎯 ${plan.title || 'Sin título'}`,
+            title: `🎯 ${plan.name || 'Sin nombre'}`,
             html: `
                 <div style="text-align: left; padding: 10px;">
                     ${plan.description ? `<p style="color: #666; margin-bottom: 15px;">${plan.description}</p>` : ''}
@@ -1079,18 +1065,10 @@ export async function showPlanDetails(planId, onUpdated) {
                     <!-- Fechas -->
                     <div style="background: #f9fafb; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                            ${plan.requested_target_date ? `
+                            ${plan.target_date ? `
                                 <div>
-                                    <div style="font-size: 0.8em; color: #6b7280;">📅 Fecha deseada</div>
-                                    <div style="font-weight: 600;">${new Date(plan.requested_target_date).toLocaleDateString('es-ES')}</div>
-                                </div>
-                            ` : ''}
-                            ${plan.suggested_target_date ? `
-                                <div>
-                                    <div style="font-size: 0.8em; color: #6b7280;">🎯 Fecha estimada</div>
-                                    <div style="font-weight: 600; color: ${new Date(plan.suggested_target_date) <= new Date(plan.requested_target_date) ? '#10b981' : '#f59e0b'};">
-                                        ${new Date(plan.suggested_target_date).toLocaleDateString('es-ES')}
-                                    </div>
+                                    <div style="font-size: 0.8em; color: #6b7280;">📅 Fecha objetivo</div>
+                                    <div style="font-weight: 600;">${new Date(plan.target_date).toLocaleDateString('es-ES')}</div>
                                 </div>
                             ` : ''}
                         </div>
@@ -1112,9 +1090,9 @@ export async function showPlanDetails(planId, onUpdated) {
                         <div style="background: #f0fdf4; padding: 12px; border-radius: 8px; border: 1px solid #86efac;">
                             <div style="font-weight: 600; color: #166534; margin-bottom: 8px;">💰 Fuentes de ingreso asignadas:</div>
                             <ul style="margin: 0; padding-left: 20px; color: #15803d;">
-                                ${plan.income_sources.map(src => `
+                                ${plan.income_sources.filter(src => src.income_pattern).map(src => `
                                     <li style="margin-bottom: 4px;">
-                                        ${src.income_pattern.name}: 
+                                        ${src.income_pattern?.name || 'Ingreso sin nombre'}: 
                                         <strong>${src.allocation_type === 'percent' 
                                             ? `${(src.allocation_value * 100).toFixed(0)}%` 
                                             : `$${src.allocation_value}`}</strong>
@@ -1190,10 +1168,11 @@ export async function showPlanDetails(planId, onUpdated) {
 }
 
 /**
- * Modal para agregar un aporte manual a una planeación
+ * Modal para agregar un aporte manual a una planeación - V2
  */
 async function showAddContributionDialog(plan, onUpdated) {
-    const remainingAmount = parseFloat(plan.target_amount) - (parseFloat(plan.saved_amount) || 0);
+    // V2: usar current_amount en lugar de saved_amount
+    const remainingAmount = parseFloat(plan.target_amount) - (parseFloat(plan.current_amount) || 0);
     const today = new Date().toISOString().split('T')[0];
     
     // Obtener balance disponible
@@ -1206,7 +1185,8 @@ async function showAddContributionDialog(plan, onUpdated) {
     }
     
     const { value: formValues } = await Swal.fire({
-        title: `💵 Aporte a: ${plan.title}`,
+        // V2: usar name en lugar de title
+        title: `💵 Aporte a: ${plan.name}`,
         html: `
             <div style="text-align: left; padding: 10px;">
                 <!-- Info del plan -->
@@ -1321,7 +1301,8 @@ async function showAddContributionDialog(plan, onUpdated) {
             
             return {
                 amount: amountNum,
-                description: description.trim() || `Aporte a ${plan.title}`,
+                // V2: usar name en lugar de title
+                description: description.trim() || `Aporte a ${plan.name}`,
                 date: date || today
             };
         }
@@ -1359,11 +1340,6 @@ async function showAddContributionDialog(plan, onUpdated) {
                         <p style="color: #6b7280; font-size: 0.9em;">
                             Nuevo progreso: <strong style="color: #3b82f6;">${newProgress.toFixed(1)}%</strong>
                         </p>
-                        ${updatedPlan && updatedPlan.suggested_target_date ? `
-                            <p style="color: #6b7280; font-size: 0.85em; margin-top: 10px;">
-                                📅 Fecha estimada: ${new Date(updatedPlan.suggested_target_date).toLocaleDateString('es-ES')}
-                            </p>
-                        ` : ''}
                     `,
                     timer: 2500,
                     showConfirmButton: false
@@ -1458,14 +1434,14 @@ async function showEditPlanDialog(plan, onUpdated) {
             <div style="text-align: left; padding: 10px;">
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Título:
+                        Nombre:
                     </label>
                     <input 
-                        id="edit-plan-title" 
+                        id="edit-plan-name" 
                         type="text" 
                         class="swal2-input" 
                         style="margin: 0; width: 100%;"
-                        value="${plan.title || ''}"
+                        value="${plan.name || ''}"
                     />
                 </div>
 
@@ -1492,7 +1468,7 @@ async function showEditPlanDialog(plan, onUpdated) {
                         type="date" 
                         class="swal2-input" 
                         style="margin: 0; width: 100%;"
-                        value="${plan.requested_target_date || ''}"
+                        value="${plan.target_date || ''}"
                     />
                 </div>
 
@@ -1514,8 +1490,8 @@ async function showEditPlanDialog(plan, onUpdated) {
                         Estado:
                     </label>
                     <select id="edit-plan-status" class="swal2-select" style="width: 100%;">
-                        <option value="planned" ${plan.status === 'planned' ? 'selected' : ''}>📋 Planeado</option>
                         <option value="active" ${plan.status === 'active' ? 'selected' : ''}>🚀 Activo</option>
+                        <option value="paused" ${plan.status === 'paused' ? 'selected' : ''}>⏸️ Pausado</option>
                         <option value="completed" ${plan.status === 'completed' ? 'selected' : ''}>✅ Completado</option>
                         <option value="cancelled" ${plan.status === 'cancelled' ? 'selected' : ''}>❌ Cancelado</option>
                     </select>
@@ -1577,11 +1553,12 @@ async function showEditPlanDialog(plan, onUpdated) {
             });
         },
         preConfirm: () => {
-            const title = document.getElementById('edit-plan-title').value.trim();
+            // V2: usar edit-plan-name en lugar de edit-plan-title
+            const name = document.getElementById('edit-plan-name').value.trim();
             const amount = document.getElementById('edit-plan-amount').value;
             
-            if (!title) {
-                Swal.showValidationMessage('El título es requerido');
+            if (!name) {
+                Swal.showValidationMessage('El nombre es requerido');
                 return false;
             }
             if (!amount || parseFloat(amount) <= 0) {
@@ -1607,9 +1584,9 @@ async function showEditPlanDialog(plan, onUpdated) {
             });
             
             return {
-                title,
+                name: name,
                 target_amount: parseFloat(amount),
-                requested_target_date: document.getElementById('edit-plan-target-date').value || null,
+                target_date: document.getElementById('edit-plan-target-date').value || null,
                 priority: parseInt(document.getElementById('edit-plan-priority').value),
                 status: document.getElementById('edit-plan-status').value,
                 category: document.getElementById('edit-plan-category').value.trim() || null,
@@ -1625,9 +1602,9 @@ async function showEditPlanDialog(plan, onUpdated) {
             
             // 1. Actualizar el plan
             await updatePlan(plan.id, {
-                title: formValues.title,
+                name: formValues.name,
                 target_amount: formValues.target_amount,
-                requested_target_date: formValues.requested_target_date,
+                target_date: formValues.target_date,
                 priority: formValues.priority,
                 status: formValues.status,
                 category: formValues.category,
@@ -2013,9 +1990,10 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                             ${activePlans.map(plan => {
                                 const progress = parseFloat(plan.progress_percent) || 0;
                                 const remaining = parseFloat(plan.remaining_amount) || parseFloat(plan.target_amount);
+                                // V2: usar name en lugar de title
                                 return `
                                     <option value="${plan.id}">
-                                        ${plan.title} (${progress.toFixed(0)}% - Faltan: $${remaining.toLocaleString('es-MX')})
+                                        ${plan.name} (${progress.toFixed(0)}% - Faltan: $${remaining.toLocaleString('es-MX')})
                                     </option>
                                 `;
                             }).join('')}
@@ -2052,18 +2030,19 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         </select>
                     </div>
                 ` : ''}
-                ${activePlans.filter(p => parseFloat(p.saved_amount || 0) > 0).length > 0 ? `
+                ${activePlans.filter(p => parseFloat(p.current_amount || 0) > 0).length > 0 ? `
                     <label style="display: flex; align-items: center; cursor: pointer;">
                         <input type="radio" name="expense-source" value="plan" style="margin-right: 10px;">
                         <span>🎯 De una planeación/meta</span>
                     </label>
                     <div id="expense-plan-select-container" style="display: none; margin-top: 8px; margin-left: 25px;">
                         <select id="expense-plan-source" class="swal2-select" style="width: 100%;">
-                            ${activePlans.filter(p => parseFloat(p.saved_amount || 0) > 0).map(plan => {
-                                const savedAmount = parseFloat(plan.saved_amount) || 0;
+                            ${activePlans.filter(p => parseFloat(p.current_amount || 0) > 0).map(plan => {
+                                // V2: usar current_amount en lugar de saved_amount, name en lugar de title
+                                const savedAmount = parseFloat(plan.current_amount) || 0;
                                 return `
                                     <option value="${plan.id}" data-balance="${savedAmount}">
-                                        ${plan.title} (Ahorrado: $${savedAmount.toLocaleString('es-MX')})
+                                        ${plan.name} (Ahorrado: $${savedAmount.toLocaleString('es-MX')})
                                     </option>
                                 `;
                             }).join('')}
@@ -2357,11 +2336,6 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         html: `
                             <p>Ingreso registrado y agregado a la planeación.</p>
                             <p style="color: #059669; font-weight: 600;">+$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
-                            ${updatedPlan && updatedPlan.suggested_target_date ? `
-                                <p style="font-size: 0.9em; color: #6b7280; margin-top: 10px;">
-                                    📅 Nueva fecha estimada: ${new Date(updatedPlan.suggested_target_date).toLocaleDateString('es-ES')}
-                                </p>
-                            ` : ''}
                         `,
                         timer: 3000,
                         showConfirmButton: false
@@ -2416,11 +2390,6 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         html: `
                             <p>Gasto registrado y descontado de la planeación.</p>
                             <p style="color: #ef4444; font-weight: 600;">-$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
-                            ${updatedPlan && updatedPlan.suggested_target_date ? `
-                                <p style="font-size: 0.9em; color: #6b7280; margin-top: 10px;">
-                                    📅 Nueva fecha estimada: ${new Date(updatedPlan.suggested_target_date).toLocaleDateString('es-ES')}
-                                </p>
-                            ` : ''}
                         `,
                         timer: 3000,
                         showConfirmButton: false
@@ -2715,7 +2684,11 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                 const incomeSourceSelect = document.getElementById('pattern-income-source');
                 if (incomeSourceSelect && incomeSourceSelect.value) {
                     const allocationType = document.getElementById('pattern-allocation-type')?.value || 'percent';
-                    const allocationValue = parseFloat(document.getElementById('pattern-allocation-percent')?.value) || 0;
+                    const allocationValueRaw = parseFloat(document.getElementById('pattern-allocation-percent')?.value) || 0;
+                    // Convertir porcentaje a decimal si es tipo percent (100% -> 1.0)
+                    const allocationValue = allocationType === 'percent' 
+                        ? allocationValueRaw / 100 
+                        : allocationValueRaw;
                     incomeSource = {
                         income_pattern_id: incomeSourceSelect.value,
                         allocation_type: allocationType,
@@ -2959,7 +2932,7 @@ async function showPlanStep1(targetDate) {
             return {
                 title,
                 target_amount: parseFloat(amount),
-                requested_target_date: document.getElementById('plan-target-date').value || null,
+                target_date: document.getElementById('plan-target-date').value || null,
                 category: document.getElementById('plan-category').value.trim() || null,
                 priority: parseInt(document.getElementById('plan-priority').value),
                 description: document.getElementById('plan-description').value.trim() || null,
@@ -3345,7 +3318,7 @@ async function showPlanStep2(step1Data) {
     
     // Si presionó "Atrás"
     if (formValues === undefined && !Swal.getHtmlContainer()) {
-        return await showPlanStep1(step1Data.requested_target_date);
+        return await showPlanStep1(step1Data.target_date);
     }
     
     return formValues;
@@ -3449,9 +3422,9 @@ async function showPlanStep3(step2Data) {
                 <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                     <h3 style="margin: 0 0 10px 0; color: #1f2937;">📋 Resumen de tu planeación:</h3>
                     <div style="color: #374151; line-height: 1.8;">
-                        <div><strong>Meta:</strong> ${step2Data.title}</div>
+                        <div><strong>Meta:</strong> ${step2Data.name || step2Data.title}</div>
                         <div><strong>Monto objetivo:</strong> $${step2Data.target_amount.toFixed(2)}</div>
-                        ${step2Data.requested_target_date ? `<div><strong>Fecha deseada:</strong> ${new Date(step2Data.requested_target_date).toLocaleDateString('es-ES')}</div>` : ''}
+                        ${step2Data.target_date ? `<div><strong>Fecha objetivo:</strong> ${new Date(step2Data.target_date).toLocaleDateString('es-ES')}</div>` : ''}
                         <div><strong>Prioridad:</strong> ${'⭐'.repeat(step2Data.priority)}</div>
                         ${step2Data.category ? `<div><strong>Categoría:</strong> ${step2Data.category}</div>` : ''}
                     </div>
@@ -3477,8 +3450,8 @@ async function showPlanStep3(step2Data) {
                             <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px; color: #92400e;">
                                 <strong>⚠️ Nota:</strong> Con los ingresos seleccionados, la meta se alcanzaría aproximadamente el 
                                 <strong>${calculation.suggestedDate.toLocaleDateString('es-ES')}</strong>.
-                                ${step2Data.requested_target_date ? `
-                                    Esto es después de tu fecha deseada (${new Date(step2Data.requested_target_date).toLocaleDateString('es-ES')}).
+                                ${step2Data.target_date ? `
+                                    Esto es después de tu fecha objetivo (${new Date(step2Data.target_date).toLocaleDateString('es-ES')}).
                                     <br><br>
                                     <strong>Opciones:</strong>
                                     <ul style="margin: 8px 0; padding-left: 20px; text-align: left;">
@@ -3492,7 +3465,7 @@ async function showPlanStep3(step2Data) {
                         ` : `
                             <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 6px; color: #065f46;">
                                 <strong>✅ ¡Excelente!</strong> Con tus ingresos asignados, puedes alcanzar esta meta
-                                ${step2Data.requested_target_date ? 'antes de la fecha deseada' : 'en el tiempo estimado'}.
+                                ${step2Data.target_date ? 'antes de la fecha objetivo' : 'en el tiempo estimado'}.
                             </div>
                         `}
                     </div>
@@ -3513,13 +3486,46 @@ async function showPlanStep3(step2Data) {
         `,
         showCancelButton: true,
         showDenyButton: true,
-        confirmButtonText: isViable ? '✅ Crear Planeación' : '📝 Crear de todas formas',
+        confirmButtonText: isViable ? '✅ Crear Planeación' : '📝 Crear con mi fecha',
         denyButtonText: '← Ajustar',
         cancelButtonText: 'Cancelar',
         confirmButtonColor: isViable ? '#10b981' : '#f59e0b',
         denyButtonColor: '#6b7280',
-        width: '750px'
+        width: '750px',
+        footer: !isViable && step2Data.income_sources?.length > 0 ? `
+            <button id="use-suggested-date-btn" class="swal2-styled" style="background-color: #10b981; margin-top: 10px;">
+                📅 Usar fecha sugerida (${calculation.suggestedDate.toLocaleDateString('es-ES')})
+            </button>
+        ` : '',
+        didOpen: () => {
+            const suggestedBtn = document.getElementById('use-suggested-date-btn');
+            if (suggestedBtn) {
+                suggestedBtn.addEventListener('click', () => {
+                    // Guardar la fecha sugerida y resolver con valor especial
+                    Swal.getPopup().dataset.useSuggestedDate = 'true';
+                    Swal.clickConfirm();
+                });
+            }
+        },
+        preConfirm: () => {
+            // Verificar si se eligió usar fecha sugerida
+            const popup = Swal.getPopup();
+            if (popup && popup.dataset.useSuggestedDate === 'true') {
+                return { useSuggestedDate: true };
+            }
+            return { useSuggestedDate: false };
+        }
     });
+    
+    // Verificar si eligió usar la fecha sugerida
+    if (confirmed && confirmed.useSuggestedDate) {
+        const suggestedDateISO = calculation.suggestedDate.toISOString().split('T')[0];
+        return {
+            ...step2Data,
+            target_date: suggestedDateISO,
+            status: 'active'
+        };
+    }
     
     if (confirmed === false) {
         // Presionó "Ajustar" - volver al paso 2
@@ -3530,10 +3536,9 @@ async function showPlanStep3(step2Data) {
         return null; // Canceló
     }
     
-    // Agregar la fecha sugerida calculada
+    // Usar la fecha original del usuario
     return {
         ...step2Data,
-        suggested_target_date: calculation.suggestedDate.toISOString().split('T')[0],
         status: 'active'
     };
 }
@@ -3714,9 +3719,9 @@ async function calculatePlanViability(planData) {
     const suggestedDate = new Date();
     suggestedDate.setMonth(suggestedDate.getMonth() + monthsNeeded);
     
-    // Verificar si es viable para la fecha solicitada
-    const canAchieveByRequestedDate = planData.requested_target_date
-        ? suggestedDate <= new Date(planData.requested_target_date)
+    // V2: Verificar si es viable para la fecha objetivo
+    const canAchieveByRequestedDate = planData.target_date
+        ? suggestedDate <= new Date(planData.target_date)
         : true;
     
     return {
@@ -4448,7 +4453,7 @@ export async function showExpensePatternIncomeSourcesDialog(expensePatternId, on
 // ============================================================================
 
 /**
- * Modal para crear un nuevo préstamo (a favor / en contra)
+ * Modal para crear un nuevo préstamo (dado / recibido) - V2
  */
 async function showCreateLoanDialog(dateISO, onCreated) {
     const { createLoan } = await import('./loans-v2.js');
@@ -4459,28 +4464,41 @@ async function showCreateLoanDialog(dateISO, onCreated) {
             <div style="text-align: left; padding: 10px;">
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">
+                        Nombre del préstamo:
+                    </label>
+                    <input 
+                        id="loan-name" 
+                        type="text" 
+                        class="swal2-input" 
+                        style="margin: 0; width: 100%;"
+                        placeholder="Ej: Préstamo a Juan para emergencia"
+                    />
+                </div>
+
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
                         Tipo de préstamo:
                     </label>
-                    <select id="loan-kind" class="swal2-select" style="width: 100%;">
-                        <option value="favor">➡️ A favor (Yo presto dinero)</option>
-                        <option value="contra">⬅️ En contra (Me prestan dinero)</option>
+                    <select id="loan-type" class="swal2-select" style="width: 100%;">
+                        <option value="given">➡️ Dado (Yo presto dinero)</option>
+                        <option value="received">⬅️ Recibido (Me prestan dinero)</option>
                     </select>
                     <p style="font-size: 0.85em; color: #666; margin-top: 5px;">
-                        <strong>A favor:</strong> Prestas dinero y luego te lo devuelven.<br/>
-                        <strong>En contra:</strong> Te prestan dinero y lo debes devolver.
+                        <strong>Dado:</strong> Prestas dinero y luego te lo devuelven.<br/>
+                        <strong>Recibido:</strong> Te prestan dinero y lo debes devolver.
                     </p>
                 </div>
 
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Persona:
+                        Contraparte (persona/entidad):
                     </label>
                     <input 
-                        id="loan-person" 
+                        id="loan-counterparty" 
                         type="text" 
                         class="swal2-input" 
                         style="margin: 0; width: 100%;"
-                        placeholder="Nombre de la persona"
+                        placeholder="Nombre de la persona o entidad"
                     />
                 </div>
 
@@ -4513,111 +4531,14 @@ async function showCreateLoanDialog(dateISO, onCreated) {
 
                 <div style="margin-bottom: 15px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Plan de pago:
-                    </label>
-                    <select id="loan-payment-plan" class="swal2-select" style="width: 100%;">
-                        <option value="single">📅 Pago único</option>
-                        <option value="recurring">🔄 Pagos recurrentes</option>
-                        <option value="custom">📋 Fechas personalizadas</option>
-                    </select>
-                </div>
-
-                <!-- Opciones para "Pago único" -->
-                <div id="single-payment-options" style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Días para recuperar:
+                        Fecha de vencimiento (opcional):
                     </label>
                     <input 
-                        id="loan-recovery-days" 
-                        type="number" 
-                        min="1"
+                        id="loan-due-date" 
+                        type="date" 
                         class="swal2-input" 
                         style="margin: 0; width: 100%;"
-                        placeholder="Ej: 30"
                     />
-                </div>
-
-                <!-- Opciones para "Pagos recurrentes" -->
-                <div id="recurring-payment-options" style="margin-bottom: 15px; display: none;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Frecuencia:
-                    </label>
-                    <select id="loan-payment-frequency" class="swal2-select" style="width: 100%; margin-bottom: 10px;">
-                        <option value="weekly">Semanal</option>
-                        <option value="monthly" selected>Mensual</option>
-                        <option value="yearly">Anual</option>
-                    </select>
-                    
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Intervalo:
-                    </label>
-                    <input 
-                        id="loan-payment-interval" 
-                        type="number" 
-                        min="1"
-                        value="1"
-                        class="swal2-input" 
-                        style="margin: 0; width: 100%; margin-bottom: 10px;"
-                        placeholder="Cada cuántos períodos"
-                    />
-                    
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Número de pagos:
-                    </label>
-                    <input 
-                        id="loan-payment-count" 
-                        type="number" 
-                        min="1"
-                        class="swal2-input" 
-                        style="margin: 0; width: 100%;"
-                        placeholder="Ej: 12"
-                    />
-                </div>
-
-                <!-- Opciones para "Fechas personalizadas" -->
-                <div id="custom-payment-options" style="margin-bottom: 15px; display: none;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Fechas de pago (una por línea):
-                    </label>
-                    <textarea 
-                        id="loan-custom-dates" 
-                        class="swal2-textarea" 
-                        style="margin: 0; width: 100%; min-height: 80px;"
-                        placeholder="2025-01-15&#10;2025-02-15&#10;2025-03-15"
-                    ></textarea>
-                    <p style="font-size: 0.85em; color: #666; margin-top: 5px;">
-                        Formato: YYYY-MM-DD (una fecha por línea)
-                    </p>
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: 600;">
-                        Interés (opcional):
-                    </label>
-                    <div style="display: flex; gap: 10px;">
-                        <div style="flex: 1;">
-                            <input 
-                                id="loan-interest-value" 
-                                type="number" 
-                                step="0.01"
-                                class="swal2-input" 
-                                style="margin: 0; width: 100%;"
-                                placeholder="Monto fijo"
-                            />
-                        </div>
-                        <div style="flex: 1;">
-                            <input 
-                                id="loan-interest-percent" 
-                                type="number" 
-                                step="0.01"
-                                min="0"
-                                max="100"
-                                class="swal2-input" 
-                                style="margin: 0; width: 100%;"
-                                placeholder="% del monto"
-                            />
-                        </div>
-                    </div>
                 </div>
 
                 <div style="margin-bottom: 15px;">
@@ -4637,30 +4558,22 @@ async function showCreateLoanDialog(dateISO, onCreated) {
         confirmButtonText: 'Crear Préstamo',
         cancelButtonText: 'Cancelar',
         confirmButtonColor: '#f59e0b',
-        width: '650px',
-        didOpen: () => {
-            const paymentPlanSelect = document.getElementById('loan-payment-plan');
-            const singleOptions = document.getElementById('single-payment-options');
-            const recurringOptions = document.getElementById('recurring-payment-options');
-            const customOptions = document.getElementById('custom-payment-options');
-            
-            // Mostrar/ocultar opciones según el plan de pago
-            paymentPlanSelect.addEventListener('change', () => {
-                const plan = paymentPlanSelect.value;
-                singleOptions.style.display = plan === 'single' ? 'block' : 'none';
-                recurringOptions.style.display = plan === 'recurring' ? 'block' : 'none';
-                customOptions.style.display = plan === 'custom' ? 'block' : 'none';
-            });
-        },
+        width: '550px',
         preConfirm: () => {
-            const kind = document.getElementById('loan-kind').value;
-            const person = document.getElementById('loan-person').value.trim();
+            const name = document.getElementById('loan-name').value.trim();
+            const type = document.getElementById('loan-type').value;
+            const counterparty = document.getElementById('loan-counterparty').value.trim();
             const amount = document.getElementById('loan-amount').value;
             const loanDate = document.getElementById('loan-date').value;
-            const paymentPlan = document.getElementById('loan-payment-plan').value;
+            const dueDate = document.getElementById('loan-due-date').value;
+            const description = document.getElementById('loan-description').value.trim();
             
-            if (!person) {
-                Swal.showValidationMessage('Ingresa el nombre de la persona');
+            if (!name) {
+                Swal.showValidationMessage('Ingresa un nombre para el préstamo');
+                return false;
+            }
+            if (!counterparty) {
+                Swal.showValidationMessage('Ingresa el nombre de la contraparte');
                 return false;
             }
             if (!amount || parseFloat(amount) <= 0) {
@@ -4673,55 +4586,16 @@ async function showCreateLoanDialog(dateISO, onCreated) {
             }
             
             const loanData = {
-                kind,
-                person_name: person,
-                amount: parseFloat(amount),
+                name,
+                type,
+                counterparty,
+                original_amount: parseFloat(amount),
+                remaining_amount: parseFloat(amount), // Al crear, remaining = original
                 loan_date: loanDate,
-                payment_plan: paymentPlan,
-                description: document.getElementById('loan-description').value.trim() || null
+                due_date: dueDate || null,
+                description: description || null,
+                status: 'active'
             };
-            
-            // Validar y agregar campos según el plan de pago
-            if (paymentPlan === 'single') {
-                const recoveryDays = document.getElementById('loan-recovery-days').value;
-                if (!recoveryDays || parseInt(recoveryDays) <= 0) {
-                    Swal.showValidationMessage('Ingresa los días para recuperar');
-                    return false;
-                }
-                loanData.recovery_days = parseInt(recoveryDays);
-            } else if (paymentPlan === 'recurring') {
-                const paymentCount = document.getElementById('loan-payment-count').value;
-                if (!paymentCount || parseInt(paymentCount) <= 0) {
-                    Swal.showValidationMessage('Ingresa el número de pagos');
-                    return false;
-                }
-                loanData.payment_frequency = document.getElementById('loan-payment-frequency').value;
-                loanData.payment_interval = parseInt(document.getElementById('loan-payment-interval').value) || 1;
-                loanData.payment_count = parseInt(paymentCount);
-            } else if (paymentPlan === 'custom') {
-                const customDatesText = document.getElementById('loan-custom-dates').value.trim();
-                if (!customDatesText) {
-                    Swal.showValidationMessage('Ingresa al menos una fecha de pago');
-                    return false;
-                }
-                const dates = customDatesText.split('\n').map(d => d.trim()).filter(d => d);
-                if (dates.length === 0) {
-                    Swal.showValidationMessage('Ingresa al menos una fecha de pago');
-                    return false;
-                }
-                loanData.custom_dates = dates;
-            }
-            
-            // Agregar interés si se especificó
-            const interestValue = document.getElementById('loan-interest-value').value;
-            const interestPercent = document.getElementById('loan-interest-percent').value;
-            
-            if (interestValue && parseFloat(interestValue) > 0) {
-                loanData.interest_value = parseFloat(interestValue);
-            }
-            if (interestPercent && parseFloat(interestPercent) > 0) {
-                loanData.interest_percent = parseFloat(interestPercent);
-            }
             
             return loanData;
         }
@@ -4737,13 +4611,13 @@ async function showCreateLoanDialog(dateISO, onCreated) {
                 title: '✅ Préstamo Creado',
                 html: `
                     <div style="text-align: left;">
-                        <p><strong>Tipo:</strong> ${formValues.kind === 'favor' ? 'A favor (prestaste)' : 'En contra (te prestaron)'}</p>
-                        <p><strong>Persona:</strong> ${formValues.person_name}</p>
-                        <p><strong>Monto:</strong> $${formValues.amount}</p>
+                        <p><strong>Tipo:</strong> ${formValues.type === 'given' ? 'Dado (prestaste dinero)' : 'Recibido (te prestaron)'}</p>
+                        <p><strong>Contraparte:</strong> ${formValues.counterparty}</p>
+                        <p><strong>Monto:</strong> $${formValues.original_amount}</p>
                         <p style="margin-top: 10px; color: #666; font-size: 0.9em;">
-                            ${formValues.kind === 'favor' 
-                                ? '✅ Se registró un <strong>gasto</strong> en tu calendario (dinero que salió).' 
-                                : '✅ Se registró un <strong>ingreso</strong> en tu calendario (dinero que entró).'}
+                            ${formValues.type === 'given' 
+                                ? '✅ Se registró un préstamo <strong>dado</strong> (dinero que prestaste).' 
+                                : '✅ Se registró un préstamo <strong>recibido</strong> (dinero que te prestaron).'}
                         </p>
                     </div>
                 `,
@@ -4780,9 +4654,9 @@ export async function showBalanceSummaryDialog() {
         const [balance, savings, recentMovements, monthlyData, plansData, categoriesData] = await Promise.all([
             getConfirmedBalanceSummary(),
             getSavingsSummary(),
-            // Movimientos recientes (últimos 10 confirmados)
+            // Movimientos recientes (últimos 10 confirmados) - consulta directa a movements
             supabase.from('movements')
-                .select('id, date, description, type, confirmed_amount, pattern_name')
+                .select('id, date, title, description, type, confirmed_amount, income_pattern_id, expense_pattern_id')
                 .eq('user_id', user.id)
                 .eq('confirmed', true)
                 .eq('archived', false)
@@ -4802,11 +4676,11 @@ export async function showBalanceSummaryDialog() {
                     .lte('date', endOfMonth);
                 return data || [];
             })(),
-            // Planes activos
+            // Planes activos (current_amount en lugar de accumulated)
             supabase.from('plans')
-                .select('id, name, accumulated, target_amount, status')
+                .select('id, name, current_amount, target_amount, status')
                 .eq('user_id', user.id)
-                .in('status', ['active', 'pending']),
+                .in('status', ['active', 'paused']),
             // Categorías de gastos del mes actual
             (async () => {
                 const today = new Date();
@@ -4851,7 +4725,7 @@ export async function showBalanceSummaryDialog() {
             .slice(0, 5); // Top 5 categorías
         
         // Calcular total de planes
-        const totalPlans = plans.reduce((sum, p) => sum + (p.accumulated || 0), 0);
+        const totalPlans = plans.reduce((sum, p) => sum + (p.current_amount || 0), 0);
         const totalPlansTarget = plans.reduce((sum, p) => sum + (p.target_amount || 0), 0);
         
         // Formatear fecha
@@ -4939,7 +4813,7 @@ export async function showBalanceSummaryDialog() {
                                     ${recent.map(m => `
                                         <div class="recent-item ${m.type}">
                                             <div class="recent-info">
-                                                <span class="recent-desc">${m.description || m.pattern_name || 'Sin descripción'}</span>
+                                                <span class="recent-desc">${m.title || m.description || m.income_pattern_name || m.expense_pattern_name || 'Sin descripción'}</span>
                                                 <span class="recent-date">${formatDate(m.date)}</span>
                                             </div>
                                             <span class="recent-amount ${m.type === 'ingreso' ? 'positive' : 'negative'}">
@@ -5009,7 +4883,7 @@ export async function showBalanceSummaryDialog() {
                                 <h4 class="section-title" style="margin-top: 16px;">Planes activos</h4>
                                 <div class="plans-mini-list">
                                     ${plans.map(p => {
-                                        const progress = p.target_amount > 0 ? Math.min(100, (p.accumulated / p.target_amount) * 100) : 0;
+                                        const progress = p.target_amount > 0 ? Math.min(100, (p.current_amount / p.target_amount) * 100) : 0;
                                         return `
                                             <div class="plan-mini-item">
                                                 <div class="plan-mini-info">
@@ -5018,7 +4892,7 @@ export async function showBalanceSummaryDialog() {
                                                         <div class="plan-mini-bar" style="width: ${progress}%"></div>
                                                     </div>
                                                 </div>
-                                                <span class="plan-mini-amount">${formatCurrency(p.accumulated)} / ${formatCurrency(p.target_amount)}</span>
+                                                <span class="plan-mini-amount">${formatCurrency(p.current_amount)} / ${formatCurrency(p.target_amount)}</span>
                                             </div>
                                         `;
                                     }).join('')}

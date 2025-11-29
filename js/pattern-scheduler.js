@@ -97,9 +97,10 @@ function parseISODate(dateStr) {
 
 /**
  * Genera ocurrencias diarias
+ * Nota: V2 no soporta frecuencia 'daily', pero se mantiene por compatibilidad
  */
 function generateDailyOccurrences(pattern, rangeStart, rangeEnd) {
-    const { start_date, end_date, interval, occurrence_limit } = pattern;
+    const { start_date, end_date, interval } = pattern;
     const stepDays = interval || 1;
     
     const patternStart = parseISODate(start_date);
@@ -116,15 +117,10 @@ function generateDailyOccurrences(pattern, rangeStart, rangeEnd) {
     }
     
     const dates = [];
-    let count = 0;
     
     while (current <= effectiveEnd) {
         dates.push(toISODateString(current));
         current = addDays(current, stepDays);
-        count++;
-        
-        // Límite de ocurrencias
-        if (occurrence_limit && count >= occurrence_limit) break;
     }
     
     return dates;
@@ -134,7 +130,7 @@ function generateDailyOccurrences(pattern, rangeStart, rangeEnd) {
  * Genera ocurrencias semanales
  */
 function generateWeeklyOccurrences(pattern, rangeStart, rangeEnd) {
-    const { start_date, end_date, interval, occurrence_limit } = pattern;
+    const { start_date, end_date, interval } = pattern;
     const stepDays = 7 * (interval || 1);
     
     const patternStart = parseISODate(start_date);
@@ -151,14 +147,10 @@ function generateWeeklyOccurrences(pattern, rangeStart, rangeEnd) {
     }
     
     const dates = [];
-    let count = 0;
     
     while (current <= effectiveEnd) {
         dates.push(toISODateString(current));
         current = addDays(current, stepDays);
-        count++;
-        
-        if (occurrence_limit && count >= occurrence_limit) break;
     }
     
     return dates;
@@ -168,7 +160,7 @@ function generateWeeklyOccurrences(pattern, rangeStart, rangeEnd) {
  * Genera ocurrencias mensuales
  */
 function generateMonthlyOccurrences(pattern, rangeStart, rangeEnd) {
-    const { start_date, end_date, interval, occurrence_limit } = pattern;
+    const { start_date, end_date, interval } = pattern;
     
     const patternStart = parseISODate(start_date);
     const patternEnd = end_date ? parseISODate(end_date) : rangeEnd;
@@ -184,14 +176,10 @@ function generateMonthlyOccurrences(pattern, rangeStart, rangeEnd) {
     }
     
     const dates = [];
-    let count = 0;
     
     while (current <= effectiveEnd) {
         dates.push(toISODateString(current));
         current = addMonthsKeepingDay(current, interval || 1);
-        count++;
-        
-        if (occurrence_limit && count >= occurrence_limit) break;
     }
     
     return dates;
@@ -201,7 +189,7 @@ function generateMonthlyOccurrences(pattern, rangeStart, rangeEnd) {
  * Genera ocurrencias anuales
  */
 function generateYearlyOccurrences(pattern, rangeStart, rangeEnd) {
-    const { start_date, end_date, interval, occurrence_limit } = pattern;
+    const { start_date, end_date, interval } = pattern;
     
     const patternStart = parseISODate(start_date);
     const patternEnd = end_date ? parseISODate(end_date) : rangeEnd;
@@ -217,14 +205,10 @@ function generateYearlyOccurrences(pattern, rangeStart, rangeEnd) {
     }
     
     const dates = [];
-    let count = 0;
     
     while (current <= effectiveEnd) {
         dates.push(toISODateString(current));
         current = addYears(current, interval || 1);
-        count++;
-        
-        if (occurrence_limit && count >= occurrence_limit) break;
     }
     
     return dates;
@@ -243,6 +227,9 @@ export function generateOccurrencesForPattern(pattern, rangeStart, rangeEnd) {
             return generateDailyOccurrences(pattern, rangeStart, rangeEnd);
         case 'weekly':
             return generateWeeklyOccurrences(pattern, rangeStart, rangeEnd);
+        case 'biweekly':
+            // V2: biweekly es cada 2 semanas, equivalente a weekly con interval=2
+            return generateWeeklyOccurrences({ ...pattern, interval: 2 }, rangeStart, rangeEnd);
         case 'monthly':
             return generateMonthlyOccurrences(pattern, rangeStart, rangeEnd);
         case 'yearly':
@@ -345,7 +332,8 @@ async function getPlansWithTargetDate(userId, rangeStart, rangeEnd) {
         .from('plans')
         .select('*')
         .eq('user_id', userId)
-        .or(`requested_target_date.gte.${startISO},requested_target_date.lte.${endISO},suggested_target_date.gte.${startISO},suggested_target_date.lte.${endISO}`);
+        .gte('target_date', startISO)
+        .lte('target_date', endISO);
     
     if (error) {
         console.error('Error al obtener plans:', error);
@@ -559,16 +547,15 @@ export async function getCalendarDataForMonth(userId, year, month) {
         // 3) Crear índice de plan_targets por fecha
         const planTargetsByDate = {};
         for (const plan of plans) {
-            // Usar requested_target_date si existe, sino suggested_target_date
-            const targetDate = plan.requested_target_date || plan.suggested_target_date;
+            // V2: usar target_date directamente
+            const targetDate = plan.target_date;
             if (targetDate) {
                 if (!planTargetsByDate[targetDate]) planTargetsByDate[targetDate] = [];
                 planTargetsByDate[targetDate].push({
                     plan_id: plan.id,
-                    name: plan.title,
+                    name: plan.name,
                     target_amount: plan.target_amount,
-                    requested_target_date: plan.requested_target_date,
-                    suggested_target_date: plan.suggested_target_date,
+                    target_date: plan.target_date,
                     priority: plan.priority,
                     status: plan.status
                 });

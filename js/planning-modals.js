@@ -117,7 +117,7 @@ function renderGoalsTab(goalsData) {
       ` : goalsData.items.map(goal => `
         <div class="goal-item" data-goal-id="${goal.id}">
           <div class="goal-header">
-            <div class="goal-name">${goal.title || goal.name}</div>
+            <div class="goal-name">${goal.name || goal.title}</div>
             <div class="goal-actions">
               <button class="btn-icon btn-assign-incomes" title="Asignar Ingresos">💰</button>
               <button class="btn-icon btn-fund-goal" title="Agregar fondeo">💵</button>
@@ -131,13 +131,13 @@ function renderGoalsTab(goalsData) {
               <div class="progress-fill" style="width: ${Planning.calculateGoalProgress(goal)}%"></div>
             </div>
             <div class="progress-info">
-              <span>${Planning.formatCurrency(goal.saved_amount || 0)} / ${Planning.formatCurrency(goal.target_amount)}</span>
+              <span>${Planning.formatCurrency(goal.current_amount || 0)} / ${Planning.formatCurrency(goal.target_amount)}</span>
               <span>${Planning.calculateGoalProgress(goal)}%</span>
             </div>
           </div>
           <div class="goal-meta">
             <span class="badge badge-priority-${goal.priority}">Prioridad: ${goal.priority}</span>
-            ${goal.due_date ? `<span class="goal-days">${Planning.getDaysUntilTarget(goal.due_date)} días restantes</span>` : ''}
+            ${goal.target_date ? `<span class="goal-days">${Planning.getDaysUntilTarget(goal.target_date)} días restantes</span>` : ''}
           </div>
         </div>
       `).join('')}
@@ -158,9 +158,9 @@ function renderEnvelopesTab(envelopesData) {
           <div class="empty-hint">Crea apartados para organizar tus ahorros</div>
         </div>
       ` : envelopesData.items.map(env => `
-        <div class="envelope-card" style="border-color: ${env.color || '#6366f1'}" data-envelope-id="${env.id}">
+        <div class="envelope-card" data-envelope-id="${env.id}">
           <div class="envelope-header">
-            <div class="envelope-icon">${env.emoji || env.icon || '💰'}</div>
+            <div class="envelope-icon">💰</div>
             <div class="envelope-actions">
               <button class="btn-icon btn-deposit" title="Depositar">➕</button>
               <button class="btn-icon btn-withdraw" title="Retirar">➖</button>
@@ -169,13 +169,13 @@ function renderEnvelopesTab(envelopesData) {
             </div>
           </div>
           <div class="envelope-name">${env.name || 'Sin nombre'}</div>
-          <div class="envelope-balance">${Planning.formatCurrency(env.current_balance || 0)}</div>
-          ${env.target_amount ? `
+          <div class="envelope-balance">${Planning.formatCurrency(env.current_amount || 0)}</div>
+          ${env.budget_amount ? `
             <div class="envelope-progress">
               <div class="progress-bar-small">
-                <div class="progress-fill" style="width: ${Planning.calculateEnvelopeProgress(env)}%; background: ${env.color}"></div>
+                <div class="progress-fill" style="width: ${Planning.calculateEnvelopeProgress(env)}%"></div>
               </div>
-              <div class="progress-text">${Planning.calculateEnvelopeProgress(env)}% de ${Planning.formatCurrency(env.target_amount)}</div>
+              <div class="progress-text">${Planning.calculateEnvelopeProgress(env)}% de ${Planning.formatCurrency(env.budget_amount)}</div>
             </div>
           ` : ''}
         </div>
@@ -512,8 +512,8 @@ async function openPlannedExpenseFormModal(expenseId = null) {
   const container = document.createElement('div');
   const expenseForm = document.createElement('planned-expense-form');
   
-  expenseForm.setGoals(goals.filter(g => g.is_active));
-  expenseForm.setEnvelopes(envelopes.filter(e => e.is_active));
+  expenseForm.setGoals(goals.filter(g => g.active));
+  expenseForm.setEnvelopes(envelopes.filter(e => e.active));
   
   if (expense) {
     expenseForm.setExpense(expense);
@@ -563,10 +563,10 @@ async function openEnvelopeTransactionModal(envelopeId, type) {
     html: `
       <div style="text-align: left; margin-bottom: 16px;">
         <div style="font-size: 14px; color: #6b7280; margin-bottom: 8px;">
-          ${envelope.icon} ${envelope.name}
+          💰 ${envelope.name}
         </div>
         <div style="font-size: 18px; font-weight: bold; color: #3b82f6;">
-          Balance actual: ${Planning.formatCurrency(envelope.current_balance)}
+          Balance actual: ${Planning.formatCurrency(envelope.current_amount || 0)}
         </div>
       </div>
       <input id="transaction-amount" type="number" class="swal2-input" placeholder="Monto" step="0.01" min="0.01" style="width: 90%;">
@@ -584,7 +584,7 @@ async function openEnvelopeTransactionModal(envelopeId, type) {
         return false;
       }
 
-      if (type === 'withdrawal' && amount > envelope.current_balance) {
+      if (type === 'withdrawal' && amount > (envelope.current_amount || 0)) {
         Swal.showValidationMessage('No hay suficiente balance');
         return false;
       }
@@ -614,18 +614,18 @@ async function openGoalFundingModal(goalId) {
   
   if (!goal) return;
 
-  const savedAmount = goal.saved_amount || 0;
-  const remaining = goal.target_amount - savedAmount;
+  const currentAmount = goal.current_amount || 0;
+  const remaining = goal.target_amount - currentAmount;
 
   const result = await Swal.fire({
     title: '💵 Agregar Fondeo a Meta',
     html: `
       <div style="text-align: left; margin-bottom: 16px;">
         <div style="font-size: 16px; font-weight: bold; margin-bottom: 8px;">
-          ${goal.title || goal.name}
+          ${goal.name || goal.title}
         </div>
         <div style="font-size: 14px; color: #6b7280; margin-bottom: 4px;">
-          Progreso: ${Planning.formatCurrency(savedAmount)} / ${Planning.formatCurrency(goal.target_amount)}
+          Progreso: ${Planning.formatCurrency(currentAmount)} / ${Planning.formatCurrency(goal.target_amount)}
         </div>
         <div style="font-size: 14px; color: #3b82f6; font-weight: 600;">
           Falta: ${Planning.formatCurrency(remaining)}

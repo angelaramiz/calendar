@@ -129,14 +129,22 @@ export async function createSavingsPattern(patternData) {
         // Validar datos
         validateSavingsPatternData(patternData);
 
+        // Normalizar allocation_value si es porcentaje > 1
+        let allocationValue = patternData.allocation_type !== 'remainder' 
+            ? parseFloat(patternData.allocation_value) 
+            : null;
+        
+        if (patternData.allocation_type === 'percent' && allocationValue > 1) {
+            console.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
+            allocationValue = allocationValue / 100;
+        }
+
         const pattern = {
             user_id: user.id,
             name: patternData.name,
             description: patternData.description || null,
             allocation_type: patternData.allocation_type,
-            allocation_value: patternData.allocation_type !== 'remainder' 
-                ? parseFloat(patternData.allocation_value) 
-                : null,
+            allocation_value: allocationValue,
             target_amount: patternData.target_amount ? parseFloat(patternData.target_amount) : null,
             current_balance: 0,
             priority: patternData.priority || 5,

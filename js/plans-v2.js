@@ -1,6 +1,7 @@
 /**
  * plans-v2.js
  * Gestión de planes/metas con asignación de fuentes de ingreso (V2)
+ * Compatible con esquema V2: plans tiene name, target_amount, current_amount, target_date, status
  */
 
 import { supabase } from './supabase-client.js';
@@ -15,7 +16,7 @@ import { supabase } from './supabase-client.js';
 export async function getPlans(filters = {}) {
     try {
         let query = supabase
-            .from('plans_with_progress')
+            .from('plans')
             .select('*')
             .order('priority', { ascending: false })
             .order('created_at', { ascending: false });
@@ -29,7 +30,15 @@ export async function getPlans(filters = {}) {
 
         const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+        
+        // Calcular progreso para cada plan
+        return (data || []).map(plan => ({
+            ...plan,
+            progress_percent: plan.target_amount > 0 
+                ? Math.min(100, (plan.current_amount / plan.target_amount) * 100)
+                : 0,
+            remaining_amount: Math.max(0, plan.target_amount - plan.current_amount)
+        }));
     } catch (error) {
         console.error('Error fetching plans:', error);
         throw error;
@@ -42,34 +51,46 @@ export async function getPlans(filters = {}) {
 export async function getPlanById(id) {
     try {
         const { data: plan, error: planError } = await supabase
-            .from('plans_with_progress')
+            .from('plans')
             .select('*')
             .eq('id', id)
             .single();
 
         if (planError) throw planError;
+        if (!plan) return null;
 
-        // Obtener income sources asignadas
+        // Obtener income sources
         const { data: sources, error: sourcesError } = await supabase
             .from('plan_income_sources')
             .select(`
                 *,
-                income_pattern:income_patterns(*)
+                income_patterns (id, name, base_amount, frequency)
             `)
             .eq('plan_id', id);
 
-        if (sourcesError) throw sourcesError;
+        if (sourcesError) {
+            console.warn('Error loading income sources:', sourcesError);
+        }
 
-        plan.income_sources = sources || [];
-        return plan;
+        // Calcular progreso
+        const progress_percent = plan.target_amount > 0 
+            ? Math.min(100, (plan.current_amount / plan.target_amount) * 100)
+            : 0;
+
+        return {
+            ...plan,
+            income_sources: sources || [],
+            progress_percent,
+            remaining_amount: Math.max(0, plan.target_amount - plan.current_amount)
+        };
     } catch (error) {
-        console.error('Error fetching plan:', error);
+        console.error('Error fetching plan by ID:', error);
         throw error;
     }
 }
 
 /**
- * Crea un nuevo plan con sus income sources opcionales
+ * Crea un nuevo plan
  */
 export async function createPlan(planData) {
     try {
@@ -79,19 +100,18 @@ export async function createPlan(planData) {
         // Validar datos
         validatePlanData(planData);
 
-        // 1. Crear el plan - incluir suggested_target_date si ya viene calculada
+        // Crear el plan con campos V2
         const plan = {
             user_id: user.id,
-            title: planData.title,
+            name: planData.name || planData.title, // Soportar ambos nombres
             description: planData.description || null,
             category: planData.category || null,
             target_amount: parseFloat(planData.target_amount),
-            requested_target_date: planData.requested_target_date || null,
-            suggested_target_date: planData.suggested_target_date || null, // Usar la fecha sugerida pre-calculada
-            priority: planData.priority || 3,
-            status: planData.status || 'planned',
-            auto_create_reminder: planData.auto_create_reminder || false,
-            envelope_id: planData.envelope_id || null
+            current_amount: parseFloat(planData.current_amount) || 0,
+            start_date: planData.start_date || null,
+            target_date: planData.target_date || planData.requested_target_date || null,
+            priority: planData.priority || 5,
+            status: planData.status || 'active'
         };
 
         const { data: createdPlan, error: planError } = await supabase
@@ -102,17 +122,9 @@ export async function createPlan(planData) {
 
         if (planError) throw planError;
 
-        // 2. Agregar income sources si se proporcionaron
+        // Agregar income sources si se proporcionaron
         if (planData.income_sources && planData.income_sources.length > 0) {
             await assignIncomeSources(createdPlan.id, planData.income_sources);
-        }
-
-        // 3. Recalcular fecha sugerida si NO venía pre-calculada y hay income sources
-        if (!planData.suggested_target_date && planData.income_sources && planData.income_sources.length > 0) {
-            const suggestedDate = await calculateSuggestedTargetDate(createdPlan.id);
-            if (suggestedDate) {
-                await updatePlan(createdPlan.id, { suggested_target_date: suggestedDate });
-            }
         }
 
         return await getPlanById(createdPlan.id);
@@ -129,16 +141,18 @@ export async function updatePlan(id, updates) {
     try {
         const plan = {};
 
-        if (updates.title !== undefined) plan.title = updates.title;
+        // Mapear campos (soportar nombres V1 y V2)
+        if (updates.name !== undefined) plan.name = updates.name;
+        if (updates.title !== undefined) plan.name = updates.title; // Alias
         if (updates.description !== undefined) plan.description = updates.description;
         if (updates.category !== undefined) plan.category = updates.category;
         if (updates.target_amount !== undefined) plan.target_amount = parseFloat(updates.target_amount);
-        if (updates.requested_target_date !== undefined) plan.requested_target_date = updates.requested_target_date;
-        if (updates.suggested_target_date !== undefined) plan.suggested_target_date = updates.suggested_target_date;
+        if (updates.current_amount !== undefined) plan.current_amount = parseFloat(updates.current_amount);
+        if (updates.start_date !== undefined) plan.start_date = updates.start_date;
+        if (updates.target_date !== undefined) plan.target_date = updates.target_date;
+        if (updates.requested_target_date !== undefined) plan.target_date = updates.requested_target_date; // Alias
         if (updates.priority !== undefined) plan.priority = updates.priority;
         if (updates.status !== undefined) plan.status = updates.status;
-        if (updates.auto_create_reminder !== undefined) plan.auto_create_reminder = updates.auto_create_reminder;
-        if (updates.envelope_id !== undefined) plan.envelope_id = updates.envelope_id;
 
         const { data, error } = await supabase
             .from('plans')
@@ -148,7 +162,16 @@ export async function updatePlan(id, updates) {
             .single();
 
         if (error) throw error;
-        return data;
+
+        // Actualizar income sources si se proporcionaron
+        if (updates.income_sources !== undefined) {
+            await supabase.from('plan_income_sources').delete().eq('plan_id', id);
+            if (updates.income_sources.length > 0) {
+                await assignIncomeSources(id, updates.income_sources);
+            }
+        }
+
+        return await getPlanById(id);
     } catch (error) {
         console.error('Error updating plan:', error);
         throw error;
@@ -156,11 +179,10 @@ export async function updatePlan(id, updates) {
 }
 
 /**
- * Elimina un plan y sus income sources
+ * Elimina un plan
  */
 export async function deletePlan(id) {
     try {
-        // Los plan_income_sources se eliminan automáticamente por CASCADE
         const { error } = await supabase
             .from('plans')
             .delete()
@@ -175,7 +197,7 @@ export async function deletePlan(id) {
 }
 
 // ============================================================================
-// PLAN INCOME SOURCES
+// INCOME SOURCES
 // ============================================================================
 
 /**
@@ -183,24 +205,34 @@ export async function deletePlan(id) {
  */
 export async function assignIncomeSources(planId, sources) {
     try {
-        // Validar sources
-        validateIncomeSources(sources);
+        if (!sources || sources.length === 0) return [];
 
-        // Preparar datos
-        const incomeSources = sources.map(source => ({
-            plan_id: planId,
-            income_pattern_id: source.income_pattern_id,
-            allocation_type: source.allocation_type,
-            allocation_value: parseFloat(source.allocation_value)
-        }));
+        const inserts = sources.map(source => {
+            const allocationType = source.allocation_type || 'fixed';
+            let allocationValue = parseFloat(source.allocation_value) || parseFloat(source.amount) || 0;
+            
+            // Validar que percent esté en formato decimal (0-1)
+            if (allocationType === 'percent' && allocationValue > 1) {
+                console.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
+                allocationValue = allocationValue / 100;
+            }
+            
+            return {
+                plan_id: planId,
+                income_pattern_id: source.income_pattern_id,
+                allocation_type: allocationType,
+                allocation_value: allocationValue,
+                notes: source.notes || null
+            };
+        });
 
         const { data, error } = await supabase
             .from('plan_income_sources')
-            .insert(incomeSources)
+            .insert(inserts)
             .select();
 
         if (error) throw error;
-        return data;
+        return data || [];
     } catch (error) {
         console.error('Error assigning income sources:', error);
         throw error;
@@ -208,26 +240,22 @@ export async function assignIncomeSources(planId, sources) {
 }
 
 /**
- * Actualiza una income source de un plan
+ * Obtiene income sources de un plan
  */
-export async function updateIncomeSource(sourceId, updates) {
+export async function getPlanIncomeSources(planId) {
     try {
-        const source = {};
-
-        if (updates.allocation_type !== undefined) source.allocation_type = updates.allocation_type;
-        if (updates.allocation_value !== undefined) source.allocation_value = parseFloat(updates.allocation_value);
-
         const { data, error } = await supabase
             .from('plan_income_sources')
-            .update(source)
-            .eq('id', sourceId)
-            .select()
-            .single();
+            .select(`
+                *,
+                income_patterns (id, name, base_amount, frequency)
+            `)
+            .eq('plan_id', planId);
 
         if (error) throw error;
-        return data;
+        return data || [];
     } catch (error) {
-        console.error('Error updating income source:', error);
+        console.error('Error fetching plan income sources:', error);
         throw error;
     }
 }
@@ -235,12 +263,13 @@ export async function updateIncomeSource(sourceId, updates) {
 /**
  * Elimina una income source de un plan
  */
-export async function removeIncomeSource(sourceId) {
+export async function removeIncomeSource(planId, incomePatternId) {
     try {
         const { error } = await supabase
             .from('plan_income_sources')
             .delete()
-            .eq('id', sourceId);
+            .eq('plan_id', planId)
+            .eq('income_pattern_id', incomePatternId);
 
         if (error) throw error;
         return true;
@@ -250,112 +279,80 @@ export async function removeIncomeSource(sourceId) {
     }
 }
 
+// ============================================================================
+// CONTRIBUCIONES
+// ============================================================================
+
 /**
- * Reemplaza todas las income sources de un plan
+ * Agrega una contribución a un plan
  */
-export async function replaceIncomeSources(planId, newSources) {
+export async function contributeToPlan(planId, amount, description = 'Contribución', date = null) {
     try {
-        // 1. Eliminar sources existentes
-        await supabase
-            .from('plan_income_sources')
-            .delete()
-            .eq('plan_id', planId);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuario no autenticado');
 
-        // 2. Agregar nuevas sources
-        if (newSources && newSources.length > 0) {
-            await assignIncomeSources(planId, newSources);
-        }
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
 
-        // 3. Recalcular fecha sugerida
-        const suggestedDate = await calculateSuggestedTargetDate(planId);
-        if (suggestedDate) {
-            await updatePlan(planId, { suggested_target_date: suggestedDate });
-        }
+        // Actualizar current_amount del plan
+        const newAmount = (parseFloat(plan.current_amount) || 0) + parseFloat(amount);
+        
+        const { data, error } = await supabase
+            .from('plans')
+            .update({ current_amount: newAmount })
+            .eq('id', planId)
+            .select()
+            .single();
 
-        return true;
+        if (error) throw error;
+
+        return await getPlanById(planId);
     } catch (error) {
-        console.error('Error replacing income sources:', error);
+        console.error('Error contributing to plan:', error);
+        throw error;
+    }
+}
+
+/**
+ * Retira dinero de un plan
+ */
+export async function withdrawFromPlan(planId, amount, description = 'Retiro') {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuario no autenticado');
+
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
+
+        const currentAmount = parseFloat(plan.current_amount) || 0;
+        if (amount > currentAmount) {
+            throw new Error(`Saldo insuficiente. Disponible: $${currentAmount.toFixed(2)}`);
+        }
+
+        const newAmount = currentAmount - parseFloat(amount);
+        
+        const { data, error } = await supabase
+            .from('plans')
+            .update({ current_amount: newAmount })
+            .eq('id', planId)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        return await getPlanById(planId);
+    } catch (error) {
+        console.error('Error withdrawing from plan:', error);
         throw error;
     }
 }
 
 // ============================================================================
-// CÁLCULO DE FECHA SUGERIDA
+// PROGRESO Y ESTADÍSTICAS
 // ============================================================================
 
 /**
- * Calcula la fecha sugerida para alcanzar el target_amount
- * basándose en las income sources asignadas
- */
-export async function calculateSuggestedTargetDate(planId) {
-    try {
-        const plan = await getPlanById(planId);
-        if (!plan || !plan.income_sources || plan.income_sources.length === 0) {
-            return null;
-        }
-
-        // Calcular cuánto se ahorra por mes
-        let monthlyContribution = 0;
-
-        for (const source of plan.income_sources) {
-            const pattern = source.income_pattern;
-            if (!pattern || !pattern.active) continue;
-
-            // Convertir frecuencia a contribución mensual
-            let monthlyOccurrences = 0;
-            
-            if (pattern.frequency === 'daily') {
-                monthlyOccurrences = 30 / (pattern.interval || 1);
-            } else if (pattern.frequency === 'weekly') {
-                monthlyOccurrences = 4 / (pattern.interval || 1);
-            } else if (pattern.frequency === 'monthly') {
-                monthlyOccurrences = 1 / (pattern.interval || 1);
-            } else if (pattern.frequency === 'yearly') {
-                monthlyOccurrences = (1 / 12) / (pattern.interval || 1);
-            }
-
-            // Calcular contribución mensual de este pattern
-            let contribution = 0;
-            if (source.allocation_type === 'percent') {
-                contribution = parseFloat(pattern.base_amount) * parseFloat(source.allocation_value) * monthlyOccurrences;
-            } else if (source.allocation_type === 'fixed') {
-                contribution = parseFloat(source.allocation_value) * monthlyOccurrences;
-            }
-
-            monthlyContribution += contribution;
-        }
-
-        if (monthlyContribution <= 0) {
-            return null;
-        }
-
-        // Calcular cuánto falta ahorrar
-        const remaining = parseFloat(plan.target_amount) - (parseFloat(plan.saved_amount) || 0);
-        if (remaining <= 0) {
-            return new Date().toISOString().split('T')[0]; // Ya alcanzado
-        }
-
-        // Calcular meses necesarios
-        const monthsNeeded = Math.ceil(remaining / monthlyContribution);
-
-        // Calcular fecha sugerida
-        const today = new Date();
-        const suggestedDate = new Date(today);
-        suggestedDate.setMonth(suggestedDate.getMonth() + monthsNeeded);
-
-        return suggestedDate.toISOString().split('T')[0];
-    } catch (error) {
-        console.error('Error calculating suggested target date:', error);
-        return null;
-    }
-}
-
-// ============================================================================
-// PLAN PROGRESS
-// ============================================================================
-
-/**
- * Obtiene el progreso detallado de un plan
+ * Obtiene el progreso de un plan
  */
 export async function getPlanProgress(planId) {
     try {
@@ -364,12 +361,11 @@ export async function getPlanProgress(planId) {
 
         return {
             target_amount: parseFloat(plan.target_amount),
-            saved_amount: parseFloat(plan.saved_amount) || 0,
-            remaining_amount: parseFloat(plan.remaining_amount) || parseFloat(plan.target_amount),
-            progress_percent: parseFloat(plan.progress_percent) || 0,
-            is_complete: parseFloat(plan.progress_percent) >= 100,
-            requested_target_date: plan.requested_target_date,
-            suggested_target_date: plan.suggested_target_date
+            current_amount: parseFloat(plan.current_amount) || 0,
+            remaining_amount: plan.remaining_amount,
+            progress_percent: plan.progress_percent,
+            is_complete: plan.progress_percent >= 100,
+            target_date: plan.target_date
         };
     } catch (error) {
         console.error('Error getting plan progress:', error);
@@ -380,22 +376,88 @@ export async function getPlanProgress(planId) {
 /**
  * Obtiene plans con target date en un rango específico
  */
-export async function getPlansWithTargetInRange(startDate, endDate, useRequested = true) {
+export async function getPlansWithTargetInRange(startDate, endDate) {
     try {
-        const dateField = useRequested ? 'requested_target_date' : 'suggested_target_date';
-        
         const { data, error } = await supabase
-            .from('plans_with_progress')
+            .from('plans')
             .select('*')
-            .gte(dateField, startDate)
-            .lte(dateField, endDate)
+            .gte('target_date', startDate)
+            .lte('target_date', endDate)
             .neq('status', 'cancelled')
-            .order(dateField, { ascending: true });
+            .order('target_date', { ascending: true });
 
         if (error) throw error;
-        return data || [];
+        
+        return (data || []).map(plan => ({
+            ...plan,
+            progress_percent: plan.target_amount > 0 
+                ? Math.min(100, (plan.current_amount / plan.target_amount) * 100)
+                : 0
+        }));
     } catch (error) {
         console.error('Error fetching plans with target in range:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene planes activos
+ */
+export async function getActivePlans() {
+    try {
+        return await getPlans({ status: 'active' });
+    } catch (error) {
+        console.error('Error fetching active plans:', error);
+        throw error;
+    }
+}
+
+/**
+ * Marca un plan como completado
+ */
+export async function completePlan(planId) {
+    try {
+        return await updatePlan(planId, { 
+            status: 'completed'
+        });
+    } catch (error) {
+        console.error('Error completing plan:', error);
+        throw error;
+    }
+}
+
+/**
+ * Pausa un plan
+ */
+export async function pausePlan(planId) {
+    try {
+        return await updatePlan(planId, { status: 'paused' });
+    } catch (error) {
+        console.error('Error pausing plan:', error);
+        throw error;
+    }
+}
+
+/**
+ * Reactiva un plan pausado
+ */
+export async function resumePlan(planId) {
+    try {
+        return await updatePlan(planId, { status: 'active' });
+    } catch (error) {
+        console.error('Error resuming plan:', error);
+        throw error;
+    }
+}
+
+/**
+ * Cancela un plan
+ */
+export async function cancelPlan(planId) {
+    try {
+        return await updatePlan(planId, { status: 'cancelled' });
+    } catch (error) {
+        console.error('Error cancelling plan:', error);
         throw error;
     }
 }
@@ -408,12 +470,14 @@ export async function getPlansWithTargetInRange(startDate, endDate, useRequested
  * Valida los datos de un plan
  */
 function validatePlanData(data) {
-    const requiredFields = ['title', 'target_amount'];
-    
-    for (const field of requiredFields) {
-        if (!data[field]) {
-            throw new Error(`Campo requerido: ${field}`);
-        }
+    // Soportar ambos nombres de campo
+    const name = data.name || data.title;
+    if (!name) {
+        throw new Error('Campo requerido: name');
+    }
+
+    if (!data.target_amount) {
+        throw new Error('Campo requerido: target_amount');
     }
 
     if (parseFloat(data.target_amount) <= 0) {
@@ -422,25 +486,15 @@ function validatePlanData(data) {
 
     if (data.priority !== undefined) {
         const priority = parseInt(data.priority);
-        if (priority < 1 || priority > 5) {
-            throw new Error('La prioridad debe estar entre 1 y 5');
+        if (priority < 1 || priority > 10) {
+            throw new Error('La prioridad debe estar entre 1 y 10');
         }
     }
 
     if (data.status !== undefined) {
-        const validStatuses = ['planned', 'active', 'completed', 'cancelled'];
+        const validStatuses = ['active', 'completed', 'paused', 'cancelled'];
         if (!validStatuses.includes(data.status)) {
             throw new Error(`Estado inválido. Debe ser: ${validStatuses.join(', ')}`);
-        }
-    }
-
-    if (data.requested_target_date && data.suggested_target_date) {
-        const requested = new Date(data.requested_target_date);
-        const suggested = new Date(data.suggested_target_date);
-        const today = new Date();
-        
-        if (requested < today) {
-            throw new Error('La fecha solicitada no puede ser en el pasado');
         }
     }
 }
@@ -450,318 +504,30 @@ function validatePlanData(data) {
  */
 function validateIncomeSources(sources) {
     if (!Array.isArray(sources)) {
-        throw new Error('income_sources debe ser un array');
+        throw new Error('Income sources debe ser un array');
     }
 
     for (const source of sources) {
         if (!source.income_pattern_id) {
-            throw new Error('income_pattern_id es requerido');
+            throw new Error('Cada income source debe tener income_pattern_id');
         }
-        if (!source.allocation_type) {
-            throw new Error('allocation_type es requerido');
+        if (!source.allocation_type || !['percent', 'fixed'].includes(source.allocation_type)) {
+            throw new Error('allocation_type debe ser "percent" o "fixed"');
         }
-        if (source.allocation_value === undefined || source.allocation_value === null) {
-            throw new Error('allocation_value es requerido');
-        }
-
-        const validTypes = ['percent', 'fixed'];
-        if (!validTypes.includes(source.allocation_type)) {
-            throw new Error(`allocation_type inválido. Debe ser: ${validTypes.join(', ')}`);
-        }
-
-        const value = parseFloat(source.allocation_value);
-        if (value <= 0) {
-            throw new Error('allocation_value debe ser mayor a 0');
-        }
-
-        if (source.allocation_type === 'percent' && value > 1) {
-            throw new Error('allocation_value para percent debe estar entre 0 y 1 (ejemplo: 0.25 para 25%)');
-        }
-    }
-}
-
-// ============================================================================
-// UTILIDADES
-// ============================================================================
-
-/**
- * Obtiene estadísticas de plans
- */
-export async function getPlanStatistics() {
-    try {
-        const plans = await getPlans();
-        
-        const stats = {
-            total_plans: plans.length,
-            by_status: {
-                planned: 0,
-                active: 0,
-                completed: 0,
-                cancelled: 0
-            },
-            total_target: 0,
-            total_saved: 0,
-            average_progress: 0
-        };
-
-        for (const plan of plans) {
-            stats.by_status[plan.status] = (stats.by_status[plan.status] || 0) + 1;
-            stats.total_target += parseFloat(plan.target_amount);
-            stats.total_saved += parseFloat(plan.saved_amount) || 0;
-        }
-
-        const activePlans = plans.filter(p => p.status !== 'cancelled');
-        if (activePlans.length > 0) {
-            stats.average_progress = activePlans.reduce((sum, p) => {
-                return sum + (parseFloat(p.progress_percent) || 0);
-            }, 0) / activePlans.length;
-        }
-
-        return stats;
-    } catch (error) {
-        console.error('Error calculating plan statistics:', error);
-        throw error;
-    }
-}
-
-/**
- * Obtiene categorías únicas de plans
- */
-export async function getPlanCategories() {
-    try {
-        const { data, error } = await supabase
-            .from('plans')
-            .select('category')
-            .not('category', 'is', null)
-            .order('category');
-
-        if (error) throw error;
-        
-        const categories = [...new Set(data.map(item => item.category))];
-        return categories;
-    } catch (error) {
-        console.error('Error fetching plan categories:', error);
-        return [];
-    }
-}
-
-// ============================================================================
-// CONTRIBUCIONES A PLANES
-// ============================================================================
-
-/**
- * Agrega una contribución (ingreso) a un plan
- * Crea un movimiento vinculado al plan para que se refleje en saved_amount
- */
-export async function addContributionToPlan(planId, amount, description = 'Aporte a planeación', date = null) {
-    try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Usuario no autenticado');
-
-        // Verificar que el plan existe y está activo
-        const plan = await getPlanById(planId);
-        if (!plan) throw new Error('Plan no encontrado');
-        if (plan.status === 'cancelled') throw new Error('No se puede aportar a un plan cancelado');
-        if (plan.status === 'completed') throw new Error('El plan ya está completado');
-
-        // Crear movimiento de tipo "ingreso" vinculado al plan
-        // NOTA: La vista plans_with_progress suma movimientos de tipo 'gasto' con plan_id,
-        // pero semánticamente un aporte es un ingreso. Usamos 'gasto' para que se sume.
-        const movementDate = date || new Date().toISOString().split('T')[0];
-        
-        const { data: movement, error } = await supabase
-            .from('movements')
-            .insert([{
-                user_id: user.id,
-                plan_id: planId,
-                title: description,
-                description: `Aporte a planeación: ${plan.title}`,
-                type: 'gasto', // Usamos 'gasto' porque la vista suma este tipo
-                date: movementDate,
-                expected_amount: amount,
-                confirmed_amount: amount,
-                confirmed: true
-            }])
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        // Verificar si la meta se completó
-        const updatedPlan = await getPlanById(planId);
-        if (updatedPlan && parseFloat(updatedPlan.progress_percent) >= 100) {
-            // Actualizar estado a completado
-            await updatePlan(planId, { status: 'completed' });
-        }
-
-        return movement;
-    } catch (error) {
-        console.error('Error adding contribution to plan:', error);
-        throw error;
-    }
-}
-
-/**
- * Recalcula las fechas de un plan considerando ingresos extraordinarios
- * Actualiza suggested_target_date basándose en el progreso actual y contribución mensual
- */
-export async function recalculatePlanDates(planId) {
-    try {
-        const plan = await getPlanById(planId);
-        if (!plan) throw new Error('Plan no encontrado');
-
-        // Si ya está completado, no recalcular
-        if (parseFloat(plan.progress_percent) >= 100) {
-            await updatePlan(planId, { 
-                status: 'completed',
-                suggested_target_date: new Date().toISOString().split('T')[0]
-            });
-            return await getPlanById(planId);
-        }
-
-        // Calcular contribución mensual esperada de los income sources
-        let monthlyContribution = 0;
-
-        if (plan.income_sources && plan.income_sources.length > 0) {
-            for (const source of plan.income_sources) {
-                const pattern = source.income_pattern;
-                if (!pattern || !pattern.active) continue;
-
-                let monthlyOccurrences = 0;
-                
-                if (pattern.frequency === 'daily') {
-                    monthlyOccurrences = 30 / (pattern.interval || 1);
-                } else if (pattern.frequency === 'weekly') {
-                    monthlyOccurrences = 4.33 / (pattern.interval || 1);
-                } else if (pattern.frequency === 'biweekly') {
-                    monthlyOccurrences = 2.17 / (pattern.interval || 1);
-                } else if (pattern.frequency === 'monthly') {
-                    monthlyOccurrences = 1 / (pattern.interval || 1);
-                } else if (pattern.frequency === 'yearly') {
-                    monthlyOccurrences = (1 / 12) / (pattern.interval || 1);
-                }
-
-                let contribution = 0;
-                if (source.allocation_type === 'percent') {
-                    contribution = parseFloat(pattern.base_amount) * parseFloat(source.allocation_value) * monthlyOccurrences;
-                } else if (source.allocation_type === 'fixed') {
-                    contribution = parseFloat(source.allocation_value) * monthlyOccurrences;
-                }
-
-                monthlyContribution += contribution;
+        if (source.allocation_type === 'percent') {
+            const value = parseFloat(source.allocation_value);
+            if (value <= 0 || value > 1) {
+                throw new Error('Para tipo percent, el valor debe estar entre 0 y 1');
             }
         }
-
-        // Calcular monto restante
-        const remaining = parseFloat(plan.remaining_amount) || (parseFloat(plan.target_amount) - (parseFloat(plan.saved_amount) || 0));
-        
-        if (remaining <= 0) {
-            // Ya alcanzado
-            const today = new Date().toISOString().split('T')[0];
-            await updatePlan(planId, { suggested_target_date: today, status: 'completed' });
-            return await getPlanById(planId);
-        }
-
-        let suggestedDate;
-        
-        if (monthlyContribution > 0) {
-            // Calcular meses restantes
-            const monthsNeeded = Math.ceil(remaining / monthlyContribution);
-            const today = new Date();
-            suggestedDate = new Date(today);
-            suggestedDate.setMonth(suggestedDate.getMonth() + monthsNeeded);
-        } else {
-            // Sin contribución mensual, mantener la fecha actual o usar la solicitada
-            suggestedDate = plan.requested_target_date ? new Date(plan.requested_target_date) : new Date();
-        }
-
-        await updatePlan(planId, { 
-            suggested_target_date: suggestedDate.toISOString().split('T')[0] 
-        });
-
-        return await getPlanById(planId);
-    } catch (error) {
-        console.error('Error recalculating plan dates:', error);
-        throw error;
     }
 }
 
-/**
- * Obtiene el historial de contribuciones de un plan
- */
-export async function getPlanContributions(planId) {
-    try {
-        const { data, error } = await supabase
-            .from('movements')
-            .select('*')
-            .eq('plan_id', planId)
-            .order('date', { ascending: false });
+// ============================================================================
+// EXPORTS ADICIONALES PARA COMPATIBILIDAD
+// ============================================================================
 
-        if (error) throw error;
-        return data || [];
-    } catch (error) {
-        console.error('Error fetching plan contributions:', error);
-        throw error;
-    }
-}
-
-/**
- * Retira dinero de un plan (para gastos)
- * Crea un movimiento negativo vinculado al plan
- */
-export async function withdrawFromPlan(planId, amount, description = 'Retiro de planeación', date = null) {
-    try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Usuario no autenticado');
-
-        // Verificar que el plan existe
-        const plan = await getPlanById(planId);
-        if (!plan) throw new Error('Plan no encontrado');
-
-        // Verificar que hay saldo suficiente
-        const savedAmount = parseFloat(plan.saved_amount) || 0;
-        if (amount > savedAmount) {
-            throw new Error(`Saldo insuficiente. Disponible: $${savedAmount.toFixed(2)}`);
-        }
-
-        // Crear movimiento de retiro (ingreso negativo o ajuste)
-        // Para decrementar el saved_amount, usamos un movimiento con confirmed_amount negativo
-        // O creamos un movimiento de tipo 'ingreso' que se resta
-        const movementDate = date || new Date().toISOString().split('T')[0];
-        
-        // Eliminamos el aporte previo creando un movimiento con monto negativo
-        // La vista plans_with_progress suma los confirmed_amount de tipo 'gasto' con plan_id
-        // Entonces para restar, insertamos un movement con confirmed_amount negativo
-        const { data: movement, error } = await supabase
-            .from('movements')
-            .insert([{
-                user_id: user.id,
-                plan_id: planId,
-                title: description,
-                description: `Retiro de planeación: ${plan.title}`,
-                type: 'gasto', // Mismo tipo que los aportes para que la suma funcione
-                date: movementDate,
-                expected_amount: -amount, // Negativo para que reste
-                confirmed_amount: -amount, // Negativo para que reste
-                confirmed: true
-            }])
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        // Actualizar estado del plan si es necesario
-        const updatedPlan = await getPlanById(planId);
-        if (updatedPlan) {
-            // Si el plan estaba completado y ahora ya no, volver a estado activo
-            if (plan.status === 'completed' && parseFloat(updatedPlan.progress_percent) < 100) {
-                await updatePlan(planId, { status: 'active' });
-            }
-        }
-
-        return movement;
-    } catch (error) {
-        console.error('Error withdrawing from plan:', error);
-        throw error;
-    }
-}
+// Alias para compatibilidad con código que usa nombres V1
+export const savePlan = createPlan;
+export const fetchPlans = getPlans;
+export const fetchPlanById = getPlanById;

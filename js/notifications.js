@@ -215,27 +215,30 @@ export async function getPendingAlerts() {
                 const activePlans = plans.filter(p => p.status === 'active');
                 
                 activePlans.forEach(plan => {
-                    if (plan.requested_target_date) {
-                        const targetDate = new Date(plan.requested_target_date);
+                    if (plan.target_date) {
+                        const targetDate = new Date(plan.target_date);
                         targetDate.setHours(0, 0, 0, 0);
                         const diffDays = Math.floor((targetDate - today) / (1000 * 60 * 60 * 24));
                         
                         // Alertar si está dentro del rango de días a revisar
                         if (diffDays >= 0 && diffDays <= daysToCheck) {
-                            const progress = parseFloat(plan.progress_percent) || 0;
+                            // Calcular progreso desde current_amount
+                            const progress = plan.target_amount > 0 
+                                ? (parseFloat(plan.current_amount || 0) / parseFloat(plan.target_amount)) * 100
+                                : 0;
                             const isAtRisk = progress < 50 && diffDays <= 7;
                             
                             pendingAlerts.push({
                                 type: 'plan',
                                 priority: isAtRisk ? 'high' : 'medium',
-                                date: plan.requested_target_date,
+                                date: plan.target_date,
                                 id: plan.id,
-                                title: plan.title,
+                                title: plan.name,
                                 amount: plan.target_amount,
                                 progress: progress,
                                 message: diffDays === 0
-                                    ? `🎯 Hoy vence: ${plan.title} (${progress.toFixed(0)}% completado)`
-                                    : `🎯 Vence en ${diffDays} día${diffDays > 1 ? 's' : ''}: ${plan.title} (${progress.toFixed(0)}% completado)`,
+                                    ? `🎯 Hoy vence: ${plan.name} (${progress.toFixed(0)}% completado)`
+                                    : `🎯 Vence en ${diffDays} día${diffDays > 1 ? 's' : ''}: ${plan.name} (${progress.toFixed(0)}% completado)`,
                                 daysUntil: diffDays,
                                 icon: '🎯',
                                 atRisk: isAtRisk

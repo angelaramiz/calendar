@@ -84,11 +84,11 @@ class GoalForm extends HTMLElement {
           </div>
         </div>
 
-        ${isEdit && goal.saved_amount !== undefined ? `
+        ${isEdit && goal.current_amount !== undefined ? `
           <div class="goal-progress">
             <div class="progress-info">
               <span>Progreso Actual</span>
-              <span class="progress-amount">$${(goal.saved_amount || 0).toFixed(2)} / $${(goal.target_amount || 0).toFixed(2)}</span>
+              <span class="progress-amount">$${(goal.current_amount || 0).toFixed(2)} / $${(goal.target_amount || 0).toFixed(2)}</span>
             </div>
             <div class="progress-bar">
               <div class="progress-fill" style="width: ${this.calculateProgress(goal)}%"></div>
@@ -173,9 +173,9 @@ class GoalForm extends HTMLElement {
 
     if (isEdit) {
       formData.id = this.goalData.id;
-      formData.saved_amount = this.goalData.saved_amount || 0;
+      formData.current_amount = this.goalData.current_amount || 0;
     } else {
-      formData.saved_amount = 0;
+      formData.current_amount = 0;
     }
 
     return formData;

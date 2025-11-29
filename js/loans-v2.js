@@ -1,6 +1,9 @@
 /**
  * loans-v2.js
- * Gestión de préstamos con planes de pago (V2)
+ * Gestión de préstamos (V2)
+ * Compatible con esquema V2:
+ * - name, type (given/received), counterparty, original_amount, remaining_amount
+ * - loan_date, due_date, status (active/paid/defaulted/cancelled)
  */
 
 import { supabase } from './supabase-client.js';
@@ -17,14 +20,17 @@ export async function getLoans(filters = {}) {
     try {
         let query = supabase
             .from('loans')
-            .select('*, origin_movement:movements!loans_origin_movement_id_fkey(*)')
+            .select('*')
             .order('created_at', { ascending: false });
 
-        if (filters.kind) {
-            query = query.eq('kind', filters.kind);
+        if (filters.type) {
+            query = query.eq('type', filters.type);
         }
-        if (filters.payment_plan) {
-            query = query.eq('payment_plan', filters.payment_plan);
+        if (filters.status) {
+            query = query.eq('status', filters.status);
+        }
+        if (filters.counterparty) {
+            query = query.ilike('counterparty', `%${filters.counterparty}%`);
         }
 
         const { data, error } = await query;
@@ -37,17 +43,20 @@ export async function getLoans(filters = {}) {
 }
 
 /**
- * Obtiene un loan por ID con sus movements relacionados
+ * Obtiene loans activos
+ */
+export async function getActiveLoans() {
+    return getLoans({ status: 'active' });
+}
+
+/**
+ * Obtiene un loan por ID
  */
 export async function getLoanById(id) {
     try {
         const { data, error } = await supabase
             .from('loans')
-            .select(`
-                *,
-                origin_movement:movements!loans_origin_movement_id_fkey(*),
-                payment_movements:movements!movements_loan_id_fkey(*)
-            `)
+            .select('*')
             .eq('id', id)
             .single();
 
@@ -60,7 +69,15 @@ export async function getLoanById(id) {
 }
 
 /**
- * Crea un nuevo loan y su movement de origen automáticamente
+ * Crea un nuevo loan
+ * @param {Object} loanData - Datos del préstamo
+ * @param {string} loanData.name - Nombre/descripción del préstamo
+ * @param {string} loanData.type - 'given' (prestado a alguien) o 'received' (recibido de alguien)
+ * @param {string} loanData.counterparty - A quién o de quién es el préstamo
+ * @param {number} loanData.original_amount - Monto original
+ * @param {string} loanData.loan_date - Fecha del préstamo
+ * @param {string} [loanData.due_date] - Fecha de vencimiento (opcional)
+ * @param {string} [loanData.description] - Descripción adicional
  */
 export async function createLoan(loanData) {
     try {
@@ -70,55 +87,49 @@ export async function createLoan(loanData) {
         // Validar datos del préstamo
         validateLoanData(loanData);
 
-        // 1. Crear el movement de origen
-        const originMovement = await createMovement({
-            title: loanData.kind === 'favor' 
-                ? `Préstamo a ${loanData.person_name}`
-                : `Préstamo de ${loanData.person_name}`,
-            description: loanData.description || `Préstamo: ${loanData.amount}`,
-            type: loanData.kind === 'favor' ? 'gasto' : 'ingreso', // favor = dinero sale, contra = dinero entra
-            category: 'Préstamos',
-            date: loanData.loan_date || new Date().toISOString().split('T')[0],
-            confirmed_amount: parseFloat(loanData.amount),
-            expected_amount: parseFloat(loanData.amount),
-            confirmed: true
-        });
-
-        // 2. Crear el loan
         const loan = {
             user_id: user.id,
-            amount: parseFloat(loanData.amount),
-            person_name: loanData.person_name,
+            name: loanData.name,
             description: loanData.description || null,
-            kind: loanData.kind,
-            payment_plan: loanData.payment_plan,
-            origin_movement_id: originMovement.id
+            type: loanData.type, // 'given' o 'received'
+            counterparty: loanData.counterparty,
+            original_amount: parseFloat(loanData.original_amount),
+            remaining_amount: parseFloat(loanData.original_amount), // Inicialmente igual al original
+            loan_date: loanData.loan_date,
+            due_date: loanData.due_date || null,
+            status: 'active'
         };
 
-        // Agregar campos según el tipo de payment_plan
-        if (loanData.payment_plan === 'single') {
-            loan.recovery_days = parseInt(loanData.recovery_days);
-        } else if (loanData.payment_plan === 'recurring') {
-            loan.payment_frequency = loanData.payment_frequency;
-            loan.payment_interval = parseInt(loanData.payment_interval) || 1;
-            loan.payment_count = parseInt(loanData.payment_count);
-        } else if (loanData.payment_plan === 'custom') {
-            loan.custom_dates = loanData.custom_dates;
-        }
-
-        const { data: loanCreated, error } = await supabase
+        const { data, error } = await supabase
             .from('loans')
             .insert([loan])
             .select()
             .single();
 
-        if (error) {
-            // Si falla la creación del loan, eliminar el movement de origen
-            await supabase.from('movements').delete().eq('id', originMovement.id);
-            throw error;
+        if (error) throw error;
+
+        // Opcionalmente crear el movement de origen
+        if (loanData.createOriginMovement !== false) {
+            try {
+                await createMovement({
+                    title: loanData.type === 'given' 
+                        ? `Préstamo a ${loanData.counterparty}`
+                        : `Préstamo de ${loanData.counterparty}`,
+                    description: loanData.description || `Préstamo: $${loanData.original_amount}`,
+                    type: loanData.type === 'given' ? 'gasto' : 'ingreso',
+                    category: 'Préstamos',
+                    date: loanData.loan_date,
+                    confirmed_amount: parseFloat(loanData.original_amount),
+                    expected_amount: parseFloat(loanData.original_amount),
+                    loan_id: data.id,
+                    confirmed: true
+                });
+            } catch (movError) {
+                console.warn('No se pudo crear movement de origen:', movError);
+            }
         }
 
-        return loanCreated;
+        return data;
     } catch (error) {
         console.error('Error creating loan:', error);
         throw error;
@@ -132,11 +143,14 @@ export async function updateLoan(id, updates) {
     try {
         const loan = {};
 
-        if (updates.person_name !== undefined) loan.person_name = updates.person_name;
+        if (updates.name !== undefined) loan.name = updates.name;
         if (updates.description !== undefined) loan.description = updates.description;
-        
-        // No permitir cambiar amount, kind o payment_plan después de creado
-        // (requeriría lógica compleja de actualización de movements)
+        if (updates.counterparty !== undefined) loan.counterparty = updates.counterparty;
+        if (updates.due_date !== undefined) loan.due_date = updates.due_date;
+        if (updates.status !== undefined) loan.status = updates.status;
+        if (updates.remaining_amount !== undefined) {
+            loan.remaining_amount = parseFloat(updates.remaining_amount);
+        }
 
         const { data, error } = await supabase
             .from('loans')
@@ -154,11 +168,10 @@ export async function updateLoan(id, updates) {
 }
 
 /**
- * Elimina un loan y sus movements relacionados
+ * Elimina un loan
  */
 export async function deleteLoan(id) {
     try {
-        // Los movements relacionados se eliminarán automáticamente por CASCADE
         const { error } = await supabase
             .from('loans')
             .delete()
@@ -184,21 +197,43 @@ export async function registerLoanPayment(loanId, paymentData) {
         const loan = await getLoanById(loanId);
         if (!loan) throw new Error('Préstamo no encontrado');
 
+        const paymentAmount = parseFloat(paymentData.amount);
+        
+        // Validar que el pago no exceda el monto restante
+        if (paymentAmount > loan.remaining_amount) {
+            throw new Error(`El pago ($${paymentAmount}) excede el monto restante ($${loan.remaining_amount})`);
+        }
+
         // Crear movement de pago
         const payment = await createMovement({
-            title: paymentData.title || `Pago - ${loan.person_name}`,
-            description: paymentData.description || `Pago de préstamo`,
-            type: loan.kind === 'favor' ? 'ingreso' : 'gasto', // favor = recibo pago, contra = pago
+            title: paymentData.title || `Pago - ${loan.counterparty}`,
+            description: paymentData.description || `Pago de préstamo: ${loan.name}`,
+            type: loan.type === 'given' ? 'ingreso' : 'gasto', // given = recibo pago, received = hago pago
             category: 'Préstamos',
-            date: paymentData.date,
-            confirmed_amount: parseFloat(paymentData.amount),
-            expected_amount: parseFloat(paymentData.expected_amount || paymentData.amount),
+            date: paymentData.date || new Date().toISOString().split('T')[0],
+            confirmed_amount: paymentAmount,
+            expected_amount: paymentData.expected_amount ? parseFloat(paymentData.expected_amount) : paymentAmount,
             loan_id: loanId,
-            is_loan_counterpart: true,
-            confirmed: true
+            confirmed: paymentData.confirmed !== false
         });
 
-        return payment;
+        // Actualizar remaining_amount del loan
+        const newRemaining = loan.remaining_amount - paymentAmount;
+        const newStatus = newRemaining <= 0 ? 'paid' : 'active';
+
+        await updateLoan(loanId, {
+            remaining_amount: Math.max(0, newRemaining),
+            status: newStatus
+        });
+
+        return {
+            payment,
+            loan: {
+                ...loan,
+                remaining_amount: Math.max(0, newRemaining),
+                status: newStatus
+            }
+        };
     } catch (error) {
         console.error('Error registering loan payment:', error);
         throw error;
@@ -206,188 +241,209 @@ export async function registerLoanPayment(loanId, paymentData) {
 }
 
 /**
- * Calcula el progreso de pago de un préstamo
+ * Obtiene los pagos de un préstamo
  */
-export async function getLoanProgress(loanId) {
+export async function getLoanPayments(loanId) {
     try {
-        const loan = await getLoanById(loanId);
-        if (!loan) throw new Error('Préstamo no encontrado');
+        const { data, error } = await supabase
+            .from('movements')
+            .select('*')
+            .eq('loan_id', loanId)
+            .order('date', { ascending: true });
 
-        // Sumar todos los payment_movements
-        const totalPaid = loan.payment_movements?.reduce((sum, mov) => {
-            return sum + parseFloat(mov.confirmed_amount);
-        }, 0) || 0;
-
-        const remaining = parseFloat(loan.amount) - totalPaid;
-        const progress = (totalPaid / parseFloat(loan.amount)) * 100;
-
-        return {
-            total: parseFloat(loan.amount),
-            paid: totalPaid,
-            remaining: remaining > 0 ? remaining : 0,
-            progress: Math.min(progress, 100),
-            is_complete: remaining <= 0
-        };
+        if (error) throw error;
+        return data || [];
     } catch (error) {
-        console.error('Error calculating loan progress:', error);
-        throw error;
-    }
-}
-
-/**
- * Genera las fechas de pago esperadas según el payment_plan
- */
-export function generatePaymentDates(loan) {
-    const dates = [];
-    
-    if (!loan.origin_movement) {
-        return dates;
-    }
-
-    const originDate = new Date(loan.origin_movement.date);
-
-    if (loan.payment_plan === 'single') {
-        // Un solo pago después de recovery_days
-        const paymentDate = new Date(originDate);
-        paymentDate.setDate(paymentDate.getDate() + loan.recovery_days);
-        dates.push({
-            date: paymentDate.toISOString().split('T')[0],
-            amount: parseFloat(loan.amount)
-        });
-    } else if (loan.payment_plan === 'recurring') {
-        // Pagos recurrentes
-        const amountPerPayment = parseFloat(loan.amount) / loan.payment_count;
-        let currentDate = new Date(originDate);
-
-        for (let i = 0; i < loan.payment_count; i++) {
-            // Calcular siguiente fecha según frequency
-            if (loan.payment_frequency === 'daily') {
-                currentDate.setDate(currentDate.getDate() + (loan.payment_interval || 1));
-            } else if (loan.payment_frequency === 'weekly') {
-                currentDate.setDate(currentDate.getDate() + (7 * (loan.payment_interval || 1)));
-            } else if (loan.payment_frequency === 'monthly') {
-                currentDate.setMonth(currentDate.getMonth() + (loan.payment_interval || 1));
-            } else if (loan.payment_frequency === 'yearly') {
-                currentDate.setFullYear(currentDate.getFullYear() + (loan.payment_interval || 1));
-            }
-
-            dates.push({
-                date: currentDate.toISOString().split('T')[0],
-                amount: amountPerPayment
-            });
-        }
-    } else if (loan.payment_plan === 'custom') {
-        // Fechas personalizadas desde JSONB
-        return loan.custom_dates || [];
-    }
-
-    return dates;
-}
-
-/**
- * Obtiene los pagos pendientes de un préstamo
- */
-export async function getPendingPayments(loanId) {
-    try {
-        const loan = await getLoanById(loanId);
-        if (!loan) throw new Error('Préstamo no encontrado');
-
-        const expectedDates = generatePaymentDates(loan);
-        const paidDates = new Set(loan.payment_movements?.map(m => m.date) || []);
-
-        // Filtrar solo las fechas que no han sido pagadas
-        const pending = expectedDates.filter(expected => !paidDates.has(expected.date));
-
-        return pending;
-    } catch (error) {
-        console.error('Error getting pending payments:', error);
+        console.error('Error fetching loan payments:', error);
         throw error;
     }
 }
 
 // ============================================================================
-// VALIDACIÓN
+// LOAN STATISTICS
+// ============================================================================
+
+/**
+ * Obtiene resumen de préstamos
+ */
+export async function getLoansSummary() {
+    try {
+        const loans = await getLoans();
+        
+        const summary = {
+            given: {
+                count: 0,
+                total_original: 0,
+                total_remaining: 0,
+                active: 0
+            },
+            received: {
+                count: 0,
+                total_original: 0,
+                total_remaining: 0,
+                active: 0
+            }
+        };
+
+        for (const loan of loans) {
+            const type = loan.type; // 'given' o 'received'
+            summary[type].count++;
+            summary[type].total_original += parseFloat(loan.original_amount) || 0;
+            summary[type].total_remaining += parseFloat(loan.remaining_amount) || 0;
+            if (loan.status === 'active') {
+                summary[type].active++;
+            }
+        }
+
+        // Balance neto: lo que me deben - lo que debo
+        summary.net_balance = summary.given.total_remaining - summary.received.total_remaining;
+
+        return summary;
+    } catch (error) {
+        console.error('Error getting loans summary:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene préstamos próximos a vencer
+ */
+export async function getUpcomingDueLoans(daysAhead = 30) {
+    try {
+        const today = new Date();
+        const futureDate = new Date();
+        futureDate.setDate(futureDate.getDate() + daysAhead);
+
+        const { data, error } = await supabase
+            .from('loans')
+            .select('*')
+            .eq('status', 'active')
+            .not('due_date', 'is', null)
+            .gte('due_date', today.toISOString().split('T')[0])
+            .lte('due_date', futureDate.toISOString().split('T')[0])
+            .order('due_date', { ascending: true });
+
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Error fetching upcoming due loans:', error);
+        throw error;
+    }
+}
+
+/**
+ * Obtiene préstamos vencidos
+ */
+export async function getOverdueLoans() {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+
+        const { data, error } = await supabase
+            .from('loans')
+            .select('*')
+            .eq('status', 'active')
+            .not('due_date', 'is', null)
+            .lt('due_date', today)
+            .order('due_date', { ascending: true });
+
+        if (error) throw error;
+        return data || [];
+    } catch (error) {
+        console.error('Error fetching overdue loans:', error);
+        throw error;
+    }
+}
+
+// ============================================================================
+// VALIDATION
 // ============================================================================
 
 /**
  * Valida los datos de un loan
  */
 function validateLoanData(data) {
-    const requiredFields = ['amount', 'person_name', 'kind', 'payment_plan'];
-    
-    for (const field of requiredFields) {
-        if (!data[field]) {
-            throw new Error(`Campo requerido: ${field}`);
-        }
+    if (!data.name || data.name.trim() === '') {
+        throw new Error('El nombre del préstamo es requerido');
     }
 
-    if (parseFloat(data.amount) <= 0) {
+    const validTypes = ['given', 'received'];
+    if (!validTypes.includes(data.type)) {
+        throw new Error(`Tipo inválido. Debe ser: ${validTypes.join(', ')}`);
+    }
+
+    if (!data.counterparty || data.counterparty.trim() === '') {
+        throw new Error('La contraparte (a quién/de quién) es requerida');
+    }
+
+    if (!data.original_amount || parseFloat(data.original_amount) <= 0) {
         throw new Error('El monto debe ser mayor a 0');
     }
 
-    const validKinds = ['favor', 'contra'];
-    if (!validKinds.includes(data.kind)) {
-        throw new Error(`Tipo de préstamo inválido. Debe ser: ${validKinds.join(', ')}`);
-    }
-
-    const validPlans = ['single', 'recurring', 'custom'];
-    if (!validPlans.includes(data.payment_plan)) {
-        throw new Error(`Plan de pago inválido. Debe ser: ${validPlans.join(', ')}`);
-    }
-
-    // Validar campos según payment_plan
-    if (data.payment_plan === 'single') {
-        if (!data.recovery_days || parseInt(data.recovery_days) <= 0) {
-            throw new Error('recovery_days es requerido y debe ser mayor a 0 para payment_plan=single');
-        }
-    } else if (data.payment_plan === 'recurring') {
-        if (!data.payment_frequency) {
-            throw new Error('payment_frequency es requerido para payment_plan=recurring');
-        }
-        if (!data.payment_count || parseInt(data.payment_count) <= 0) {
-            throw new Error('payment_count es requerido y debe ser mayor a 0 para payment_plan=recurring');
-        }
-        const validFrequencies = ['daily', 'weekly', 'monthly', 'yearly'];
-        if (!validFrequencies.includes(data.payment_frequency)) {
-            throw new Error(`payment_frequency inválido. Debe ser: ${validFrequencies.join(', ')}`);
-        }
-    } else if (data.payment_plan === 'custom') {
-        if (!data.custom_dates || !Array.isArray(data.custom_dates) || data.custom_dates.length === 0) {
-            throw new Error('custom_dates es requerido y debe ser un array no vacío para payment_plan=custom');
-        }
+    if (!data.loan_date) {
+        throw new Error('La fecha del préstamo es requerida');
     }
 }
 
 // ============================================================================
-// UTILIDADES
+// HELPER FUNCTIONS
 // ============================================================================
 
 /**
- * Obtiene estadísticas de préstamos
+ * Marca un préstamo como pagado completamente
  */
-export async function getLoanStatistics() {
+export async function markLoanAsPaid(id) {
+    return updateLoan(id, { 
+        status: 'paid',
+        remaining_amount: 0
+    });
+}
+
+/**
+ * Marca un préstamo como en mora/impago
+ */
+export async function markLoanAsDefaulted(id) {
+    return updateLoan(id, { status: 'defaulted' });
+}
+
+/**
+ * Cancela un préstamo
+ */
+export async function cancelLoan(id) {
+    return updateLoan(id, { status: 'cancelled' });
+}
+
+/**
+ * Calcula el progreso de pago de un préstamo (0-100%)
+ */
+export function calculateLoanProgress(loan) {
+    if (!loan || !loan.original_amount) return 0;
+    const paid = loan.original_amount - (loan.remaining_amount || 0);
+    return Math.min(100, Math.round((paid / loan.original_amount) * 100));
+}
+
+/**
+ * Obtiene el progreso detallado de un préstamo
+ */
+export async function getLoanProgress(loanId) {
     try {
-        const loans = await getLoans();
-        
-        const stats = {
-            total_loans: loans.length,
-            favor: { count: 0, total: 0, paid: 0, pending: 0 },
-            contra: { count: 0, total: 0, paid: 0, pending: 0 }
+        const loan = await getLoanById(loanId);
+        if (!loan) throw new Error('Préstamo no encontrado');
+
+        const originalAmount = parseFloat(loan.original_amount) || 0;
+        const remainingAmount = parseFloat(loan.remaining_amount) || 0;
+        const paid = originalAmount - remainingAmount;
+        const progress = originalAmount > 0 ? (paid / originalAmount) * 100 : 0;
+
+        return {
+            loan,
+            original: originalAmount,
+            paid: paid,
+            remaining: remainingAmount,
+            progress: Math.min(100, progress),
+            is_complete: remainingAmount <= 0 || loan.status === 'paid'
         };
-
-        for (const loan of loans) {
-            const progress = await getLoanProgress(loan.id);
-            const kind = loan.kind;
-            
-            stats[kind].count += 1;
-            stats[kind].total += parseFloat(loan.amount);
-            stats[kind].paid += progress.paid;
-            stats[kind].pending += progress.remaining;
-        }
-
-        return stats;
     } catch (error) {
-        console.error('Error calculating loan statistics:', error);
+        console.error('Error getting loan progress:', error);
         throw error;
     }
 }

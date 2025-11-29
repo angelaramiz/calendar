@@ -1,6 +1,7 @@
 /**
  * movements.js
  * Gestión de movimientos confirmados (V2)
+ * Compatible con esquema V2 - usa tabla movements directamente
  */
 
 import { supabase } from './supabase-client.js';
@@ -15,7 +16,7 @@ import { supabase } from './supabase-client.js';
 export async function getMovements(filters = {}) {
     try {
         let query = supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .order('date', { ascending: false });
 
@@ -35,6 +36,9 @@ export async function getMovements(filters = {}) {
         if (filters.archived !== undefined) {
             query = query.eq('archived', filters.archived);
         }
+        if (filters.confirmed !== undefined) {
+            query = query.eq('confirmed', filters.confirmed);
+        }
 
         const { data, error } = await query;
         if (error) throw error;
@@ -51,7 +55,7 @@ export async function getMovements(filters = {}) {
 export async function getMovementById(id) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .eq('id', id)
             .single();
@@ -87,9 +91,6 @@ export async function createMovement(movementData) {
             income_pattern_id: movementData.income_pattern_id || null,
             expense_pattern_id: movementData.expense_pattern_id || null,
             loan_id: movementData.loan_id || null,
-            plan_id: movementData.plan_id || null,
-            envelope_id: movementData.envelope_id || null,
-            is_loan_counterpart: movementData.is_loan_counterpart || false,
             confirmed: movementData.confirmed !== false,
             archived: movementData.archived || false
         };
@@ -172,7 +173,6 @@ export async function updateMovement(id, updates) {
         }
         if (updates.confirmed !== undefined) movement.confirmed = updates.confirmed;
         if (updates.archived !== undefined) movement.archived = updates.archived;
-        if (updates.envelope_id !== undefined) movement.envelope_id = updates.envelope_id;
 
         const { data, error } = await supabase
             .from('movements')
@@ -223,7 +223,7 @@ export async function deleteMovement(id, hard = false) {
 export async function getMovementsForDateRange(startDate, endDate) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .gte('date', startDate)
             .lte('date', endDate)
@@ -244,7 +244,7 @@ export async function getMovementsForDateRange(startDate, endDate) {
 export async function getMovementsForDate(date) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .eq('date', date)
             .eq('archived', false)
@@ -268,7 +268,7 @@ export async function getMovementsForDate(date) {
 export async function getMovementsByLoan(loanId) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .eq('loan_id', loanId)
             .order('date', { ascending: true });
@@ -282,31 +282,12 @@ export async function getMovementsByLoan(loanId) {
 }
 
 /**
- * Obtiene movements relacionados a un plan
- */
-export async function getMovementsByPlan(planId) {
-    try {
-        const { data, error } = await supabase
-            .from('movements_with_patterns')
-            .select('*')
-            .eq('plan_id', planId)
-            .order('date', { ascending: true });
-
-        if (error) throw error;
-        return data || [];
-    } catch (error) {
-        console.error('Error fetching movements by plan:', error);
-        throw error;
-    }
-}
-
-/**
  * Obtiene movements relacionados a un income_pattern
  */
 export async function getMovementsByIncomePattern(patternId) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .eq('income_pattern_id', patternId)
             .order('date', { ascending: true });
@@ -325,7 +306,7 @@ export async function getMovementsByIncomePattern(patternId) {
 export async function getMovementsByExpensePattern(patternId) {
     try {
         const { data, error } = await supabase
-            .from('movements_with_patterns')
+            .from('movements')
             .select('*')
             .eq('expense_pattern_id', patternId)
             .order('date', { ascending: true });
@@ -350,10 +331,11 @@ export async function getMovementTotals(startDate, endDate) {
         const movements = await getMovementsForDateRange(startDate, endDate);
         
         const totals = movements.reduce((acc, mov) => {
+            const amount = parseFloat(mov.confirmed_amount) || 0;
             if (mov.type === 'ingreso') {
-                acc.income += parseFloat(mov.confirmed_amount);
+                acc.income += amount;
             } else if (mov.type === 'gasto') {
-                acc.expense += parseFloat(mov.confirmed_amount);
+                acc.expense += amount;
             }
             return acc;
         }, { income: 0, expense: 0 });
@@ -382,7 +364,7 @@ export async function getTotalsByCategory(startDate, endDate, type = null) {
             if (!acc[cat]) {
                 acc[cat] = { category: cat, total: 0, count: 0 };
             }
-            acc[cat].total += parseFloat(mov.confirmed_amount);
+            acc[cat].total += parseFloat(mov.confirmed_amount) || 0;
             acc[cat].count += 1;
             return acc;
         }, {});
@@ -410,7 +392,7 @@ function validateMovementData(data) {
         }
     }
 
-    const validTypes = ['ingreso', 'gasto', 'ajuste'];
+    const validTypes = ['ingreso', 'gasto'];
     if (!validTypes.includes(data.type)) {
         throw new Error(`Tipo inválido. Debe ser: ${validTypes.join(', ')}`);
     }
@@ -425,15 +407,8 @@ function validateMovementData(data) {
         }
     }
 
-    // Validar que solo haya un origen
-    const origins = [
-        data.income_pattern_id,
-        data.expense_pattern_id,
-        data.loan_id,
-        data.plan_id
-    ].filter(Boolean);
-
-    if (origins.length > 1) {
-        throw new Error('Un movement solo puede tener un origen (pattern, loan o plan)');
+    // Validar que solo haya income_pattern o expense_pattern, no ambos
+    if (data.income_pattern_id && data.expense_pattern_id) {
+        throw new Error('Un movement solo puede tener income_pattern_id O expense_pattern_id, no ambos');
     }
 }

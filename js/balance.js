@@ -17,21 +17,32 @@ export async function getConfirmedBalanceSummary() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuario no autenticado');
 
-        const { data, error } = await supabase
-            .from('confirmed_balance_summary')
-            .select('*')
+        // Consultar movements directamente en lugar de la vista
+        const { data: movements, error } = await supabase
+            .from('movements')
+            .select('type, confirmed_amount')
             .eq('user_id', user.id)
-            .single();
+            .eq('confirmed', true)
+            .eq('archived', false);
 
-        if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+        if (error) throw error;
 
-        return data || {
-            total_income: 0,
-            total_expenses: 0,
-            balance: 0,
-            income_count: 0,
-            expense_count: 0
-        };
+        // Calcular totales
+        const result = (movements || []).reduce((acc, m) => {
+            const amount = parseFloat(m.confirmed_amount) || 0;
+            if (m.type === 'ingreso') {
+                acc.total_income += amount;
+                acc.income_count++;
+            } else if (m.type === 'gasto') {
+                acc.total_expenses += amount;
+                acc.expense_count++;
+            }
+            return acc;
+        }, { total_income: 0, total_expenses: 0, income_count: 0, expense_count: 0 });
+
+        result.balance = result.total_income - result.total_expenses;
+
+        return result;
     } catch (error) {
         console.error('Error fetching confirmed balance summary:', error);
         throw error;
@@ -46,20 +57,51 @@ export async function getMonthlyConfirmedBalance(year = null, limit = 12) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuario no autenticado');
 
-        let query = supabase
-            .from('monthly_confirmed_balance')
-            .select('*')
+        // Consultar movements directamente y agrupar por mes
+        const { data: movements, error } = await supabase
+            .from('movements')
+            .select('date, type, confirmed_amount')
             .eq('user_id', user.id)
-            .order('month', { ascending: false })
-            .limit(limit);
+            .eq('confirmed', true)
+            .eq('archived', false)
+            .order('date', { ascending: false });
 
-        if (year) {
-            query = query.eq('year', year);
-        }
-
-        const { data, error } = await query;
         if (error) throw error;
-        return data || [];
+
+        // Agrupar por mes
+        const monthlyData = {};
+        (movements || []).forEach(m => {
+            const date = new Date(m.date);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (year && date.getFullYear() !== year) return;
+            
+            if (!monthlyData[monthKey]) {
+                monthlyData[monthKey] = {
+                    month: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`,
+                    year: date.getFullYear(),
+                    month_num: date.getMonth() + 1,
+                    total_income: 0,
+                    total_expenses: 0,
+                    balance: 0
+                };
+            }
+            
+            const amount = parseFloat(m.confirmed_amount) || 0;
+            if (m.type === 'ingreso') {
+                monthlyData[monthKey].total_income += amount;
+            } else if (m.type === 'gasto') {
+                monthlyData[monthKey].total_expenses += amount;
+            }
+        });
+
+        // Calcular balance y convertir a array
+        const result = Object.values(monthlyData)
+            .map(m => ({ ...m, balance: m.total_income - m.total_expenses }))
+            .sort((a, b) => b.month.localeCompare(a.month))
+            .slice(0, limit);
+
+        return result;
     } catch (error) {
         console.error('Error fetching monthly confirmed balance:', error);
         throw error;
@@ -117,24 +159,86 @@ export async function getConfirmedBalanceForDateRange(startDate, endDate) {
 
 /**
  * Obtiene las asignaciones de todos los patrones de ingreso
+ * Calcula directamente desde las tablas en lugar de usar una vista
  */
 export async function getIncomePatternAllocations() {
     try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) throw new Error('Usuario no autenticado');
 
-        const { data, error } = await supabase
-            .from('income_pattern_allocations')
+        // Obtener patrones de ingreso activos
+        const { data: incomePatterns, error: ipError } = await supabase
+            .from('income_patterns')
             .select('*')
             .eq('user_id', user.id)
-            .eq('active', true)
-            .order('income_name');
+            .eq('active', true);
 
-        if (error) throw error;
-        return data || [];
+        if (ipError) throw ipError;
+
+        // Para cada patrón, calcular asignaciones
+        const result = await Promise.all((incomePatterns || []).map(async (ip) => {
+            // Obtener asignaciones a gastos
+            const { data: expenseAllocs } = await supabase
+                .from('expense_pattern_income_sources')
+                .select('allocation_type, allocation_value')
+                .eq('income_pattern_id', ip.id);
+
+            // Obtener asignaciones a planes
+            const { data: planAllocs } = await supabase
+                .from('plan_income_sources')
+                .select('allocation_type, allocation_value')
+                .eq('income_pattern_id', ip.id);
+
+            // Obtener asignaciones a ahorros
+            const { data: savingsAllocs } = await supabase
+                .from('savings_pattern_income_sources')
+                .select('allocation_type, allocation_value')
+                .eq('income_pattern_id', ip.id);
+
+            // Calcular totales
+            const calcTotals = (allocs) => {
+                return (allocs || []).reduce((acc, a) => {
+                    if (a.allocation_type === 'percent') {
+                        acc.percent += parseFloat(a.allocation_value) || 0;
+                    } else {
+                        acc.fixed += parseFloat(a.allocation_value) || 0;
+                    }
+                    return acc;
+                }, { percent: 0, fixed: 0 });
+            };
+
+            const expenseTotals = calcTotals(expenseAllocs);
+            const planTotals = calcTotals(planAllocs);
+            const savingsTotals = calcTotals(savingsAllocs);
+
+            const totalPercent = expenseTotals.percent + planTotals.percent + savingsTotals.percent;
+            const totalFixed = expenseTotals.fixed + planTotals.fixed + savingsTotals.fixed;
+
+            return {
+                income_pattern_id: ip.id,
+                user_id: ip.user_id,
+                income_name: ip.name,
+                base_amount: ip.base_amount,
+                frequency: ip.frequency,
+                interval: ip.interval || 1,
+                active: ip.active,
+                percent_allocated_to_expenses: expenseTotals.percent,
+                percent_allocated_to_plans: planTotals.percent,
+                percent_allocated_to_savings: savingsTotals.percent,
+                total_percent_allocated: totalPercent,
+                fixed_allocated_to_expenses: expenseTotals.fixed,
+                fixed_allocated_to_plans: planTotals.fixed,
+                fixed_allocated_to_savings: savingsTotals.fixed,
+                total_fixed_allocated: totalFixed,
+                percent_available: Math.max(0, 1 - totalPercent),
+                amount_available: Math.max(0, ip.base_amount - totalFixed)
+            };
+        }));
+
+        return result;
     } catch (error) {
         console.error('Error fetching income pattern allocations:', error);
-        throw error;
+        return [];
     }
 }
 
@@ -143,17 +247,11 @@ export async function getIncomePatternAllocations() {
  */
 export async function getIncomePatternAllocation(incomePatternId) {
     try {
-        const { data, error } = await supabase
-            .from('income_pattern_allocations')
-            .select('*')
-            .eq('income_pattern_id', incomePatternId)
-            .single();
-
-        if (error && error.code !== 'PGRST116') throw error;
-        return data;
+        const allocations = await getIncomePatternAllocations();
+        return allocations.find(a => a.income_pattern_id === incomePatternId) || null;
     } catch (error) {
         console.error('Error fetching income pattern allocation:', error);
-        throw error;
+        return null;
     }
 }
 
@@ -436,7 +534,8 @@ export async function recalculateAllocationsByPriority() {
                 if (needsAdjustment) {
                     adjustments.push({
                         plan_id: plan.id,
-                        plan_title: plan.title,
+                        // V2: usar name en lugar de title
+                        plan_name: plan.name,
                         source_id: source.id,
                         income_name: source.income_pattern?.name,
                         original_value: requestedValue,

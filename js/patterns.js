@@ -70,9 +70,10 @@ export async function createIncomePattern(patternData) {
             base_amount: parseFloat(patternData.base_amount),
             frequency: patternData.frequency,
             interval: parseInt(patternData.interval) || 1,
+            day_of_week: patternData.day_of_week !== undefined ? parseInt(patternData.day_of_week) : null,
+            day_of_month: patternData.day_of_month !== undefined ? parseInt(patternData.day_of_month) : null,
             start_date: patternData.start_date,
             end_date: patternData.end_date || null,
-            occurrence_limit: patternData.occurrence_limit ? parseInt(patternData.occurrence_limit) : null,
             active: patternData.active !== false
         };
 
@@ -109,9 +110,8 @@ export async function updateIncomePattern(id, updates) {
         if (updates.interval !== undefined) pattern.interval = parseInt(updates.interval);
         if (updates.start_date !== undefined) pattern.start_date = updates.start_date;
         if (updates.end_date !== undefined) pattern.end_date = updates.end_date;
-        if (updates.occurrence_limit !== undefined) {
-            pattern.occurrence_limit = updates.occurrence_limit ? parseInt(updates.occurrence_limit) : null;
-        }
+        if (updates.day_of_week !== undefined) pattern.day_of_week = updates.day_of_week !== null ? parseInt(updates.day_of_week) : null;
+        if (updates.day_of_month !== undefined) pattern.day_of_month = updates.day_of_month !== null ? parseInt(updates.day_of_month) : null;
         if (updates.active !== undefined) pattern.active = updates.active;
 
         const { data, error } = await supabase
@@ -218,9 +218,10 @@ export async function createExpensePattern(patternData) {
             base_amount: parseFloat(patternData.base_amount),
             frequency: patternData.frequency,
             interval: parseInt(patternData.interval) || 1,
+            day_of_week: patternData.day_of_week !== undefined ? parseInt(patternData.day_of_week) : null,
+            day_of_month: patternData.day_of_month !== undefined ? parseInt(patternData.day_of_month) : null,
             start_date: patternData.start_date,
             end_date: patternData.end_date || null,
-            occurrence_limit: patternData.occurrence_limit ? parseInt(patternData.occurrence_limit) : null,
             active: patternData.active !== false
         };
 
@@ -257,9 +258,8 @@ export async function updateExpensePattern(id, updates) {
         if (updates.interval !== undefined) pattern.interval = parseInt(updates.interval);
         if (updates.start_date !== undefined) pattern.start_date = updates.start_date;
         if (updates.end_date !== undefined) pattern.end_date = updates.end_date;
-        if (updates.occurrence_limit !== undefined) {
-            pattern.occurrence_limit = updates.occurrence_limit ? parseInt(updates.occurrence_limit) : null;
-        }
+        if (updates.day_of_week !== undefined) pattern.day_of_week = updates.day_of_week !== null ? parseInt(updates.day_of_week) : null;
+        if (updates.day_of_month !== undefined) pattern.day_of_month = updates.day_of_month !== null ? parseInt(updates.day_of_month) : null;
         if (updates.active !== undefined) pattern.active = updates.active;
 
         const { data, error } = await supabase
@@ -592,7 +592,8 @@ export async function calculateExpensePatternCoverage(expensePatternId) {
 // ============================================================================
 
 /**
- * Valida las income sources para expense_patterns
+ * Valida y normaliza las income sources para expense_patterns
+ * Si allocation_type es 'percent' y el valor es > 1, lo convierte automáticamente a decimal
  */
 function validateIncomeSources(sources) {
     if (!Array.isArray(sources)) {
@@ -615,13 +616,15 @@ function validateIncomeSources(sources) {
             throw new Error(`allocation_type inválido. Debe ser: ${validTypes.join(', ')}`);
         }
 
-        const value = parseFloat(source.allocation_value);
+        let value = parseFloat(source.allocation_value);
         if (value <= 0) {
             throw new Error('allocation_value debe ser mayor a 0');
         }
 
+        // Auto-convertir porcentaje a decimal si es necesario
         if (source.allocation_type === 'percent' && value > 1) {
-            throw new Error('allocation_value para percent debe estar entre 0 y 1 (ejemplo: 0.25 para 25%)');
+            console.warn(`allocation_value (${value}) parece estar en formato porcentaje, convirtiendo a decimal`);
+            source.allocation_value = value / 100;
         }
     }
 }
@@ -643,7 +646,8 @@ function validatePatternData(data, isUpdate = false) {
     }
 
     if (data.frequency !== undefined) {
-        const validFrequencies = ['daily', 'weekly', 'monthly', 'yearly'];
+        // V2: Frecuencias válidas son weekly, biweekly, monthly, yearly
+        const validFrequencies = ['weekly', 'biweekly', 'monthly', 'yearly'];
         if (!validFrequencies.includes(data.frequency)) {
             throw new Error(`Frecuencia inválida. Debe ser: ${validFrequencies.join(', ')}`);
         }
@@ -651,13 +655,6 @@ function validatePatternData(data, isUpdate = false) {
 
     if (data.interval !== undefined && parseInt(data.interval) < 1) {
         throw new Error('El intervalo debe ser mayor a 0');
-    }
-
-    if (data.occurrence_limit !== undefined && data.occurrence_limit !== null) {
-        const limit = parseInt(data.occurrence_limit);
-        if (limit < 1) {
-            throw new Error('El límite de ocurrencias debe ser mayor a 0');
-        }
     }
 
     if (data.start_date && data.end_date) {

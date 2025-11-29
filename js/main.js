@@ -4,7 +4,6 @@
 
 import { Calendar } from './calendar.js';
 import { showCreateEventDialog, showBalanceSummaryDialog } from './calendar-modals-v2.js';
-import { syncDownMonth, saveEvents } from './events.js';
 import { computeDailyStats, computeWeeklyStatsForMonth, computeMonthlyFutureStats, computeAnnualStatsGroup, renderMoney } from './stats.js';
 import { 
     initNotificationSystem, 
@@ -75,6 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mostrar directamente el modal de crear movimiento con el tipo específico
             const typeMap = { 'ingreso': 'ingreso', 'gasto': 'gasto' };
             await module.showCreateEventDialog(todayISO, () => {
+                calendarInstance?.invalidateCache();
                 calendarInstance?.refreshAllEventIndicators();
             });
             
@@ -112,6 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // V2: Refrescar indicadores directamente al cambiar de mes
     const reSync = () => {
+        calendar.invalidateCache(); // Invalidar caché al cambiar de mes
         calendar.refreshAllEventIndicators();
     };
     
@@ -325,10 +326,10 @@ async function openQuickAccessPanel() {
         
         // Cargar patrones de ingreso, patrones de gasto, planes y ahorros
         const [incomePatterns, expensePatterns, plans, savings] = await Promise.all([
-            supabase.from('income_patterns').select('*').eq('user_id', userId).eq('is_active', true),
-            supabase.from('expense_patterns').select('*').eq('user_id', userId).eq('is_active', true),
-            supabase.from('plans').select('*').eq('user_id', userId).in('status', ['active', 'pending']),
-            supabase.from('savings').select('*').eq('user_id', userId).eq('is_active', true)
+            supabase.from('income_patterns').select('*').eq('user_id', userId).eq('active', true),
+            supabase.from('expense_patterns').select('*').eq('user_id', userId).eq('active', true),
+            supabase.from('plans').select('*').eq('user_id', userId).in('status', ['active', 'paused']),
+            supabase.from('savings_patterns').select('*').eq('user_id', userId).eq('active', true)
         ]);
         
         const incomes = incomePatterns.data || [];
@@ -336,29 +337,31 @@ async function openQuickAccessPanel() {
         const activePlans = plans.data || [];
         const activeSavings = savings.data || [];
         
-        // Calcular totales
+        // Calcular totales - V2: usar base_amount en lugar de amount
         const totalIncomeMonthly = incomes.reduce((sum, p) => {
             const freq = p.frequency;
+            const amount = parseFloat(p.base_amount) || 0;
             let factor = 1;
             if (freq === 'weekly') factor = 4.33;
             else if (freq === 'biweekly') factor = 2.17;
             else if (freq === 'daily') factor = 30;
             else if (freq === 'yearly') factor = 1/12;
-            return sum + (p.amount * factor);
+            return sum + (amount * factor);
         }, 0);
         
         const totalExpenseMonthly = expenses.reduce((sum, p) => {
             const freq = p.frequency;
+            const amount = parseFloat(p.base_amount) || 0;
             let factor = 1;
             if (freq === 'weekly') factor = 4.33;
             else if (freq === 'biweekly') factor = 2.17;
             else if (freq === 'daily') factor = 30;
             else if (freq === 'yearly') factor = 1/12;
-            return sum + (p.amount * factor);
+            return sum + (amount * factor);
         }, 0);
         
         const totalSavings = activeSavings.reduce((sum, s) => sum + (s.current_amount || 0), 0);
-        const totalPlansAccumulated = activePlans.reduce((sum, p) => sum + (p.accumulated || 0), 0);
+        const totalPlansAccumulated = activePlans.reduce((sum, p) => sum + (p.current_amount || 0), 0);
         
         // Generar HTML del panel
         const html = `
@@ -406,7 +409,7 @@ async function openQuickAccessPanel() {
                                         <span class="item-name">${p.name}</span>
                                         <span class="item-freq">${translateFrequency(p.frequency)}</span>
                                     </div>
-                                    <span class="item-amount positive">${formatCurrency(p.amount)}</span>
+                                    <span class="item-amount positive">${formatCurrency(p.base_amount)}</span>
                                 </div>
                             `).join('')
                         }
@@ -421,7 +424,7 @@ async function openQuickAccessPanel() {
                                         <span class="item-name">${p.name}${p.category ? ` <small>(${p.category})</small>` : ''}</span>
                                         <span class="item-freq">${translateFrequency(p.frequency)}</span>
                                     </div>
-                                    <span class="item-amount negative">${formatCurrency(p.amount)}</span>
+                                    <span class="item-amount negative">${formatCurrency(p.base_amount)}</span>
                                 </div>
                             `).join('')
                         }
@@ -431,7 +434,7 @@ async function openQuickAccessPanel() {
                     <div class="quick-tab-pane" id="tab-plans">
                         ${activePlans.length === 0 ? '<p class="no-items">No tienes planes activos</p>' :
                             activePlans.map(p => {
-                                const progress = p.target_amount > 0 ? Math.min(100, (p.accumulated / p.target_amount) * 100) : 0;
+                                const progress = p.target_amount > 0 ? Math.min(100, (p.current_amount / p.target_amount) * 100) : 0;
                                 return `
                                     <div class="quick-item plan-item" data-type="plan" data-id="${p.id}">
                                         <div class="item-info">
@@ -441,7 +444,7 @@ async function openQuickAccessPanel() {
                                             </div>
                                         </div>
                                         <div class="plan-amounts">
-                                            <span class="item-amount">${formatCurrency(p.accumulated)}</span>
+                                            <span class="item-amount">${formatCurrency(p.current_amount)}</span>
                                             <span class="item-target">/ ${formatCurrency(p.target_amount)}</span>
                                         </div>
                                     </div>
@@ -508,20 +511,16 @@ async function openQuickAccessPanel() {
                         
                         if (type === 'income') {
                             // Mostrar detalles del patrón de ingreso
-                            const pattern = incomes.find(p => p.id === id);
-                            if (pattern) modalsModule.showIncomePatternDetails(pattern, () => {});
+                            await modalsModule.showPatternDetails(id, 'income', () => {});
                         } else if (type === 'expense') {
                             // Mostrar detalles del patrón de gasto
-                            const pattern = expenses.find(p => p.id === id);
-                            if (pattern) modalsModule.showExpensePatternDetails(pattern, () => {});
+                            await modalsModule.showPatternDetails(id, 'expense', () => {});
                         } else if (type === 'plan') {
                             // Mostrar detalles del plan
-                            const plan = activePlans.find(p => p.id === id);
-                            if (plan) modalsModule.showPlanDetails(plan, () => {});
+                            await modalsModule.showPlanDetails(id, () => {});
                         } else if (type === 'savings') {
-                            // Mostrar detalles del ahorro
-                            const saving = activeSavings.find(s => s.id === id);
-                            if (saving) modalsModule.showSavingsDetails(saving, () => {});
+                            // Mostrar detalles del ahorro - usar showSavingsManagementDialog por ahora
+                            await modalsModule.showSavingsManagementDialog();
                         }
                     });
                 });
@@ -727,7 +726,10 @@ async function openSettingsPanel() {
                     if (!ok) return;
                     await clearAllEvents(false);
                     await Swal.fire({ icon:'success', title:'Eventos borrados' });
-                    try { calendarInstance?.refreshAllEventIndicators(); } catch(_) {}
+                    try { 
+                        calendarInstance?.invalidateCache();
+                        calendarInstance?.refreshAllEventIndicators(); 
+                    } catch(_) {}
                 });
             }
 
@@ -995,7 +997,7 @@ function closeStatsDrawer() {
         if (drawer) drawer.classList.remove('open');
 }
 
-function renderStatsTab(tab) {
+async function renderStatsTab(tab) {
         const body = document.getElementById('stats-body');
         if (!body) return;
 
@@ -1004,8 +1006,11 @@ function renderStatsTab(tab) {
         const year = now.getFullYear();
         const month = now.getMonth();
 
+        // Mostrar loading
+        body.innerHTML = '<div style="text-align:center;padding:20px;">Cargando...</div>';
+
         if (tab === 'hoy') {
-                const { acc, netConfirmed, netPending } = computeDailyStats(todayISO);
+                const { acc, netConfirmed, netPending } = await computeDailyStats(todayISO);
                     body.innerHTML = `
                     <div class="stat-grid">
                             <div class="stat-card" data-scope="day" data-range="${todayISO}|${todayISO}" data-type="ingreso" data-status="confirmed"><div class="stat-title">Ingresos confirmados</div><div class="stat-value income">${renderMoney(acc.confirmed.income)}</div></div>
@@ -1019,7 +1024,7 @@ function renderStatsTab(tab) {
         }
 
         if (tab === 'semanas') {
-                const weeks = computeWeeklyStatsForMonth(year, month);
+                const weeks = await computeWeeklyStatsForMonth(year, month);
                         let total = { cInc:0, cExp:0, pInc:0, pExp:0 };
                         const rows = weeks.map(w => {
                                 total.cInc += w.acc.confirmed.income; total.cExp += w.acc.confirmed.expense;
@@ -1059,19 +1064,21 @@ function renderStatsTab(tab) {
                         <label for="month-picker">Periodo:</label>
                         <input id="month-picker" type="month" value="${monthVal}" />
                     </div>
-                    <div id="monthly-container"></div>`;
+                    <div id="monthly-container">Cargando...</div>`;
 
-                const renderMonthly = () => {
+                const renderMonthly = async () => {
+                        const container = body.querySelector('#monthly-container');
+                        if (container) container.innerHTML = 'Cargando...';
                         const val = body.querySelector('#month-picker').value || monthVal;
                         const [yy, mm] = val.split('-').map(Number);
                         const selYear = yy; const selMonth = (mm || 1) - 1;
                         const endISO = new Date(selYear, selMonth+1, 0).toISOString().slice(0,10);
                         const isCurrentMonth = (selYear === year) && (selMonth === month);
                         const startISO = isCurrentMonth ? todayISO : new Date(selYear, selMonth, 1).toISOString().slice(0,10);
-                        const acc = computeMonthlyFutureStats(selYear, selMonth, startISO);
+                        const acc = await computeMonthlyFutureStats(selYear, selMonth, startISO);
                         const netC = acc.confirmed.income - acc.confirmed.expense;
                         const netP = acc.pending.income - acc.pending.expense;
-                        body.querySelector('#monthly-container').innerHTML = `
+                        if (container) container.innerHTML = `
                             <div class="stat-grid">
                                 <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="ingreso" data-status="confirmed"><div class="stat-title">Ingresos confirmados (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value income">${renderMoney(acc.confirmed.income)}</div></div>
                                 <div class="stat-card" data-scope="month" data-range="${startISO}|${endISO}" data-type="gasto" data-status="confirmed"><div class="stat-title">Gastos confirmados (${isCurrentMonth? 'resto del mes' : 'mes elegido'})</div><div class="stat-value expense">${renderMoney(acc.confirmed.expense)}</div></div>
@@ -1081,7 +1088,7 @@ function renderStatsTab(tab) {
                             </div>`;
                         attachStatCardHandlers();
                 };
-                body.querySelector('#month-picker').addEventListener('change', renderMonthly);
+                body.querySelector('#month-picker').addEventListener('change', () => renderMonthly());
                 renderMonthly();
                 return;
         }
@@ -1098,11 +1105,13 @@ function renderStatsTab(tab) {
                             </select>
                         </label>
                     </div>
-                    <div id="annual-container"></div>`;
+                    <div id="annual-container">Cargando...</div>`;
                 body.innerHTML = html;
-                const renderAnnual = () => {
+                const renderAnnual = async () => {
+                        const container = body.querySelector('#annual-container');
+                        if (container) container.innerHTML = 'Cargando...';
                         const val = Number(body.querySelector('#group-size').value);
-                        const groups = computeAnnualStatsGroup(year, val);
+                        const groups = await computeAnnualStatsGroup(year, val);
                     let total = { cInc:0, cExp:0, pInc:0, pExp:0, netC:0, netP:0 };
                     const rows = groups.map(g => {
                                 const netC = g.acc.confirmed.income - g.acc.confirmed.expense;
@@ -1127,7 +1136,7 @@ function renderStatsTab(tab) {
                         <td class="expense">${renderMoney(total.pExp)}</td>
                         <td class="net">${renderMoney(total.netC)} / ${renderMoney(total.netP)}</td>
                     </tr>`;
-                    body.querySelector('#annual-container').innerHTML = `
+                    if (container) container.innerHTML = `
                             <table class="table-clean">
                                 <thead><tr><th>Meses</th><th>Ing. conf.</th><th>Gast. conf.</th><th>Ing. pend.</th><th>Gast. pend.</th><th>Neto (C/P)</th></tr></thead>
                         <tbody>${rows}${totalRow}</tbody>
@@ -1135,7 +1144,7 @@ function renderStatsTab(tab) {
                     attachAnnualRowHandlers();
                     attachAnnualTotalRowHandlers();
                 };
-                body.querySelector('#group-size').addEventListener('change', renderAnnual);
+                body.querySelector('#group-size').addEventListener('change', () => renderAnnual());
                 renderAnnual();
         }
 }
@@ -1260,28 +1269,33 @@ async function showNotificationModal() {
                     switch(type) {
                         case 'movement':
                             await module.showMovementDetails(id, () => {
+                                calendarInstance?.invalidateCache();
                                 calendarInstance?.refreshAllEventIndicators();
                             });
                             break;
                         case 'projected':
                             // Para proyecciones, abrir el modal de la fecha
                             await module.showCreateEventDialog(date, () => {
+                                calendarInstance?.invalidateCache();
                                 calendarInstance?.refreshAllEventIndicators();
                             });
                             break;
                         case 'plan':
                             await module.showPlanDetails(id, () => {
+                                calendarInstance?.invalidateCache();
                                 calendarInstance?.refreshAllEventIndicators();
                             });
                             break;
                         case 'loan':
                             await module.showLoanDetails(id, () => {
+                                calendarInstance?.invalidateCache();
                                 calendarInstance?.refreshAllEventIndicators();
                             });
                             break;
                         default:
                             // Fallback: abrir modal de la fecha
                             await module.showCreateEventDialog(date, () => {
+                                calendarInstance?.invalidateCache();
                                 calendarInstance?.refreshAllEventIndicators();
                             });
                     }

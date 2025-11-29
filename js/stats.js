@@ -1,102 +1,184 @@
-// Módulo de estadísticas básicas
-// ADVERTENCIA: Este módulo usa el sistema V1 (events en localStorage)
-// TODO: Migrar a V2 usando movements, income_patterns, expense_patterns desde Supabase
-import { loadEvents } from './events.js';
+/**
+ * stats.js
+ * Módulo de estadísticas V2
+ * Usa movements desde Supabase en lugar de localStorage
+ */
 
-function parseISO(dateISO) { return new Date(dateISO + 'T00:00:00'); }
+import { getMovements } from './movements.js';
+
 function formatMoney(n) { return (Number(n || 0)).toFixed(2); }
 
-function sumEvent(event, acc) {
-  if (!event || (event.type !== 'ingreso' && event.type !== 'gasto')) return acc;
-  const isIncome = event.type === 'ingreso';
-  const conf = !!event.confirmed;
-  const val = conf ? (event.confirmedAmount ?? event.amount ?? 0) : (event.amount ?? 0);
-  if (conf) {
-    if (isIncome) acc.confirmed.income += Number(val);
-    else acc.confirmed.expense += Number(val);
-  } else {
-    if (isIncome) acc.pending.income += Number(val);
-    else acc.pending.expense += Number(val);
-  }
-  return acc;
-}
-
 function emptyAcc() {
-  return { confirmed: { income: 0, expense: 0 }, pending: { income: 0, expense: 0 } };
+    return { confirmed: { income: 0, expense: 0 }, pending: { income: 0, expense: 0 } };
 }
 
-export function computeDailyStats(todayISO) {
-  console.warn('computeDailyStats usa sistema V1 - los datos pueden estar desactualizados');
-  const events = loadEvents();
-  const acc = emptyAcc();
-  const list = events[todayISO] || [];
-  list.forEach(ev => sumEvent(ev, acc));
-  const netConfirmed = acc.confirmed.income - acc.confirmed.expense;
-  const netPending = acc.pending.income - acc.pending.expense;
-  return { acc, netConfirmed, netPending };
-}
-
-export function computeWeeklyStatsForMonth(year, monthIndex) {
-  // monthIndex: 0..11
-  const events = loadEvents();
-  const result = []; // [{week:1..6, acc, range:[start,end]}]
-  for (let w = 1; w <= 6; w++) {
-    const startDay = (w - 1) * 7 + 1;
-    const endDay = w * 7;
-    const acc = emptyAcc();
-    for (let d = startDay; d <= endDay; d++) {
-      const date = new Date(year, monthIndex, d);
-      if (date.getMonth() !== monthIndex) break;
-      const iso = date.toISOString().slice(0, 10);
-      const list = events[iso] || [];
-      list.forEach(ev => sumEvent(ev, acc));
+function sumMovement(movement, acc) {
+    if (!movement) return acc;
+    const isIncome = movement.type === 'ingreso';
+    const isConfirmed = !!movement.confirmed;
+    const val = isConfirmed 
+        ? (movement.confirmed_amount ?? movement.expected_amount ?? 0) 
+        : (movement.expected_amount ?? 0);
+    
+    if (isConfirmed) {
+        if (isIncome) acc.confirmed.income += Number(val);
+        else acc.confirmed.expense += Number(val);
+    } else {
+        if (isIncome) acc.pending.income += Number(val);
+        else acc.pending.expense += Number(val);
     }
-    // Solo incluir semanas que tocan el mes
-    const testDate = new Date(year, monthIndex, startDay);
-    if (testDate.getMonth() === monthIndex) {
-      const rngStart = new Date(year, monthIndex, startDay);
-      const rngEnd = new Date(year, monthIndex, Math.min(endDay, new Date(year, monthIndex + 1, 0).getDate()));
-      result.push({ week: w, acc, range: [rngStart, rngEnd] });
-    }
-  }
-  return result;
+    return acc;
 }
 
-export function computeMonthlyFutureStats(year, monthIndex, todayISO) {
-  const events = loadEvents();
-  const acc = emptyAcc();
-  const first = new Date(year, monthIndex, 1);
-  const last = new Date(year, monthIndex + 1, 0);
-  const today = parseISO(todayISO);
-  for (let d = 1; d <= last.getDate(); d++) {
-    const date = new Date(year, monthIndex, d);
-    if (date < today) continue; // solo futuro
-    const iso = date.toISOString().slice(0, 10);
-    const list = events[iso] || [];
-    list.forEach(ev => sumEvent(ev, acc));
-  }
-  return acc;
+/**
+ * Obtiene estadísticas del día
+ * @param {string} todayISO - Fecha en formato YYYY-MM-DD
+ * @returns {Promise<{acc: Object, netConfirmed: number, netPending: number}>}
+ */
+export async function computeDailyStats(todayISO) {
+    try {
+        const movements = await getMovements({
+            startDate: todayISO,
+            endDate: todayISO,
+            archived: false
+        });
+
+        const acc = emptyAcc();
+        movements.forEach(m => sumMovement(m, acc));
+        
+        const netConfirmed = acc.confirmed.income - acc.confirmed.expense;
+        const netPending = acc.pending.income - acc.pending.expense;
+        
+        return { acc, netConfirmed, netPending };
+    } catch (error) {
+        console.error('Error computing daily stats:', error);
+        return { acc: emptyAcc(), netConfirmed: 0, netPending: 0 };
+    }
 }
 
-export function computeAnnualStatsGroup(year, groupSize) {
-  // groupSize: 2 (bimestral), 3 (trimestral), 6 (semestral), 12 (anual)
-  const events = loadEvents();
-  const groups = [];
-  for (let m = 0; m < 12; m += groupSize) {
-    const acc = emptyAcc();
-    for (let k = 0; k < groupSize; k++) {
-      const month = m + k;
-      const days = new Date(year, month + 1, 0).getDate();
-      for (let d = 1; d <= days; d++) {
-        const date = new Date(year, month, d);
-        const iso = date.toISOString().slice(0, 10);
-        const list = events[iso] || [];
-        list.forEach(ev => sumEvent(ev, acc));
-      }
+/**
+ * Obtiene estadísticas semanales del mes
+ * @param {number} year - Año
+ * @param {number} monthIndex - Mes (0-11)
+ * @returns {Promise<Array>}
+ */
+export async function computeWeeklyStatsForMonth(year, monthIndex) {
+    try {
+        const firstDay = new Date(year, monthIndex, 1);
+        const lastDay = new Date(year, monthIndex + 1, 0);
+        const startISO = firstDay.toISOString().slice(0, 10);
+        const endISO = lastDay.toISOString().slice(0, 10);
+
+        const movements = await getMovements({
+            startDate: startISO,
+            endDate: endISO,
+            archived: false
+        });
+
+        // Agrupar por semana
+        const result = [];
+        for (let w = 1; w <= 6; w++) {
+            const startDayNum = (w - 1) * 7 + 1;
+            const endDayNum = Math.min(w * 7, lastDay.getDate());
+            
+            // Verificar si esta semana tiene días en el mes
+            const testDate = new Date(year, monthIndex, startDayNum);
+            if (testDate.getMonth() !== monthIndex || startDayNum > lastDay.getDate()) continue;
+            
+            const weekStart = new Date(year, monthIndex, startDayNum);
+            const weekEnd = new Date(year, monthIndex, endDayNum);
+            const weekStartISO = weekStart.toISOString().slice(0, 10);
+            const weekEndISO = weekEnd.toISOString().slice(0, 10);
+            
+            const acc = emptyAcc();
+            movements
+                .filter(m => m.date >= weekStartISO && m.date <= weekEndISO)
+                .forEach(m => sumMovement(m, acc));
+            
+            result.push({
+                week: w,
+                acc,
+                range: [weekStart, weekEnd]
+            });
+        }
+        
+        return result;
+    } catch (error) {
+        console.error('Error computing weekly stats:', error);
+        return [];
     }
-    groups.push({ fromMonth: m + 1, toMonth: Math.min(m + groupSize, 12), acc });
-  }
-  return groups;
+}
+
+/**
+ * Obtiene estadísticas del mes (desde una fecha hacia adelante)
+ * @param {number} year - Año
+ * @param {number} monthIndex - Mes (0-11)
+ * @param {string} fromDateISO - Fecha desde la cual calcular
+ * @returns {Promise<Object>}
+ */
+export async function computeMonthlyFutureStats(year, monthIndex, fromDateISO) {
+    try {
+        const lastDay = new Date(year, monthIndex + 1, 0);
+        const endISO = lastDay.toISOString().slice(0, 10);
+
+        const movements = await getMovements({
+            startDate: fromDateISO,
+            endDate: endISO,
+            archived: false
+        });
+
+        const acc = emptyAcc();
+        movements.forEach(m => sumMovement(m, acc));
+        
+        return acc;
+    } catch (error) {
+        console.error('Error computing monthly stats:', error);
+        return emptyAcc();
+    }
+}
+
+/**
+ * Obtiene estadísticas anuales agrupadas
+ * @param {number} year - Año
+ * @param {number} groupSize - Tamaño del grupo (2=bimestral, 3=trimestral, 6=semestral, 12=anual)
+ * @returns {Promise<Array>}
+ */
+export async function computeAnnualStatsGroup(year, groupSize) {
+    try {
+        const startISO = `${year}-01-01`;
+        const endISO = `${year}-12-31`;
+
+        const movements = await getMovements({
+            startDate: startISO,
+            endDate: endISO,
+            archived: false
+        });
+
+        const groups = [];
+        for (let m = 0; m < 12; m += groupSize) {
+            const fromMonth = m;
+            const toMonth = Math.min(m + groupSize - 1, 11);
+            
+            const groupStartISO = new Date(year, fromMonth, 1).toISOString().slice(0, 10);
+            const groupEndISO = new Date(year, toMonth + 1, 0).toISOString().slice(0, 10);
+            
+            const acc = emptyAcc();
+            movements
+                .filter(mov => mov.date >= groupStartISO && mov.date <= groupEndISO)
+                .forEach(mov => sumMovement(mov, acc));
+            
+            groups.push({
+                fromMonth: fromMonth + 1,
+                toMonth: toMonth + 1,
+                acc
+            });
+        }
+        
+        return groups;
+    } catch (error) {
+        console.error('Error computing annual stats:', error);
+        return [];
+    }
 }
 
 export function renderMoney(n) { return `$${formatMoney(n)}`; }

@@ -3,7 +3,6 @@
  * Gestiona la renderización y navegación del calendario (V2)
  */
 
-import { loadEvents, getAllEventsForDate } from './events.js';
 import { showConfirmProjectedDialog, showMovementDetails, showLoanDetails, showPlanDetails, showCreateEventDialog } from './calendar-modals-v2.js';
 import { getCalendarDataForMonth } from './pattern-scheduler.js';
 
@@ -16,6 +15,10 @@ export class Calendar {
             "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
             "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
         ];
+        
+        // Caché para datos del calendario (evita múltiples llamadas a la API)
+        this._calendarDataCache = null;
+        this._calendarDataCacheKey = null;
     }
 
     /**
@@ -89,7 +92,8 @@ export class Calendar {
             cell.style.cursor = 'pointer';
         }
 
-        // Actualizar indicadores de eventos
+        // Invalidar caché y actualizar indicadores de eventos
+        this.invalidateCache();
         this.refreshAllEventIndicators();
     }
 
@@ -116,100 +120,28 @@ export class Calendar {
 
     /**
      * Actualiza el indicador de eventos para una celda específica
+     * Usado para actualizaciones individuales (después de editar/crear/eliminar)
      */
     async updateCellIndicator(dateISO) {
         const cell = document.querySelector(`#calendar-body td[data-date="${dateISO}"]`);
         
         if (!cell) return;
 
-        // Evitar llamadas concurrentes para la misma celda
-        if (!this._updatingCells) this._updatingCells = new Set();
-        if (this._updatingCells.has(dateISO)) {
-            // console.log(`⏩ Skipping duplicate update for ${dateISO}`);
-            return;
-        }
-        this._updatingCells.add(dateISO);
+        // Limpiar indicadores de esta celda
+        cell.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
 
-        try {
-            // NO limpiar aquí - refreshAllEventIndicators ya limpia antes de llamar a esta función
-            // Si se llama individualmente (ej: después de editar), sí limpiamos
-            const shouldClean = !this._isBatchUpdate;
-            if (shouldClean) {
-                cell.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
-            }
-
-            // Obtener datos V2 del mes
-            const sessionData = localStorage.getItem('calendar_session');
+        // Invalidar caché para obtener datos frescos
+        this.invalidateCache();
+        
+        // Obtener datos V2 del mes
+        const sessionData = localStorage.getItem('calendar_session');
         const userId = sessionData ? JSON.parse(sessionData).userId : 'anon';
         const year = this.currentDate.getFullYear();
         const month = this.currentDate.getMonth();
         const calendarData = await getCalendarDataForMonth(userId, year, month);
         
-        const dayData = calendarData[dateISO];
-        if (!dayData) return;
-
-        // 1. Renderizar PROJECTED EVENTS (fantasmas - dashed)
-        // Solo mostrar si NO tienen movimiento confirmado
-        if (dayData.projected_incomes && dayData.projected_incomes.length > 0) {
-            dayData.projected_incomes.forEach(proj => {
-                if (!proj.has_confirmed_movement) {
-                    const indicator = this.createGhostIndicator(proj, 'income');
-                    cell.appendChild(indicator);
-                }
-            });
-        }
-
-        if (dayData.projected_expenses && dayData.projected_expenses.length > 0) {
-            dayData.projected_expenses.forEach(proj => {
-                if (!proj.has_confirmed_movement) {
-                    const indicator = this.createGhostIndicator(proj, 'expense');
-                    cell.appendChild(indicator);
-                }
-            });
-        }
-
-        // 2. Renderizar LOAN MOVEMENTS (gold glow)
-        if (dayData.loan_movements && dayData.loan_movements.length > 0) {
-            dayData.loan_movements.forEach(mov => {
-                const indicator = this.createLoanIndicator(mov);
-                cell.appendChild(indicator);
-            });
-        }
-
-        // 3. Renderizar PLAN MOVEMENTS (blue glow)
-        if (dayData.plan_movements && dayData.plan_movements.length > 0) {
-            dayData.plan_movements.forEach(mov => {
-                const indicator = this.createPlanMovementIndicator(mov);
-                cell.appendChild(indicator);
-            });
-        }
-
-        // 4. Renderizar REGULAR MOVEMENTS (solid circles)
-        if (dayData.confirmed_movements && dayData.confirmed_movements.length > 0) {
-            dayData.confirmed_movements.forEach(mov => {
-                // Los loan_movements y plan_movements ya se renderizaron arriba
-                // Solo renderizar los movimientos regulares aquí
-                if (!mov.loan_id && !mov.plan_id) {
-                    const indicator = this.createSolidIndicator(mov);
-                    cell.appendChild(indicator);
-                }
-            });
-        }
-
-        // 5. Renderizar PLAN TARGETS (flag marker)
-        if (dayData.plan_targets && dayData.plan_targets.length > 0) {
-            dayData.plan_targets.forEach(plan => {
-                const indicator = this.createPlanTargetIndicator(plan);
-                cell.appendChild(indicator);
-            });
-        }
-        
-        } finally {
-            // Liberar el lock de esta celda
-            if (this._updatingCells) {
-                this._updatingCells.delete(dateISO);
-            }
-        }
+        // Renderizar usando el nuevo método
+        this.renderCellFromData(cell, dateISO, calendarData);
     }
 
     /**
@@ -308,13 +240,17 @@ export class Calendar {
         span.style.cursor = 'pointer';
         span.style.animation = 'pulse 2s infinite';
 
-        let tooltip = `🎯 Meta: ${plan.title}\n`;
+        // V2: usar name en lugar de title, current_amount en lugar de saved_amount
+        let tooltip = `🎯 Meta: ${plan.name || plan.title}\n`;
         tooltip += `💰 Objetivo: $${plan.target_amount}`;
         
-        // Aquí usamos saved_amount y progress_percent de la vista plans_with_progress
-        if (plan.saved_amount !== undefined) {
-            tooltip += `\n💵 Ahorrado: $${plan.saved_amount}`;
-            tooltip += `\n📊 Progreso: ${plan.progress_percent}%`;
+        // Mostrar progreso calculado desde current_amount
+        if (plan.current_amount !== undefined) {
+            const progressPercent = plan.target_amount > 0 
+                ? Math.round((plan.current_amount / plan.target_amount) * 100) 
+                : 0;
+            tooltip += `\n💵 Ahorrado: $${plan.current_amount}`;
+            tooltip += `\n📊 Progreso: ${progressPercent}%`;
         }
         
         if (plan.description) tooltip += `\n📝 ${plan.description}`;
@@ -444,18 +380,16 @@ export class Calendar {
             tooltip += `\n🏷️ ${event.category}`;
         }
         
-        // Información de préstamo
-        if (event.loan && !event.loan.isCounterpart) {
-            const loanKind = event.loan.kind === 'favor' ? 'Préstamo a favor' : 'Préstamo en contra';
-            tooltip += `\n💰 ${loanKind}`;
-            if (event.loan.recoveryDays) {
-                tooltip += ` (Recupero en ${event.loan.recoveryDays} días)`;
+        // Información de préstamo (V2)
+        if (event.loan) {
+            const loanType = event.loan.type === 'given' ? 'Préstamo dado' : 'Préstamo recibido';
+            tooltip += `\n💰 ${loanType}`;
+            if (event.loan.counterparty) {
+                tooltip += ` a ${event.loan.counterparty}`;
             }
-        }
-        
-        // Si es contraparte
-        if (event.loan && event.loan.isCounterpart) {
-            tooltip += `\n↩️ Compensación de préstamo`;
+            if (event.loan.due_date) {
+                tooltip += ` (Vence: ${event.loan.due_date})`;
+            }
         }
         
         // Estado de historial
@@ -493,24 +427,128 @@ export class Calendar {
      * Actualiza todos los indicadores de eventos
      */
     async refreshAllEventIndicators() {
-        // Limpiar TODOS los tipos de indicadores antes de renderizar
-        document.querySelectorAll('#calendar-body td').forEach(td => {
-            td.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
-        });
+        // Evitar llamadas concurrentes
+        if (this._isRefreshing) {
+            console.log('⏩ Skipping duplicate refreshAllEventIndicators call');
+            return;
+        }
+        this._isRefreshing = true;
+        
+        try {
+            // Limpiar TODOS los tipos de indicadores antes de renderizar
+            document.querySelectorAll('#calendar-body td').forEach(td => {
+                td.querySelectorAll('.event-indicator, .ghost-indicator, .loan-indicator, .plan-indicator, .target-indicator, .solid-indicator').forEach(n => n.remove());
+            });
 
-        // Obtener todas las fechas visibles en el calendario
-        const cellsWithDates = Array.from(document.querySelectorAll('#calendar-body td[data-date]'));
-        
-        // Marcar como batch update para evitar limpieza redundante en updateCellIndicator
-        this._isBatchUpdate = true;
-        
-        // Actualizar indicadores en paralelo para mejor rendimiento
-        await Promise.all(
-            cellsWithDates.map(cell => this.updateCellIndicator(cell.dataset.date))
-        );
-        
-        // Resetear flag
-        this._isBatchUpdate = false;
+            // Obtener datos del calendario UNA SOLA VEZ para todo el mes
+            const sessionData = localStorage.getItem('calendar_session');
+            const userId = sessionData ? JSON.parse(sessionData).userId : 'anon';
+            const year = this.currentDate.getFullYear();
+            const month = this.currentDate.getMonth();
+            const cacheKey = `${userId}_${year}_${month}`;
+            
+            // Invalidar caché si cambió el mes o el usuario
+            if (this._calendarDataCacheKey !== cacheKey) {
+                this._calendarDataCache = null;
+            }
+            
+            // Obtener datos (con caché)
+            if (!this._calendarDataCache) {
+                this._calendarDataCache = await getCalendarDataForMonth(userId, year, month);
+                this._calendarDataCacheKey = cacheKey;
+            }
+            
+            const calendarData = this._calendarDataCache;
+
+            // Obtener todas las fechas visibles en el calendario
+            const cellsWithDates = Array.from(document.querySelectorAll('#calendar-body td[data-date]'));
+            
+            // Marcar como batch update para evitar limpieza redundante en updateCellIndicator
+            this._isBatchUpdate = true;
+            
+            // Actualizar indicadores para cada celda usando los datos cacheados
+            for (const cell of cellsWithDates) {
+                const dateISO = cell.dataset.date;
+                this.renderCellFromData(cell, dateISO, calendarData);
+            }
+            
+            // Resetear flag
+            this._isBatchUpdate = false;
+        } finally {
+            this._isRefreshing = false;
+        }
+    }
+    
+    /**
+     * Renderiza los indicadores de una celda usando datos pre-cargados
+     */
+    renderCellFromData(cell, dateISO, calendarData) {
+        const dayData = calendarData[dateISO];
+        if (!dayData) return;
+
+        // 1. Renderizar PROJECTED EVENTS (fantasmas - dashed)
+        // Solo mostrar si NO tienen movimiento confirmado
+        if (dayData.projected_incomes && dayData.projected_incomes.length > 0) {
+            dayData.projected_incomes.forEach(proj => {
+                if (!proj.has_confirmed_movement) {
+                    const indicator = this.createGhostIndicator(proj, 'income');
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        if (dayData.projected_expenses && dayData.projected_expenses.length > 0) {
+            dayData.projected_expenses.forEach(proj => {
+                if (!proj.has_confirmed_movement) {
+                    const indicator = this.createGhostIndicator(proj, 'expense');
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        // 2. Renderizar LOAN MOVEMENTS (gold glow)
+        if (dayData.loan_movements && dayData.loan_movements.length > 0) {
+            dayData.loan_movements.forEach(mov => {
+                const indicator = this.createLoanIndicator(mov);
+                cell.appendChild(indicator);
+            });
+        }
+
+        // 3. Renderizar PLAN MOVEMENTS (blue glow)
+        if (dayData.plan_movements && dayData.plan_movements.length > 0) {
+            dayData.plan_movements.forEach(mov => {
+                const indicator = this.createPlanMovementIndicator(mov);
+                cell.appendChild(indicator);
+            });
+        }
+
+        // 4. Renderizar REGULAR MOVEMENTS (solid circles)
+        if (dayData.confirmed_movements && dayData.confirmed_movements.length > 0) {
+            dayData.confirmed_movements.forEach(mov => {
+                // Los loan_movements y plan_movements ya se renderizaron arriba
+                // Solo renderizar los movimientos regulares aquí
+                if (!mov.loan_id && !mov.plan_id) {
+                    const indicator = this.createSolidIndicator(mov);
+                    cell.appendChild(indicator);
+                }
+            });
+        }
+
+        // 5. Renderizar PLAN TARGETS (flag marker)
+        if (dayData.plan_targets && dayData.plan_targets.length > 0) {
+            dayData.plan_targets.forEach(plan => {
+                const indicator = this.createPlanTargetIndicator(plan);
+                cell.appendChild(indicator);
+            });
+        }
+    }
+    
+    /**
+     * Invalida el caché de datos del calendario (llamar después de crear/editar/eliminar)
+     */
+    invalidateCache() {
+        this._calendarDataCache = null;
+        this._calendarDataCacheKey = null;
     }
 
     /**
@@ -524,6 +562,7 @@ export class Calendar {
 
                 // Usar modal V2 para crear eventos
                 showCreateEventDialog(dateISO, () => {
+                    this.invalidateCache();
                     this.refreshAllEventIndicators();
                 });
             });

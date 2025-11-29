@@ -60,6 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (statsBtn) statsBtn.addEventListener('click', openStatsDrawer);
     const planningBtn = document.getElementById('planning-btn');
     if (planningBtn) planningBtn.addEventListener('click', openPlanningModal);
+    
+    // Botón de acceso rápido a mis finanzas
+    const quickAccessBtn = document.getElementById('quick-access-btn');
+    if (quickAccessBtn) quickAccessBtn.addEventListener('click', openQuickAccessPanel);
 
     // Acciones rápidas: agregar ingreso/gasto para hoy
     const quickIncome = document.getElementById('quick-add-income');
@@ -153,6 +157,9 @@ function initUserSession() {
         if (logoutBtn) {
             logoutBtn.addEventListener('click', handleLogout);
         }
+        
+        // Mostrar toast de bienvenida
+        showWelcomeToasts();
     } catch (err) {
         console.error('Error initializing session:', err);
         window.location.href = '../index.html';
@@ -202,6 +209,348 @@ async function handleLogout() {
         // Redirect to login
         window.location.href = '../index.html';
     }
+}
+
+/**
+ * Mostrar toast de bienvenida con resumen financiero
+ */
+async function showWelcomeToasts() {
+    // Crear contenedor de toasts si no existe
+    let toastContainer = document.querySelector('.toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.className = 'toast-container';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // Función helper para crear un toast
+    const createToast = (icon, title, message, type = 'info', duration = 4000) => {
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.innerHTML = `
+            <div class="toast-icon">${icon}</div>
+            <div class="toast-content">
+                <div class="toast-title">${title}</div>
+                <div class="toast-message">${message}</div>
+            </div>
+            <button class="toast-close">&times;</button>
+        `;
+        
+        // Cerrar al hacer clic en X
+        toast.querySelector('.toast-close').addEventListener('click', () => {
+            toast.classList.add('toast-hide');
+            setTimeout(() => toast.remove(), 300);
+        });
+        
+        // Auto-cerrar después del tiempo especificado
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.classList.add('toast-hide');
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, duration);
+        
+        return toast;
+    };
+    
+    try {
+        // Toast de bienvenida
+        const userName = currentUser?.name || currentUser?.username || 'Usuario';
+        const welcomeToast = createToast(
+            '👋',
+            `¡Hola, ${userName}!`,
+            'Bienvenido de vuelta a tu calendario financiero',
+            'success',
+            3000
+        );
+        toastContainer.appendChild(welcomeToast);
+        
+        // Obtener resumen de balance
+        const summary = await getConfirmedBalanceSummary();
+        const balance = summary?.balance || 0;
+        
+        // Toast de balance actual (después de 500ms)
+        setTimeout(() => {
+            const balanceType = balance >= 0 ? 'success' : 'warning';
+            const balanceIcon = balance >= 0 ? '💰' : '⚠️';
+            const balanceToast = createToast(
+                balanceIcon,
+                'Balance actual',
+                formatCurrency(balance),
+                balanceType,
+                5000
+            );
+            toastContainer.appendChild(balanceToast);
+        }, 500);
+        
+        // Obtener alertas pendientes
+        const alerts = await getPendingAlerts();
+        if (alerts && alerts.length > 0) {
+            // Toast de alertas pendientes (después de 1000ms)
+            setTimeout(() => {
+                const alertToast = createToast(
+                    '🔔',
+                    'Tienes alertas pendientes',
+                    `${alerts.length} evento(s) requieren tu atención`,
+                    'info',
+                    6000
+                );
+                alertToast.style.cursor = 'pointer';
+                alertToast.addEventListener('click', () => {
+                    displayAlerts(alerts);
+                    alertToast.classList.add('toast-hide');
+                    setTimeout(() => alertToast.remove(), 300);
+                });
+                toastContainer.appendChild(alertToast);
+            }, 1000);
+        }
+    } catch (err) {
+        console.error('Error showing welcome toasts:', err);
+    }
+}
+
+/**
+ * Abrir panel de acceso rápido con patrones, planes y ahorros
+ */
+async function openQuickAccessPanel() {
+    try {
+        const { supabase } = await import('./supabase-client.js');
+        
+        // Obtener datos en paralelo
+        const userId = currentUser?.userId;
+        if (!userId) {
+            console.error('No user ID found');
+            return;
+        }
+        
+        // Cargar patrones de ingreso, patrones de gasto, planes y ahorros
+        const [incomePatterns, expensePatterns, plans, savings] = await Promise.all([
+            supabase.from('income_patterns').select('*').eq('user_id', userId).eq('is_active', true),
+            supabase.from('expense_patterns').select('*').eq('user_id', userId).eq('is_active', true),
+            supabase.from('plans').select('*').eq('user_id', userId).in('status', ['active', 'pending']),
+            supabase.from('savings').select('*').eq('user_id', userId).eq('is_active', true)
+        ]);
+        
+        const incomes = incomePatterns.data || [];
+        const expenses = expensePatterns.data || [];
+        const activePlans = plans.data || [];
+        const activeSavings = savings.data || [];
+        
+        // Calcular totales
+        const totalIncomeMonthly = incomes.reduce((sum, p) => {
+            const freq = p.frequency;
+            let factor = 1;
+            if (freq === 'weekly') factor = 4.33;
+            else if (freq === 'biweekly') factor = 2.17;
+            else if (freq === 'daily') factor = 30;
+            else if (freq === 'yearly') factor = 1/12;
+            return sum + (p.amount * factor);
+        }, 0);
+        
+        const totalExpenseMonthly = expenses.reduce((sum, p) => {
+            const freq = p.frequency;
+            let factor = 1;
+            if (freq === 'weekly') factor = 4.33;
+            else if (freq === 'biweekly') factor = 2.17;
+            else if (freq === 'daily') factor = 30;
+            else if (freq === 'yearly') factor = 1/12;
+            return sum + (p.amount * factor);
+        }, 0);
+        
+        const totalSavings = activeSavings.reduce((sum, s) => sum + (s.current_amount || 0), 0);
+        const totalPlansAccumulated = activePlans.reduce((sum, p) => sum + (p.accumulated || 0), 0);
+        
+        // Generar HTML del panel
+        const html = `
+            <div class="quick-access-panel">
+                <!-- Resumen superior -->
+                <div class="quick-summary-cards">
+                    <div class="summary-card income-card">
+                        <span class="card-icon">📈</span>
+                        <span class="card-label">Ingresos/mes</span>
+                        <span class="card-value">${formatCurrency(totalIncomeMonthly)}</span>
+                    </div>
+                    <div class="summary-card expense-card">
+                        <span class="card-icon">📉</span>
+                        <span class="card-label">Gastos/mes</span>
+                        <span class="card-value">${formatCurrency(totalExpenseMonthly)}</span>
+                    </div>
+                    <div class="summary-card savings-card">
+                        <span class="card-icon">🐷</span>
+                        <span class="card-label">Ahorros</span>
+                        <span class="card-value">${formatCurrency(totalSavings)}</span>
+                    </div>
+                    <div class="summary-card plans-card">
+                        <span class="card-icon">🎯</span>
+                        <span class="card-label">En planes</span>
+                        <span class="card-value">${formatCurrency(totalPlansAccumulated)}</span>
+                    </div>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="quick-tabs">
+                    <button class="quick-tab active" data-tab="incomes">📈 Ingresos (${incomes.length})</button>
+                    <button class="quick-tab" data-tab="expenses">📉 Gastos (${expenses.length})</button>
+                    <button class="quick-tab" data-tab="plans">🎯 Planes (${activePlans.length})</button>
+                    <button class="quick-tab" data-tab="savings">🐷 Ahorros (${activeSavings.length})</button>
+                </div>
+                
+                <!-- Contenido de tabs -->
+                <div class="quick-tab-content">
+                    <!-- Ingresos -->
+                    <div class="quick-tab-pane active" id="tab-incomes">
+                        ${incomes.length === 0 ? '<p class="no-items">No tienes patrones de ingreso activos</p>' :
+                            incomes.map(p => `
+                                <div class="quick-item income-item" data-type="income" data-id="${p.id}">
+                                    <div class="item-info">
+                                        <span class="item-name">${p.name}</span>
+                                        <span class="item-freq">${translateFrequency(p.frequency)}</span>
+                                    </div>
+                                    <span class="item-amount positive">${formatCurrency(p.amount)}</span>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                    
+                    <!-- Gastos -->
+                    <div class="quick-tab-pane" id="tab-expenses">
+                        ${expenses.length === 0 ? '<p class="no-items">No tienes patrones de gasto activos</p>' :
+                            expenses.map(p => `
+                                <div class="quick-item expense-item" data-type="expense" data-id="${p.id}">
+                                    <div class="item-info">
+                                        <span class="item-name">${p.name}${p.category ? ` <small>(${p.category})</small>` : ''}</span>
+                                        <span class="item-freq">${translateFrequency(p.frequency)}</span>
+                                    </div>
+                                    <span class="item-amount negative">${formatCurrency(p.amount)}</span>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                    
+                    <!-- Planes -->
+                    <div class="quick-tab-pane" id="tab-plans">
+                        ${activePlans.length === 0 ? '<p class="no-items">No tienes planes activos</p>' :
+                            activePlans.map(p => {
+                                const progress = p.target_amount > 0 ? Math.min(100, (p.accumulated / p.target_amount) * 100) : 0;
+                                return `
+                                    <div class="quick-item plan-item" data-type="plan" data-id="${p.id}">
+                                        <div class="item-info">
+                                            <span class="item-name">${p.name}</span>
+                                            <div class="plan-progress-mini">
+                                                <div class="progress-bar-mini" style="width: ${progress}%"></div>
+                                            </div>
+                                        </div>
+                                        <div class="plan-amounts">
+                                            <span class="item-amount">${formatCurrency(p.accumulated)}</span>
+                                            <span class="item-target">/ ${formatCurrency(p.target_amount)}</span>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')
+                        }
+                    </div>
+                    
+                    <!-- Ahorros -->
+                    <div class="quick-tab-pane" id="tab-savings">
+                        ${activeSavings.length === 0 ? '<p class="no-items">No tienes cuentas de ahorro activas</p>' :
+                            activeSavings.map(s => `
+                                <div class="quick-item savings-item" data-type="savings" data-id="${s.id}">
+                                    <div class="item-info">
+                                        <span class="item-name">${s.name}</span>
+                                        <span class="item-desc">${s.description || 'Sin descripción'}</span>
+                                    </div>
+                                    <span class="item-amount savings-amount">${formatCurrency(s.current_amount)}</span>
+                                </div>
+                            `).join('')
+                        }
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        await Swal.fire({
+            title: '📋 Mis Finanzas',
+            html: html,
+            width: '650px',
+            showCloseButton: true,
+            showConfirmButton: false,
+            customClass: {
+                popup: 'quick-access-popup',
+                htmlContainer: 'quick-access-container'
+            },
+            didOpen: () => {
+                // Manejar cambio de tabs
+                const tabs = document.querySelectorAll('.quick-tab');
+                const panes = document.querySelectorAll('.quick-tab-pane');
+                
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        tabs.forEach(t => t.classList.remove('active'));
+                        panes.forEach(p => p.classList.remove('active'));
+                        
+                        tab.classList.add('active');
+                        const targetPane = document.getElementById(`tab-${tab.dataset.tab}`);
+                        if (targetPane) targetPane.classList.add('active');
+                    });
+                });
+                
+                // Manejar clic en items para ver detalles
+                const items = document.querySelectorAll('.quick-item');
+                items.forEach(item => {
+                    item.addEventListener('click', async () => {
+                        const type = item.dataset.type;
+                        const id = item.dataset.id;
+                        
+                        // Cerrar este modal e importar el módulo de modals para mostrar detalles
+                        Swal.close();
+                        
+                        const modalsModule = await import('./calendar-modals-v2.js');
+                        
+                        if (type === 'income') {
+                            // Mostrar detalles del patrón de ingreso
+                            const pattern = incomes.find(p => p.id === id);
+                            if (pattern) modalsModule.showIncomePatternDetails(pattern, () => {});
+                        } else if (type === 'expense') {
+                            // Mostrar detalles del patrón de gasto
+                            const pattern = expenses.find(p => p.id === id);
+                            if (pattern) modalsModule.showExpensePatternDetails(pattern, () => {});
+                        } else if (type === 'plan') {
+                            // Mostrar detalles del plan
+                            const plan = activePlans.find(p => p.id === id);
+                            if (plan) modalsModule.showPlanDetails(plan, () => {});
+                        } else if (type === 'savings') {
+                            // Mostrar detalles del ahorro
+                            const saving = activeSavings.find(s => s.id === id);
+                            if (saving) modalsModule.showSavingsDetails(saving, () => {});
+                        }
+                    });
+                });
+            }
+        });
+        
+    } catch (err) {
+        console.error('Error opening quick access panel:', err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'No se pudo cargar el panel de acceso rápido'
+        });
+    }
+}
+
+/**
+ * Traducir frecuencia al español
+ */
+function translateFrequency(freq) {
+    const map = {
+        'daily': 'Diario',
+        'weekly': 'Semanal',
+        'biweekly': 'Quincenal',
+        'monthly': 'Mensual',
+        'yearly': 'Anual',
+        'once': 'Una vez'
+    };
+    return map[freq] || freq;
 }
 
 /**

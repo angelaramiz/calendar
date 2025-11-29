@@ -3005,17 +3005,59 @@ async function showPlanStep2(step1Data) {
         return null;
     }
     
-    // Construir opciones de ingresos
+    // Obtener disponibilidad de cada ingreso
+    const allocations = await getIncomePatternAllocations();
+    const allocationMap = {};
+    allocations.forEach(a => {
+        allocationMap[a.income_pattern_id] = {
+            percentAvailable: parseFloat(a.percent_available) || 1,
+            amountAvailable: parseFloat(a.amount_available) || parseFloat(a.base_amount) || 0,
+            totalAllocated: parseFloat(a.total_percent_allocated) || 0,
+            baseAmount: parseFloat(a.base_amount) || 0,
+            toExpenses: parseFloat(a.percent_allocated_to_expenses) || 0,
+            toPlans: parseFloat(a.percent_allocated_to_plans) || 0,
+            toSavings: parseFloat(a.percent_allocated_to_savings) || 0
+        };
+    });
+    
+    // Construir opciones de ingresos con información de disponibilidad
     const incomeOptionsHTML = incomePatterns.map(income => {
-        // Obtener frecuencia en español
         const freqLabel = {
             'weekly': 'Semanal',
+            'biweekly': 'Quincenal',
             'monthly': 'Mensual',
             'yearly': 'Anual'
         }[income.frequency] || income.frequency;
         
+        // Obtener disponibilidad o asignar valores por defecto
+        const allocation = allocationMap[income.id] || {
+            percentAvailable: 1,
+            amountAvailable: income.base_amount,
+            totalAllocated: 0,
+            baseAmount: income.base_amount,
+            toExpenses: 0,
+            toPlans: 0,
+            toSavings: 0
+        };
+        
+        const percentAvailableDisplay = (allocation.percentAvailable * 100).toFixed(0);
+        const percentAllocatedDisplay = (allocation.totalAllocated * 100).toFixed(0);
+        const amountAvailable = allocation.amountAvailable;
+        const isFullyAllocated = allocation.percentAvailable <= 0;
+        
+        // Color basado en disponibilidad
+        let availabilityColor = '#10b981'; // Verde
+        let availabilityBg = '#d1fae5';
+        if (allocation.percentAvailable < 0.3) {
+            availabilityColor = '#ef4444'; // Rojo
+            availabilityBg = '#fee2e2';
+        } else if (allocation.percentAvailable < 0.6) {
+            availabilityColor = '#f59e0b'; // Amarillo
+            availabilityBg = '#fef3c7';
+        }
+        
         return `
-        <div style="margin-bottom: 12px; padding: 12px; background: #f9fafb; border-radius: 8px; border: 2px solid transparent;" class="income-option" data-income-id="${income.id}">
+        <div style="margin-bottom: 12px; padding: 12px; background: ${isFullyAllocated ? '#f3f4f6' : '#f9fafb'}; border-radius: 8px; border: 2px solid transparent; ${isFullyAllocated ? 'opacity: 0.7;' : ''}" class="income-option" data-income-id="${income.id}">
             <label style="display: flex; align-items: center; cursor: pointer;">
                 <input 
                     type="checkbox" 
@@ -3025,36 +3067,81 @@ async function showPlanStep2(step1Data) {
                     data-income-amount="${income.base_amount}"
                     data-income-frequency="${income.frequency}"
                     data-income-interval="${income.interval || 1}"
+                    data-max-percent="${percentAvailableDisplay}"
+                    data-amount-available="${amountAvailable}"
                     style="margin-right: 10px; width: 18px; height: 18px;"
+                    ${isFullyAllocated ? 'disabled' : ''}
                 />
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; color: #1f2937;">${income.name}</div>
-                    <div style="font-size: 0.9em; color: #10b981; margin-top: 2px;">
-                        💰 $${income.base_amount} · ${freqLabel}
+                    <div style="font-weight: 600; color: ${isFullyAllocated ? '#9ca3af' : '#1f2937'};">${income.name}</div>
+                    <div style="font-size: 0.9em; color: ${isFullyAllocated ? '#9ca3af' : '#10b981'}; margin-top: 2px;">
+                        💰 $${income.base_amount.toLocaleString('es-MX')} · ${freqLabel}
                         ${income.interval > 1 ? ` (cada ${income.interval})` : ''}
                     </div>
                 </div>
             </label>
-            <div class="allocation-input" style="margin-top: 10px; display: none; padding-left: 28px;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <label style="font-size: 0.9em; color: #374151; min-width: 120px;">
-                        Asignar:
-                    </label>
-                    <input 
-                        type="number" 
-                        class="income-allocation-percent" 
-                        data-income-id="${income.id}"
-                        min="1" 
-                        max="100" 
-                        value="100"
-                        style="width: 70px; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px;"
-                    />
-                    <span style="color: #6b7280;">% del ingreso</span>
+            
+            <!-- Barra de asignación actual -->
+            <div style="margin-top: 10px; padding-left: 28px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.8em; margin-bottom: 4px;">
+                    <span style="color: #6b7280;">Asignado: ${percentAllocatedDisplay}%</span>
+                    <span style="color: ${availabilityColor}; font-weight: 600;">Disponible: ${percentAvailableDisplay}%</span>
                 </div>
-                <div style="margin-top: 6px; font-size: 0.85em; color: #6b7280; padding-left: 130px;">
-                    = $<span class="calculated-amount">0</span> por pago
+                <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+                    ${allocation.toExpenses > 0 ? `<div style="height: 100%; width: ${allocation.toExpenses * 100}%; background: #ef4444; float: left;" title="Gastos: ${(allocation.toExpenses * 100).toFixed(0)}%"></div>` : ''}
+                    ${allocation.toPlans > 0 ? `<div style="height: 100%; width: ${allocation.toPlans * 100}%; background: #3b82f6; float: left;" title="Planes: ${(allocation.toPlans * 100).toFixed(0)}%"></div>` : ''}
+                    ${allocation.toSavings > 0 ? `<div style="height: 100%; width: ${allocation.toSavings * 100}%; background: #22c55e; float: left;" title="Ahorros: ${(allocation.toSavings * 100).toFixed(0)}%"></div>` : ''}
+                </div>
+                <div style="display: flex; gap: 12px; font-size: 0.7em; margin-top: 4px; color: #9ca3af;">
+                    ${allocation.toExpenses > 0 ? `<span>🔴 Gastos ${(allocation.toExpenses * 100).toFixed(0)}%</span>` : ''}
+                    ${allocation.toPlans > 0 ? `<span>🔵 Planes ${(allocation.toPlans * 100).toFixed(0)}%</span>` : ''}
+                    ${allocation.toSavings > 0 ? `<span>🟢 Ahorros ${(allocation.toSavings * 100).toFixed(0)}%</span>` : ''}
                 </div>
             </div>
+            
+            <!-- Input de asignación (oculto inicialmente) -->
+            <div class="allocation-input" style="margin-top: 12px; display: none; padding: 12px; background: ${availabilityBg}; border-radius: 6px; margin-left: 28px;">
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    <label style="font-size: 0.9em; color: #374151; font-weight: 500;">
+                        Asignar a esta meta:
+                    </label>
+                    <div style="display: flex; align-items: center; gap: 5px;">
+                        <input 
+                            type="range" 
+                            class="income-allocation-slider" 
+                            data-income-id="${income.id}"
+                            min="1" 
+                            max="${percentAvailableDisplay}" 
+                            value="${percentAvailableDisplay}"
+                            style="width: 120px; accent-color: ${availabilityColor};"
+                        />
+                        <input 
+                            type="number" 
+                            class="income-allocation-percent" 
+                            data-income-id="${income.id}"
+                            min="1" 
+                            max="${percentAvailableDisplay}" 
+                            value="${percentAvailableDisplay}"
+                            style="width: 60px; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 4px; text-align: center;"
+                        />
+                        <span style="color: #6b7280;">%</span>
+                    </div>
+                </div>
+                <div style="margin-top: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 0.85em; color: #374151;">
+                        Monto por pago: <strong style="color: ${availabilityColor};">$<span class="calculated-amount">${amountAvailable.toFixed(2)}</span></strong>
+                    </span>
+                    <span style="font-size: 0.75em; color: #9ca3af;">
+                        Máx disponible: ${percentAvailableDisplay}% ($${amountAvailable.toFixed(2)})
+                    </span>
+                </div>
+            </div>
+            
+            ${isFullyAllocated ? `
+                <div style="margin-top: 8px; padding: 8px 12px; background: #fef2f2; border-radius: 6px; margin-left: 28px; font-size: 0.85em; color: #991b1b;">
+                    ⚠️ Este ingreso está completamente asignado a otros compromisos
+                </div>
+            ` : ''}
         </div>
         `;
     }).join('');
@@ -3064,10 +3151,15 @@ async function showPlanStep2(step1Data) {
         html: `
             <div style="text-align: left; padding: 10px;">
                 <p style="color: #6b7280; margin-bottom: 15px;">
-                    <strong style="color: #1f2937;">Meta:</strong> ${step1Data.title} · <strong>$${step1Data.target_amount}</strong>
+                    <strong style="color: #1f2937;">Meta:</strong> ${step1Data.title} · <strong>$${step1Data.target_amount.toLocaleString('es-MX')}</strong>
                 </p>
                 
-                <p style="color: #374151; margin-bottom: 20px; font-weight: 600;">
+                <div style="background: #eff6ff; padding: 10px 12px; border-radius: 8px; margin-bottom: 15px; font-size: 0.85em;">
+                    <strong style="color: #1e40af;">ℹ️ Tip:</strong> 
+                    <span style="color: #3b82f6;">La barra muestra cómo está distribuido cada ingreso. Solo puedes asignar el porcentaje disponible (sin color).</span>
+                </div>
+                
+                <p style="color: #374151; margin-bottom: 15px; font-weight: 600;">
                     ¿Con qué ingresos quieres financiar esta planeación?
                 </p>
                 
@@ -3114,13 +3206,15 @@ async function showPlanStep2(step1Data) {
                     const frequency = cb.dataset.incomeFrequency;
                     const interval = parseInt(cb.dataset.incomeInterval) || 1;
                     const percentInput = document.querySelector(`.income-allocation-percent[data-income-id="${incomeId}"]`);
-                    const percent = parseFloat(percentInput.value) || 100;
+                    const percent = parseFloat(percentInput.value) || 0;
                     const allocated = (amount * percent / 100);
                     
                     // Convertir a mensual aproximado
                     let monthlyAmount = allocated;
                     if (frequency === 'weekly') {
                         monthlyAmount = (allocated / interval) * 4.33;
+                    } else if (frequency === 'biweekly') {
+                        monthlyAmount = (allocated / interval) * 2.17;
                     } else if (frequency === 'yearly') {
                         monthlyAmount = allocated / 12 / interval;
                     } else if (frequency === 'monthly') {
@@ -3131,22 +3225,39 @@ async function showPlanStep2(step1Data) {
                     
                     const option = document.querySelector(`.income-option[data-income-id="${incomeId}"]`);
                     const name = option.querySelector('label div div').textContent;
-                    items.push(`• ${name}: $${allocated.toFixed(2)}`);
+                    items.push(`• ${name}: ${percent}% = $${allocated.toFixed(2)}/pago (~$${monthlyAmount.toFixed(2)}/mes)`);
                 });
+                
+                const monthsToGoal = totalPerMonth > 0 ? Math.ceil(step1Data.target_amount / totalPerMonth) : 0;
                 
                 summaryContent.innerHTML = `
                     ${items.join('<br>')}
-                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd; font-weight: 600;">
-                        Total aprox. mensual: $${totalPerMonth.toFixed(2)}
+                    <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #93c5fd;">
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Total aprox. mensual:</span>
+                            <strong>$${totalPerMonth.toFixed(2)}</strong>
+                        </div>
+                        ${monthsToGoal > 0 ? `
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px; color: #1e40af;">
+                                <span>Tiempo estimado:</span>
+                                <strong>~${monthsToGoal} meses</strong>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             }
             
             checkboxes.forEach(checkbox => {
+                const incomeId = checkbox.dataset.incomeId;
+                const percentInput = document.querySelector(`.income-allocation-percent[data-income-id="${incomeId}"]`);
+                const sliderInput = document.querySelector(`.income-allocation-slider[data-income-id="${incomeId}"]`);
+                const amountSpan = percentInput?.closest('.allocation-input')?.querySelector('.calculated-amount');
+                const baseAmount = parseFloat(checkbox.dataset.incomeAmount);
+                const maxPercent = parseFloat(checkbox.dataset.maxPercent) || 100;
+                
                 checkbox.addEventListener('change', (e) => {
                     const container = e.target.closest('.income-option');
                     const allocationInput = container.querySelector('.allocation-input');
-                    const incomeId = e.target.dataset.incomeId;
                     
                     if (e.target.checked) {
                         allocationInput.style.display = 'block';
@@ -3161,23 +3272,36 @@ async function showPlanStep2(step1Data) {
                     updateSummary();
                 });
                 
-                // Listener para cambios en porcentaje
-                const incomeId = checkbox.dataset.incomeId;
-                const percentInput = document.querySelector(`.income-allocation-percent[data-income-id="${incomeId}"]`);
-                const amountSpan = percentInput.closest('.allocation-input').querySelector('.calculated-amount');
-                const baseAmount = parseFloat(checkbox.dataset.incomeAmount);
+                // Sincronizar slider y input numérico
+                if (sliderInput && percentInput) {
+                    sliderInput.addEventListener('input', () => {
+                        const val = sliderInput.value;
+                        percentInput.value = val;
+                        const calculated = (baseAmount * val / 100).toFixed(2);
+                        if (amountSpan) amountSpan.textContent = calculated;
+                        updateSummary();
+                    });
+                    
+                    percentInput.addEventListener('input', () => {
+                        let val = parseFloat(percentInput.value) || 0;
+                        // Validar que no exceda el máximo disponible
+                        if (val > maxPercent) {
+                            val = maxPercent;
+                            percentInput.value = val;
+                        }
+                        sliderInput.value = val;
+                        const calculated = (baseAmount * val / 100).toFixed(2);
+                        if (amountSpan) amountSpan.textContent = calculated;
+                        updateSummary();
+                    });
+                }
                 
-                percentInput.addEventListener('input', () => {
-                    const percent = parseFloat(percentInput.value) || 0;
+                // Calcular valor inicial
+                if (percentInput && amountSpan) {
+                    const percent = parseFloat(percentInput.value) || maxPercent;
                     const calculated = (baseAmount * percent / 100).toFixed(2);
                     amountSpan.textContent = calculated;
-                    updateSummary();
-                });
-                
-                // Calcular inicial
-                const percent = parseFloat(percentInput.value) || 100;
-                const calculated = (baseAmount * percent / 100).toFixed(2);
-                amountSpan.textContent = calculated;
+                }
             });
         },
         preConfirm: () => {
@@ -3190,14 +3314,20 @@ async function showPlanStep2(step1Data) {
                 const amount = parseFloat(checkbox.dataset.incomeAmount);
                 const frequency = checkbox.dataset.incomeFrequency;
                 const interval = parseInt(checkbox.dataset.incomeInterval) || 1;
+                const maxPercent = parseFloat(checkbox.dataset.maxPercent) || 100;
                 const percentInput = document.querySelector(`.income-allocation-percent[data-income-id="${incomeId}"]`);
-                const percentage = parseFloat(percentInput.value) || 100;
+                let percentage = parseFloat(percentInput.value) || maxPercent;
+                
+                // Validar que no exceda el máximo
+                if (percentage > maxPercent) {
+                    percentage = maxPercent;
+                }
                 
                 income_sources.push({
                     income_pattern_id: incomeId,
                     allocation_type: 'percent',
                     allocation_value: percentage / 100,
-                    _metadata: { // Info adicional para cálculos
+                    _metadata: {
                         name: incomeName,
                         base_amount: amount,
                         frequency,
@@ -4634,74 +4764,272 @@ async function showCreateLoanDialog(dateISO, onCreated) {
 }
 
 // ============================================================================
-// MODAL: BALANCE DE MOVIMIENTOS CONFIRMADOS
+// MODAL: BALANCE DE MOVIMIENTOS CONFIRMADOS (MEJORADO)
 // ============================================================================
 
 /**
- * Modal que muestra el balance de movimientos confirmados (ingresos - gastos = sobrante)
+ * Modal que muestra el balance de movimientos confirmados con información detallada
  */
 export async function showBalanceSummaryDialog() {
     try {
-        const balance = await getConfirmedBalanceSummary();
-        const savings = await getSavingsSummary();
+        // Obtener datos del usuario
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('Usuario no autenticado');
+        
+        // Obtener datos en paralelo
+        const [balance, savings, recentMovements, monthlyData, plansData, categoriesData] = await Promise.all([
+            getConfirmedBalanceSummary(),
+            getSavingsSummary(),
+            // Movimientos recientes (últimos 10 confirmados)
+            supabase.from('movements')
+                .select('id, date, description, type, confirmed_amount, pattern_name')
+                .eq('user_id', user.id)
+                .eq('confirmed', true)
+                .eq('archived', false)
+                .order('date', { ascending: false })
+                .limit(10),
+            // Balance del mes actual
+            (async () => {
+                const today = new Date();
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+                const { data } = await supabase.from('movements')
+                    .select('type, confirmed_amount')
+                    .eq('user_id', user.id)
+                    .eq('confirmed', true)
+                    .eq('archived', false)
+                    .gte('date', startOfMonth)
+                    .lte('date', endOfMonth);
+                return data || [];
+            })(),
+            // Planes activos
+            supabase.from('plans')
+                .select('id, name, accumulated, target_amount, status')
+                .eq('user_id', user.id)
+                .in('status', ['active', 'pending']),
+            // Categorías de gastos del mes actual
+            (async () => {
+                const today = new Date();
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10);
+                const { data } = await supabase.from('movements')
+                    .select('category, confirmed_amount')
+                    .eq('user_id', user.id)
+                    .eq('type', 'gasto')
+                    .eq('confirmed', true)
+                    .eq('archived', false)
+                    .gte('date', startOfMonth)
+                    .lte('date', endOfMonth);
+                return data || [];
+            })()
+        ]);
+        
+        const recent = recentMovements.data || [];
+        const plans = plansData.data || [];
+        
+        // Calcular estadísticas del mes
+        const monthStats = monthlyData.reduce((acc, m) => {
+            if (m.type === 'ingreso') {
+                acc.income += parseFloat(m.confirmed_amount || 0);
+            } else {
+                acc.expenses += parseFloat(m.confirmed_amount || 0);
+            }
+            return acc;
+        }, { income: 0, expenses: 0 });
+        monthStats.balance = monthStats.income - monthStats.expenses;
+        
+        // Agrupar gastos por categoría
+        const categoryTotals = categoriesData.reduce((acc, m) => {
+            const cat = m.category || 'Sin categoría';
+            acc[cat] = (acc[cat] || 0) + parseFloat(m.confirmed_amount || 0);
+            return acc;
+        }, {});
+        
+        // Ordenar categorías por monto
+        const sortedCategories = Object.entries(categoryTotals)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5); // Top 5 categorías
+        
+        // Calcular total de planes
+        const totalPlans = plans.reduce((sum, p) => sum + (p.accumulated || 0), 0);
+        const totalPlansTarget = plans.reduce((sum, p) => sum + (p.target_amount || 0), 0);
+        
+        // Formatear fecha
+        const formatDate = (dateStr) => {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+        };
+        
+        // Nombres de meses
+        const monthName = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
         
         const balanceColor = balance.balance >= 0 ? '#10b981' : '#ef4444';
         
         await Swal.fire({
-            title: '💰 Balance de Movimientos Confirmados',
+            title: '💰 Mi Balance Financiero',
             html: `
-                <div style="text-align: left; padding: 10px;">
+                <div class="balance-dialog-content">
                     <!-- Resumen Principal -->
-                    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 12px; color: white; margin-bottom: 20px;">
-                        <div style="text-align: center; margin-bottom: 15px;">
-                            <div style="font-size: 0.9em; opacity: 0.9;">Balance Disponible</div>
-                            <div style="font-size: 2em; font-weight: bold;">$${balance.balance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</div>
+                    <div class="balance-hero">
+                        <div class="balance-main-value">
+                            <span class="balance-label">Balance Disponible</span>
+                            <span class="balance-amount" style="color: ${balanceColor}">
+                                ${formatCurrency(balance.balance)}
+                            </span>
                         </div>
-                        <div style="display: flex; justify-content: space-around; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.3);">
-                            <div style="text-align: center;">
-                                <div style="font-size: 0.8em; opacity: 0.8;">Ingresos</div>
-                                <div style="font-size: 1.2em; color: #a7f3d0;">+$${balance.total_income.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</div>
-                                <div style="font-size: 0.75em; opacity: 0.7;">${balance.income_count} movimientos</div>
+                        <div class="balance-stats-row">
+                            <div class="balance-stat income">
+                                <span class="stat-icon">📈</span>
+                                <span class="stat-value">+${formatCurrency(balance.total_income)}</span>
+                                <span class="stat-label">${balance.income_count} ingresos</span>
                             </div>
-                            <div style="text-align: center;">
-                                <div style="font-size: 0.8em; opacity: 0.8;">Gastos</div>
-                                <div style="font-size: 1.2em; color: #fca5a5;">-$${balance.total_expenses.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</div>
-                                <div style="font-size: 0.75em; opacity: 0.7;">${balance.expense_count} movimientos</div>
+                            <div class="balance-stat expense">
+                                <span class="stat-icon">📉</span>
+                                <span class="stat-value">-${formatCurrency(balance.total_expenses)}</span>
+                                <span class="stat-label">${balance.expense_count} gastos</span>
                             </div>
                         </div>
                     </div>
                     
-                    <!-- Resumen de Ahorros -->
-                    <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #22c55e; margin-bottom: 15px;">
-                        <div style="font-weight: 600; color: #166534; margin-bottom: 8px;">
-                            🐷 Ahorros Acumulados
-                        </div>
-                        <div style="font-size: 1.5em; color: #15803d; font-weight: bold;">
-                            $${savings.total_saved.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                        </div>
-                        ${savings.total_target > 0 ? `
-                            <div style="margin-top: 8px;">
-                                <div style="font-size: 0.85em; color: #166534;">
-                                    Meta total: $${savings.total_target.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                                </div>
-                                <div style="background: #dcfce7; border-radius: 4px; height: 8px; margin-top: 5px; overflow: hidden;">
-                                    <div style="background: #22c55e; height: 100%; width: ${savings.overall_progress || 0}%;"></div>
-                                </div>
-                                <div style="font-size: 0.75em; color: #166534; text-align: right; margin-top: 2px;">
-                                    ${(savings.overall_progress || 0).toFixed(1)}% completado
-                                </div>
-                            </div>
-                        ` : `
-                            <div style="font-size: 0.85em; color: #166534; margin-top: 5px;">
-                                ${savings.patterns_count} patrón(es) de ahorro activo(s)
-                            </div>
-                        `}
+                    <!-- Tabs de información -->
+                    <div class="balance-tabs">
+                        <button class="balance-tab active" data-tab="month">📅 Este mes</button>
+                        <button class="balance-tab" data-tab="recent">📋 Recientes</button>
+                        <button class="balance-tab" data-tab="categories">📊 Categorías</button>
+                        <button class="balance-tab" data-tab="assets">💎 Activos</button>
                     </div>
                     
-                    <!-- Nota explicativa -->
-                    <div style="background: #eff6ff; padding: 12px; border-radius: 8px; font-size: 0.85em; color: #1e40af;">
-                        <strong>ℹ️ Nota:</strong> Este balance solo incluye movimientos <strong>confirmados</strong>. 
-                        Los eventos proyectados no afectan este cálculo hasta que se confirmen.
+                    <div class="balance-tab-content">
+                        <!-- Tab: Este mes -->
+                        <div class="balance-tab-pane active" id="balance-tab-month">
+                            <h4 class="section-title">Resumen de ${monthName}</h4>
+                            <div class="month-summary">
+                                <div class="month-stat">
+                                    <span class="month-label">Ingresos del mes</span>
+                                    <span class="month-value positive">+${formatCurrency(monthStats.income)}</span>
+                                </div>
+                                <div class="month-stat">
+                                    <span class="month-label">Gastos del mes</span>
+                                    <span class="month-value negative">-${formatCurrency(monthStats.expenses)}</span>
+                                </div>
+                                <div class="month-stat highlight">
+                                    <span class="month-label">Balance del mes</span>
+                                    <span class="month-value ${monthStats.balance >= 0 ? 'positive' : 'negative'}">
+                                        ${formatCurrency(monthStats.balance)}
+                                    </span>
+                                </div>
+                            </div>
+                            ${monthStats.income > 0 ? `
+                                <div class="spending-rate">
+                                    <span>Tasa de gasto</span>
+                                    <div class="rate-bar">
+                                        <div class="rate-fill" style="width: ${Math.min(100, (monthStats.expenses / monthStats.income) * 100)}%"></div>
+                                    </div>
+                                    <span class="rate-percent">${((monthStats.expenses / monthStats.income) * 100).toFixed(1)}%</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        
+                        <!-- Tab: Movimientos recientes -->
+                        <div class="balance-tab-pane" id="balance-tab-recent">
+                            <h4 class="section-title">Últimos movimientos</h4>
+                            ${recent.length === 0 ? 
+                                '<p class="no-data">No hay movimientos recientes</p>' :
+                                `<div class="recent-list">
+                                    ${recent.map(m => `
+                                        <div class="recent-item ${m.type}">
+                                            <div class="recent-info">
+                                                <span class="recent-desc">${m.description || m.pattern_name || 'Sin descripción'}</span>
+                                                <span class="recent-date">${formatDate(m.date)}</span>
+                                            </div>
+                                            <span class="recent-amount ${m.type === 'ingreso' ? 'positive' : 'negative'}">
+                                                ${m.type === 'ingreso' ? '+' : '-'}${formatCurrency(m.confirmed_amount)}
+                                            </span>
+                                        </div>
+                                    `).join('')}
+                                </div>`
+                            }
+                        </div>
+                        
+                        <!-- Tab: Categorías -->
+                        <div class="balance-tab-pane" id="balance-tab-categories">
+                            <h4 class="section-title">Top gastos por categoría (${monthName})</h4>
+                            ${sortedCategories.length === 0 ? 
+                                '<p class="no-data">No hay gastos registrados este mes</p>' :
+                                `<div class="categories-list">
+                                    ${sortedCategories.map(([cat, amount], i) => {
+                                        const percent = monthStats.expenses > 0 ? (amount / monthStats.expenses) * 100 : 0;
+                                        const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6'];
+                                        return `
+                                            <div class="category-item">
+                                                <div class="category-info">
+                                                    <span class="category-name">${cat}</span>
+                                                    <div class="category-bar">
+                                                        <div class="category-fill" style="width: ${percent}%; background: ${colors[i]}"></div>
+                                                    </div>
+                                                </div>
+                                                <div class="category-values">
+                                                    <span class="category-amount">${formatCurrency(amount)}</span>
+                                                    <span class="category-percent">${percent.toFixed(1)}%</span>
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>`
+                            }
+                        </div>
+                        
+                        <!-- Tab: Activos -->
+                        <div class="balance-tab-pane" id="balance-tab-assets">
+                            <h4 class="section-title">Mis activos financieros</h4>
+                            <div class="assets-grid">
+                                <div class="asset-card balance-card">
+                                    <span class="asset-icon">💵</span>
+                                    <span class="asset-label">Balance disponible</span>
+                                    <span class="asset-value">${formatCurrency(balance.balance)}</span>
+                                </div>
+                                <div class="asset-card savings-card">
+                                    <span class="asset-icon">🐷</span>
+                                    <span class="asset-label">Ahorros</span>
+                                    <span class="asset-value">${formatCurrency(savings.total_saved)}</span>
+                                </div>
+                                <div class="asset-card plans-card">
+                                    <span class="asset-icon">🎯</span>
+                                    <span class="asset-label">En planes</span>
+                                    <span class="asset-value">${formatCurrency(totalPlans)}</span>
+                                </div>
+                                <div class="asset-card total-card">
+                                    <span class="asset-icon">💎</span>
+                                    <span class="asset-label">Total activos</span>
+                                    <span class="asset-value">${formatCurrency(balance.balance + savings.total_saved + totalPlans)}</span>
+                                </div>
+                            </div>
+                            
+                            ${plans.length > 0 ? `
+                                <h4 class="section-title" style="margin-top: 16px;">Planes activos</h4>
+                                <div class="plans-mini-list">
+                                    ${plans.map(p => {
+                                        const progress = p.target_amount > 0 ? Math.min(100, (p.accumulated / p.target_amount) * 100) : 0;
+                                        return `
+                                            <div class="plan-mini-item">
+                                                <div class="plan-mini-info">
+                                                    <span class="plan-mini-name">${p.name}</span>
+                                                    <div class="plan-mini-progress">
+                                                        <div class="plan-mini-bar" style="width: ${progress}%"></div>
+                                                    </div>
+                                                </div>
+                                                <span class="plan-mini-amount">${formatCurrency(p.accumulated)} / ${formatCurrency(p.target_amount)}</span>
+                                            </div>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                    
+                    <!-- Nota informativa -->
+                    <div class="balance-note">
+                        <strong>ℹ️</strong> Este balance solo incluye movimientos <strong>confirmados</strong>.
                     </div>
                 </div>
             `,
@@ -4710,7 +5038,27 @@ export async function showBalanceSummaryDialog() {
             cancelButtonText: 'Cerrar',
             confirmButtonColor: '#22c55e',
             cancelButtonColor: '#6b7280',
-            width: '500px'
+            width: '600px',
+            customClass: {
+                popup: 'balance-summary-popup',
+                htmlContainer: 'balance-summary-container'
+            },
+            didOpen: () => {
+                // Manejar tabs
+                const tabs = document.querySelectorAll('.balance-tab');
+                const panes = document.querySelectorAll('.balance-tab-pane');
+                
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        tabs.forEach(t => t.classList.remove('active'));
+                        panes.forEach(p => p.classList.remove('active'));
+                        
+                        tab.classList.add('active');
+                        const targetPane = document.getElementById(`balance-tab-${tab.dataset.tab}`);
+                        if (targetPane) targetPane.classList.add('active');
+                    });
+                });
+            }
         }).then(async (result) => {
             if (result.isConfirmed) {
                 await showSavingsManagementDialog();

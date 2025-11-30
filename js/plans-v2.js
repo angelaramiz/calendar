@@ -347,6 +347,163 @@ export async function withdrawFromPlan(planId, amount, description = 'Retiro') {
     }
 }
 
+/**
+ * Recalcula las fechas estimadas de un plan basándose en las fuentes de ingreso asignadas
+ * @param {string} planId - ID del plan
+ * @param {number} extraContribution - Contribución extra única (ej: ingreso directo)
+ * @returns {Object} Plan actualizado con fecha estimada recalculada e info de cambios
+ */
+export async function recalculatePlanDates(planId, extraContribution = 0) {
+    try {
+        const plan = await getPlanById(planId);
+        if (!plan) throw new Error('Plan no encontrado');
+        
+        const oldTargetDate = plan.target_date;
+        const targetAmount = parseFloat(plan.target_amount);
+        const currentAmount = parseFloat(plan.current_amount || 0);
+        const remaining = targetAmount - currentAmount;
+        
+        // Si ya se alcanzó la meta, marcar como completado
+        if (remaining <= 0) {
+            if (plan.status !== 'completed') {
+                await updatePlan(planId, { status: 'completed' });
+            }
+            return {
+                ...plan,
+                current_amount: currentAmount,
+                status: 'completed',
+                dateChanged: false,
+                completed: true,
+                progress_percent: '100.0'
+            };
+        }
+        
+        // Obtener fuentes de ingreso asignadas
+        const sources = await getPlanIncomeSources(planId);
+        
+        // Calcular aporte mensual estimado de fuentes recurrentes
+        let monthlyContribution = 0;
+        
+        if (sources && sources.length > 0) {
+            for (const source of sources) {
+                if (!source.income_pattern) continue;
+                
+                const pattern = source.income_pattern;
+                const baseAmount = parseFloat(pattern.base_amount) || 0;
+                
+                // Calcular frecuencia mensual
+                let monthlyOccurrences = 1;
+                switch (pattern.frequency) {
+                    case 'weekly':
+                        monthlyOccurrences = 4.33; // Más preciso: 52/12
+                        break;
+                    case 'biweekly':
+                        monthlyOccurrences = 2.17; // 26/12
+                        break;
+                    case 'monthly':
+                        monthlyOccurrences = 1;
+                        break;
+                    case 'yearly':
+                        monthlyOccurrences = 1/12;
+                        break;
+                }
+                
+                const monthlyIncome = baseAmount * monthlyOccurrences;
+                
+                // Calcular contribución según tipo de asignación
+                if (source.allocation_type === 'fixed') {
+                    monthlyContribution += parseFloat(source.allocation_value) * monthlyOccurrences;
+                } else if (source.allocation_type === 'percent') {
+                    const percent = parseFloat(source.allocation_value);
+                    monthlyContribution += monthlyIncome * percent;
+                }
+            }
+        }
+        
+        // Calcular nueva fecha estimada
+        let newTargetDate = null;
+        let monthsNeeded = 0;
+        let calculationMethod = 'none';
+        
+        if (monthlyContribution > 0) {
+            // Método 1: Calcular basado en fuentes de ingreso recurrentes
+            monthsNeeded = Math.ceil(remaining / monthlyContribution);
+            const estimatedDate = new Date();
+            estimatedDate.setMonth(estimatedDate.getMonth() + monthsNeeded);
+            newTargetDate = estimatedDate.toISOString().slice(0, 10);
+            calculationMethod = 'sources';
+        } else if (currentAmount > 0) {
+            // Método 2: Si no hay fuentes pero ya hay progreso, estimar basado en ritmo actual
+            // Calcular cuánto tiempo llevamos ahorrando (desde created_at hasta hoy)
+            const createdAt = new Date(plan.created_at);
+            const today = new Date();
+            const monthsElapsed = Math.max(1, (today - createdAt) / (1000 * 60 * 60 * 24 * 30));
+            
+            // Ritmo mensual histórico
+            const historicalMonthlyRate = currentAmount / monthsElapsed;
+            
+            if (historicalMonthlyRate > 0) {
+                monthsNeeded = Math.ceil(remaining / historicalMonthlyRate);
+                const estimatedDate = new Date();
+                estimatedDate.setMonth(estimatedDate.getMonth() + monthsNeeded);
+                newTargetDate = estimatedDate.toISOString().slice(0, 10);
+                monthlyContribution = historicalMonthlyRate;
+                calculationMethod = 'historical';
+                console.log(`📊 Recálculo histórico: ${currentAmount} en ${monthsElapsed.toFixed(2)} meses = ${historicalMonthlyRate.toFixed(2)}/mes, faltan ${remaining}, estimados ${monthsNeeded} meses más`);
+            } else {
+                newTargetDate = oldTargetDate;
+            }
+        } else if (extraContribution > 0) {
+            // Método 3: Primera contribución, estimar asumiendo contribuciones similares mensuales
+            const assumedMonthlyRate = extraContribution; // Asumir que aportará lo mismo cada mes
+            monthsNeeded = Math.ceil(remaining / assumedMonthlyRate);
+            const estimatedDate = new Date();
+            estimatedDate.setMonth(estimatedDate.getMonth() + monthsNeeded);
+            newTargetDate = estimatedDate.toISOString().slice(0, 10);
+            monthlyContribution = assumedMonthlyRate;
+            calculationMethod = 'assumed';
+        } else {
+            // Sin datos para calcular, mantener fecha original
+            newTargetDate = oldTargetDate;
+            console.log('⚠️ Sin datos para recalcular fecha: no hay fuentes, ni historial, ni contribución extra');
+        }
+        
+        // Determinar si la fecha cambió significativamente (más de 7 días de diferencia)
+        let dateChanged = false;
+        if (newTargetDate && oldTargetDate) {
+            const oldDate = new Date(oldTargetDate);
+            const newDate = new Date(newTargetDate);
+            const diffDays = Math.abs((newDate - oldDate) / (1000 * 60 * 60 * 24));
+            dateChanged = diffDays > 7; // Solo notificar si cambia más de una semana
+        } else if (newTargetDate && !oldTargetDate) {
+            dateChanged = true;
+        }
+        
+        // Actualizar la fecha en la base de datos si cambió
+        if (dateChanged && newTargetDate) {
+            await updatePlan(planId, { target_date: newTargetDate });
+        }
+        
+        // Obtener plan actualizado
+        const updatedPlan = await getPlanById(planId);
+        
+        return {
+            ...updatedPlan,
+            old_target_date: oldTargetDate,
+            new_target_date: newTargetDate,
+            dateChanged: dateChanged,
+            monthly_contribution: monthlyContribution,
+            months_remaining: monthsNeeded,
+            calculation_method: calculationMethod,
+            progress_percent: (currentAmount / targetAmount * 100).toFixed(1),
+            completed: false
+        };
+    } catch (error) {
+        console.error('Error recalculating plan dates:', error);
+        return await getPlanById(planId);
+    }
+}
+
 // ============================================================================
 // PROGRESO Y ESTADÍSTICAS
 // ============================================================================
@@ -459,6 +616,93 @@ export async function cancelPlan(planId) {
     } catch (error) {
         console.error('Error cancelling plan:', error);
         throw error;
+    }
+}
+
+// ============================================================================
+// SUGERENCIAS PARA CONTRIBUCIONES DESDE INGRESOS
+// ============================================================================
+
+/**
+ * Obtiene sugerencias de contribución a planes basándose en un ingreso confirmado
+ * @param {string} incomePatternId - ID del patrón de ingreso
+ * @param {number} confirmedAmount - Monto confirmado del ingreso
+ * @returns {Object} Objeto con planes y montos sugeridos
+ */
+export async function getPlanSuggestionsForIncome(incomePatternId, confirmedAmount) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { hasSuggestions: false, plans: [] };
+
+        // Obtener planes vinculados a este patrón de ingreso
+        const { data: planSources, error } = await supabase
+            .from('plan_income_sources')
+            .select(`
+                plan_id,
+                allocation_type,
+                allocation_value,
+                plans (
+                    id,
+                    name,
+                    target_amount,
+                    current_amount,
+                    target_date,
+                    status,
+                    priority
+                )
+            `)
+            .eq('income_pattern_id', incomePatternId);
+
+        if (error) throw error;
+
+        if (!planSources || planSources.length === 0) {
+            return { hasSuggestions: false, plans: [] };
+        }
+
+        // Calcular sugerencias para cada plan activo
+        const suggestions = planSources
+            .filter(ps => ps.plans && ps.plans.status === 'active')
+            .map(ps => {
+                const plan = ps.plans;
+                let suggestedAmount = 0;
+
+                if (ps.allocation_type === 'fixed') {
+                    suggestedAmount = parseFloat(ps.allocation_value) || 0;
+                } else if (ps.allocation_type === 'percent') {
+                    const percent = parseFloat(ps.allocation_value) || 0;
+                    suggestedAmount = confirmedAmount * percent;
+                }
+
+                const currentAmount = parseFloat(plan.current_amount) || 0;
+                const targetAmount = parseFloat(plan.target_amount);
+                const remaining = targetAmount - currentAmount;
+
+                // No sugerir más de lo que falta
+                suggestedAmount = Math.min(suggestedAmount, remaining);
+
+                return {
+                    plan_id: plan.id,
+                    name: plan.name,
+                    target_amount: targetAmount,
+                    current_amount: currentAmount,
+                    remaining_amount: remaining,
+                    target_date: plan.target_date,
+                    priority: plan.priority,
+                    allocation_type: ps.allocation_type,
+                    allocation_value: ps.allocation_value,
+                    suggested_amount: Math.max(0, suggestedAmount),
+                    progress_percent: targetAmount > 0 ? (currentAmount / targetAmount * 100).toFixed(1) : 0
+                };
+            })
+            .filter(s => s.suggested_amount > 0); // Solo incluir planes con sugerencia > 0
+
+        return {
+            hasSuggestions: suggestions.length > 0,
+            plans: suggestions.sort((a, b) => b.priority - a.priority) // Ordenar por prioridad
+        };
+    } catch (error) {
+        console.error('Error getting plan suggestions for income:', error);
+        return { hasSuggestions: false, plans: [] };
     }
 }
 

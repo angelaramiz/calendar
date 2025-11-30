@@ -122,11 +122,18 @@ export async function showConfirmProjectedDialog(projectionData, onConfirmed) {
                 showConfirmButton: false
             });
 
-            // === AUTOMATIZACIÓN DE AHORRO ===
-            // Si es un ingreso, verificar si hay ahorros vinculados
+            // === AUTOMATIZACIÓN DE AHORRO Y PLANES ===
+            // Si es un ingreso, verificar si hay ahorros y planes vinculados
             if (projectionData.pattern_type === 'income' && projectionData.pattern_id) {
+                // Primero ahorros
                 await promptSavingsAfterIncomeConfirmation(
                     projectionData.pattern_id, 
+                    formValues.amount
+                );
+                
+                // Luego planes
+                await promptPlanContributionsAfterIncomeConfirmation(
+                    projectionData.pattern_id,
                     formValues.amount
                 );
             }
@@ -391,6 +398,170 @@ async function promptSavingsFromExpenseSurplus(expensePatternId, expectedAmount,
         }
     } catch (error) {
         console.error('Error prompting savings from expense surplus:', error);
+    }
+}
+
+/**
+ * Pregunta al usuario si desea contribuir a planes después de confirmar un ingreso
+ */
+async function promptPlanContributionsAfterIncomeConfirmation(incomePatternId, confirmedAmount) {
+    try {
+        const { getPlanSuggestionsForIncome, contributeToPlan, recalculatePlanDates } = await import('./plans-v2.js');
+        const suggestions = await getPlanSuggestionsForIncome(incomePatternId, confirmedAmount);
+        
+        if (!suggestions.hasSuggestions || suggestions.plans.length === 0) {
+            return; // No hay planes vinculados
+        }
+
+        const plansListHTML = suggestions.plans.map((p, idx) => {
+            const progressColor = p.progress_percent >= 80 ? '#10b981' : p.progress_percent >= 50 ? '#f59e0b' : '#3b82f6';
+            return `
+                <div style="display: flex; align-items: center; padding: 12px; background: #eff6ff; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${progressColor};">
+                    <input type="checkbox" id="plan-check-${idx}" data-plan-id="${p.plan_id}" data-amount="${p.suggested_amount}" checked style="width: 20px; height: 20px; margin-right: 12px;">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #1e40af;">${p.name}</div>
+                        <div style="font-size: 0.85em; color: #6b7280;">
+                            Progreso: ${p.progress_percent}% · Meta: $${p.target_amount.toLocaleString('es-MX')}
+                        </div>
+                        <div style="font-size: 0.8em; color: #9ca3af;">
+                            📅 Fecha objetivo: ${new Date(p.target_date).toLocaleDateString('es-MX')}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <input type="number" 
+                            id="plan-amount-${idx}" 
+                            value="${p.suggested_amount.toFixed(2)}" 
+                            step="0.01" 
+                            min="0"
+                            max="${confirmedAmount}"
+                            style="width: 100px; padding: 5px; border: 1px solid #d1d5db; border-radius: 4px; text-align: right;"
+                        >
+                        <div style="font-size: 0.75em; color: #6b7280; margin-top: 2px;">
+                            ${p.allocation_type === 'percent' ? `(${(p.allocation_value * 100).toFixed(0)}%)` : '(fijo)'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const result = await Swal.fire({
+            title: '🎯 Contribuir a Planeaciones',
+            html: `
+                <div style="text-align: left; padding: 10px;">
+                    <p style="color: #374151; margin-bottom: 15px;">
+                        Este ingreso tiene planes vinculados. ¿Deseas hacer las contribuciones?
+                    </p>
+                    <div style="background: #dbeafe; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                        <span style="font-weight: 600; color: #1e40af;">💰 Ingreso confirmado:</span>
+                        <span style="color: #059669; font-weight: 600;"> $${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        ${plansListHTML}
+                    </div>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '💰 Contribuir',
+            cancelButtonText: 'Omitir',
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#6b7280',
+            width: '500px',
+            preConfirm: () => {
+                const contributions = [];
+                suggestions.plans.forEach((p, idx) => {
+                    const checkbox = document.getElementById(`plan-check-${idx}`);
+                    const amountInput = document.getElementById(`plan-amount-${idx}`);
+                    
+                    if (checkbox && checkbox.checked && amountInput) {
+                        const amount = parseFloat(amountInput.value) || 0;
+                        if (amount > 0) {
+                            contributions.push({
+                                plan_id: p.plan_id,
+                                plan_name: p.name,
+                                amount: amount
+                            });
+                        }
+                    }
+                });
+                return contributions;
+            }
+        });
+
+        if (result.isConfirmed && result.value && result.value.length > 0) {
+            let successCount = 0;
+            let dateChanges = [];
+            
+            for (const contrib of result.value) {
+                try {
+                    await contributeToPlan(contrib.plan_id, contrib.amount, `Aporte desde ingreso`);
+                    
+                    // Recalcular fechas
+                    const recalcResult = await recalculatePlanDates(contrib.plan_id, contrib.amount);
+                    
+                    successCount++;
+                    
+                    // Verificar si la fecha cambió o se completó
+                    if (recalcResult.completed) {
+                        dateChanges.push({
+                            name: contrib.plan_name,
+                            type: 'completed'
+                        });
+                    } else if (recalcResult.dateChanged) {
+                        dateChanges.push({
+                            name: contrib.plan_name,
+                            type: 'date_changed',
+                            old_date: recalcResult.old_target_date,
+                            new_date: recalcResult.new_target_date
+                        });
+                    }
+                } catch (err) {
+                    console.error(`Error contributing to plan ${contrib.plan_id}:`, err);
+                }
+            }
+
+            if (successCount > 0) {
+                // Actualizar el indicador de balance
+                if (window.refreshBalanceIndicator) window.refreshBalanceIndicator();
+                
+                // Preparar mensaje de éxito
+                let htmlMessage = `<p>Se contribuyó a ${successCount} planeación(es)</p>`;
+                
+                // Agregar info de cambios de fecha
+                if (dateChanges.length > 0) {
+                    htmlMessage += '<div style="margin-top: 15px; text-align: left;">';
+                    dateChanges.forEach(change => {
+                        if (change.type === 'completed') {
+                            htmlMessage += `
+                                <div style="padding: 8px; background: #dcfce7; border-radius: 6px; margin-bottom: 8px;">
+                                    <span style="color: #166534;">🎉 <strong>${change.name}</strong>: ¡Meta completada!</span>
+                                </div>
+                            `;
+                        } else if (change.type === 'date_changed') {
+                            const oldDate = new Date(change.old_date).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+                            const newDate = new Date(change.new_date).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+                            htmlMessage += `
+                                <div style="padding: 8px; background: #dbeafe; border-radius: 6px; margin-bottom: 8px;">
+                                    <span style="color: #1e40af;">📅 <strong>${change.name}</strong>: ${oldDate} → ${newDate}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    htmlMessage += '</div>';
+                }
+                
+                await Swal.fire({
+                    icon: 'success',
+                    title: '🎯 Contribuciones Exitosas',
+                    html: htmlMessage,
+                    timer: dateChanges.length > 0 ? undefined : 2500,
+                    showConfirmButton: dateChanges.length > 0,
+                    confirmButtonText: 'Entendido'
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error prompting plan contributions after income:', error);
+        // No mostrar error al usuario, es opcional
     }
 }
 
@@ -1310,12 +1481,12 @@ async function showAddContributionDialog(plan, onUpdated) {
     
     if (formValues) {
         try {
-            const { addContributionToPlan, recalculatePlanDates, getPlanById } = await import('./plans-v2.js');
+            const { contributeToPlan, recalculatePlanDates, getPlanById } = await import('./plans-v2.js');
             
-            await addContributionToPlan(plan.id, formValues.amount, formValues.description, formValues.date);
+            await contributeToPlan(plan.id, formValues.amount, formValues.description, formValues.date);
             
-            // Recalcular fechas
-            const updatedPlan = await recalculatePlanDates(plan.id);
+            // Recalcular fechas (pasando la contribución para mejor estimación)
+            const updatedPlan = await recalculatePlanDates(plan.id, formValues.amount);
             
             // Verificar si se completó
             const finalPlan = await getPlanById(plan.id);
@@ -2291,8 +2462,15 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                 date: formValues.date,
                 status: 'confirmed'
             };
-
-            const movement = await createMovement(movementData);
+            
+            // Si el destino es una planeación, NO crear movement normal
+            // contributeToPlan maneja todo internamente para evitar duplicación
+            const skipMovementCreation = (type === 'ingreso' && formValues.destination === 'plan' && formValues.planId);
+            
+            let movement = null;
+            if (!skipMovementCreation) {
+                movement = await createMovement(movementData);
+            }
             
             // Si el ingreso va a ahorro, crear el depósito
             if (type === 'ingreso' && formValues.destination === 'savings' && formValues.savingsPatternId) {
@@ -2322,24 +2500,64 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                     });
                 }
             } else if (type === 'ingreso' && formValues.destination === 'plan' && formValues.planId) {
-                // Si el ingreso va a una planeación, crear el movimiento vinculado al plan
+                // Si el ingreso va a una planeación, solo actualizar el plan (el movement ya tiene plan_id)
                 try {
-                    const { addContributionToPlan, recalculatePlanDates } = await import('./plans-v2.js');
-                    await addContributionToPlan(formValues.planId, formValues.amount, formValues.title, formValues.date);
+                    const { contributeToPlan, recalculatePlanDates, getPlanById } = await import('./plans-v2.js');
                     
-                    // Recalcular fecha objetivo
-                    const updatedPlan = await recalculatePlanDates(formValues.planId);
+                    // Agregar contribución al plan
+                    await contributeToPlan(formValues.planId, formValues.amount, formValues.title, formValues.date);
                     
-                    await Swal.fire({
-                        icon: 'success',
-                        title: '✅ Ingreso + Planeación',
-                        html: `
-                            <p>Ingreso registrado y agregado a la planeación.</p>
-                            <p style="color: #059669; font-weight: 600;">+$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
-                        `,
-                        timer: 3000,
-                        showConfirmButton: false
-                    });
+                    // Recalcular fecha objetivo pasando la contribución extra
+                    const result = await recalculatePlanDates(formValues.planId, formValues.amount);
+                    
+                    // Preparar mensaje según resultado
+                    let htmlMessage = `
+                        <p>Ingreso registrado y agregado a la planeación <strong>${result.name}</strong>.</p>
+                        <p style="color: #059669; font-weight: 600;">+$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                        <p style="margin-top: 10px;">Progreso: <strong>${result.progress_percent}%</strong></p>
+                    `;
+                    
+                    // Si la meta se completó
+                    if (result.completed) {
+                        await Swal.fire({
+                            icon: 'success',
+                            title: '🎉 ¡Meta Completada!',
+                            html: `
+                                <p>¡Felicidades! Has alcanzado tu meta de ahorro para <strong>${result.name}</strong>.</p>
+                                <p style="color: #059669; font-weight: 600;">Meta: $${parseFloat(result.target_amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                            `,
+                            confirmButtonText: '¡Genial!'
+                        });
+                    } else if (result.dateChanged) {
+                        // Si la fecha cambió, notificar al usuario
+                        const oldDate = new Date(result.old_target_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+                        const newDate = new Date(result.new_target_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+                        
+                        htmlMessage += `
+                            <div style="margin-top: 15px; padding: 10px; background: #ecfdf5; border-radius: 8px; border-left: 4px solid #10b981;">
+                                <p style="margin: 0; color: #065f46;"><strong>📅 Fecha actualizada</strong></p>
+                                <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #047857;">
+                                    ${oldDate} → <strong>${newDate}</strong>
+                                </p>
+                                ${result.monthly_contribution > 0 ? `<p style="margin: 5px 0 0 0; font-size: 0.85em; color: #6b7280;">Ahorro mensual estimado: $${result.monthly_contribution.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>` : ''}
+                            </div>
+                        `;
+                        
+                        await Swal.fire({
+                            icon: 'success',
+                            title: '✅ Ingreso + Planeación',
+                            html: htmlMessage,
+                            confirmButtonText: 'Entendido'
+                        });
+                    } else {
+                        await Swal.fire({
+                            icon: 'success',
+                            title: '✅ Ingreso + Planeación',
+                            html: htmlMessage,
+                            timer: 3000,
+                            showConfirmButton: false
+                        });
+                    }
                 } catch (planError) {
                     console.error('Error adding to plan:', planError);
                     await Swal.fire({
@@ -2378,22 +2596,46 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
             } else if (type === 'gasto' && formValues.source === 'plan' && formValues.sourcePlanId) {
                 // Si el gasto sale de una planeación, descontar del plan
                 try {
-                    const { withdrawFromPlan, recalculatePlanDates } = await import('./plans-v2.js');
-                    await withdrawFromPlan(formValues.sourcePlanId, formValues.amount, `Retiro para gasto: ${formValues.title}`, formValues.date);
+                    const { withdrawFromPlan, recalculatePlanDates, getPlanById } = await import('./plans-v2.js');
+                    await withdrawFromPlan(formValues.sourcePlanId, formValues.amount, `Retiro para gasto: ${formValues.title}`);
                     
                     // Recalcular fecha objetivo
-                    const updatedPlan = await recalculatePlanDates(formValues.sourcePlanId);
+                    const result = await recalculatePlanDates(formValues.sourcePlanId, 0);
                     
-                    await Swal.fire({
-                        icon: 'success',
-                        title: '✅ Gasto desde Planeación',
-                        html: `
-                            <p>Gasto registrado y descontado de la planeación.</p>
-                            <p style="color: #ef4444; font-weight: 600;">-$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
-                        `,
-                        timer: 3000,
-                        showConfirmButton: false
-                    });
+                    let htmlMessage = `
+                        <p>Gasto registrado y descontado de <strong>${result.name}</strong>.</p>
+                        <p style="color: #ef4444; font-weight: 600;">-$${formValues.amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</p>
+                        <p style="margin-top: 10px;">Progreso: <strong>${result.progress_percent}%</strong></p>
+                    `;
+                    
+                    if (result.dateChanged) {
+                        const oldDate = new Date(result.old_target_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+                        const newDate = new Date(result.new_target_date).toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+                        
+                        htmlMessage += `
+                            <div style="margin-top: 15px; padding: 10px; background: #fef2f2; border-radius: 8px; border-left: 4px solid #ef4444;">
+                                <p style="margin: 0; color: #991b1b;"><strong>📅 Fecha actualizada</strong></p>
+                                <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #b91c1c;">
+                                    ${oldDate} → <strong>${newDate}</strong>
+                                </p>
+                            </div>
+                        `;
+                        
+                        await Swal.fire({
+                            icon: 'warning',
+                            title: '💸 Gasto desde Planeación',
+                            html: htmlMessage,
+                            confirmButtonText: 'Entendido'
+                        });
+                    } else {
+                        await Swal.fire({
+                            icon: 'success',
+                            title: '✅ Gasto desde Planeación',
+                            html: htmlMessage,
+                            timer: 3000,
+                            showConfirmButton: false
+                        });
+                    }
                 } catch (planError) {
                     console.error('Error withdrawing from plan:', planError);
                     await Swal.fire({
@@ -3764,6 +4006,7 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
         const frequencyLabels = {
             'daily': 'Diario',
             'weekly': 'Semanal',
+            'biweekly': 'Quincenal',
             'monthly': 'Mensual',
             'yearly': 'Anual'
         };
@@ -3777,7 +4020,7 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
                     <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
                         <div style="margin-bottom: 10px;">
                             <strong>Monto base:</strong> 
-                            <span style="color: ${typeColor}; font-size: 1.2em;">$${pattern.base_amount}</span>
+                            <span style="color: ${typeColor}; font-size: 1.2em;">$${parseFloat(pattern.base_amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
                         </div>
                         
                         <div style="margin-bottom: 10px;">
@@ -3786,12 +4029,12 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
                         </div>
                         
                         <div style="margin-bottom: 10px;">
-                            <strong>Fecha inicio:</strong> ${new Date(pattern.start_date).toLocaleDateString('es-ES')}
+                            <strong>Fecha inicio:</strong> ${new Date(pattern.start_date).toLocaleDateString('es-MX')}
                         </div>
                         
                         ${pattern.end_date ? `
                             <div style="margin-bottom: 10px;">
-                                <strong>Fecha límite:</strong> ${new Date(pattern.end_date).toLocaleDateString('es-ES')}
+                                <strong>Fecha límite:</strong> ${new Date(pattern.end_date).toLocaleDateString('es-MX')}
                             </div>
                         ` : '<div style="margin-bottom: 10px;"><strong>Fecha límite:</strong> Indefinido</div>'}
                         
@@ -3820,19 +4063,95 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
                         </button>
                     </div>
                     ` : ''}
+                    
+                    <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                        <button 
+                            type="button" 
+                            id="btn-delete-pattern"
+                            style="width: 100%; padding: 10px; background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; cursor: pointer; font-weight: 600;"
+                        >
+                            🗑️ Eliminar Patrón
+                        </button>
+                    </div>
                 </div>
             `,
             showCancelButton: true,
-            confirmButtonText: 'Editar',
+            confirmButtonText: '✏️ Editar',
             cancelButtonText: 'Cerrar',
             confirmButtonColor: '#3b82f6',
             cancelButtonColor: '#6b7280',
             didOpen: () => {
+                // Botón de gestionar fuentes de ingreso (solo para gastos)
                 const btnIncomeSources = document.getElementById('btn-manage-income-sources');
                 if (btnIncomeSources) {
                     btnIncomeSources.addEventListener('click', async () => {
                         Swal.close();
                         await showExpensePatternIncomeSourcesDialog(patternId, onUpdated);
+                    });
+                }
+                
+                // Botón de eliminar
+                const btnDelete = document.getElementById('btn-delete-pattern');
+                if (btnDelete) {
+                    btnDelete.addEventListener('click', async () => {
+                        const confirmDelete = await Swal.fire({
+                            title: '⚠️ ¿Eliminar patrón?',
+                            html: `
+                                <p>Estás a punto de eliminar <strong>${pattern.name}</strong>.</p>
+                                <p style="color: #6b7280; font-size: 0.9em; margin-top: 10px;">
+                                    Esta acción desactivará el patrón y dejará de generar eventos proyectados.
+                                </p>
+                                <div style="margin-top: 15px; padding: 10px; background: #fef2f2; border-radius: 8px;">
+                                    <label style="display: flex; align-items: center; cursor: pointer;">
+                                        <input type="checkbox" id="hard-delete-check" style="margin-right: 8px;">
+                                        <span style="color: #991b1b; font-size: 0.85em;">
+                                            Eliminar permanentemente (no se puede deshacer)
+                                        </span>
+                                    </label>
+                                </div>
+                            `,
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Sí, eliminar',
+                            cancelButtonText: 'Cancelar',
+                            confirmButtonColor: '#dc2626',
+                            cancelButtonColor: '#6b7280',
+                            preConfirm: () => {
+                                const hardDelete = document.getElementById('hard-delete-check')?.checked || false;
+                                return { hardDelete };
+                            }
+                        });
+                        
+                        if (confirmDelete.isConfirmed) {
+                            try {
+                                const { deleteIncomePattern, deleteExpensePattern } = await import('./patterns.js');
+                                
+                                if (isIncome) {
+                                    await deleteIncomePattern(patternId, confirmDelete.value.hardDelete);
+                                } else {
+                                    await deleteExpensePattern(patternId, confirmDelete.value.hardDelete);
+                                }
+                                
+                                await Swal.fire({
+                                    icon: 'success',
+                                    title: 'Patrón eliminado',
+                                    text: confirmDelete.value.hardDelete 
+                                        ? 'El patrón ha sido eliminado permanentemente' 
+                                        : 'El patrón ha sido desactivado',
+                                    timer: 2000,
+                                    showConfirmButton: false
+                                });
+                                
+                                if (onUpdated) onUpdated();
+                            } catch (error) {
+                                console.error('Error deleting pattern:', error);
+                                await Swal.fire({
+                                    icon: 'error',
+                                    title: 'Error',
+                                    text: 'No se pudo eliminar el patrón: ' + error.message
+                                });
+                            }
+                        }
                     });
                 }
             }

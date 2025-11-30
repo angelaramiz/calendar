@@ -18,6 +18,8 @@ export async function getConfirmedBalanceSummary() {
         if (!user) throw new Error('Usuario no autenticado');
 
         // Consultar movements directamente en lugar de la vista
+        // Nota: Los ingresos que van directamente a planes NO crean movement,
+        // solo se registran via contributeToPlan
         const { data: movements, error } = await supabase
             .from('movements')
             .select('type, confirmed_amount')

@@ -6,6 +6,7 @@
 import { getCalendarDataForMonth } from './pattern-scheduler.js';
 import { getPlans } from './plans-v2.js';
 import { getLoans } from './loans-v2.js';
+import * as ProductWishlist from './product-wishlist.js';
 
 /**
  * Configuración de notificaciones guardada en localStorage
@@ -453,4 +454,127 @@ function saveReadAlerts(alerts) {
     } catch (e) {
         console.error('Error al guardar alertas leídas:', e);
     }
+}
+
+// ==================== ALERTAS DE PRODUCTOS EN LÍNEA ====================
+
+/**
+ * Verificar productos inactivos y mostrar alertas
+ * @param {string} userId - ID del usuario
+ * @returns {Promise<Array>} - Lista de productos con alertas
+ */
+export async function checkInactiveProductAlerts(userId) {
+    try {
+        const updatedProducts = await ProductWishlist.checkInactiveProducts(userId);
+        
+        if (updatedProducts.length > 0) {
+            // Mostrar alerta al usuario
+            const productList = updatedProducts.map(item => `
+                <li style="margin-bottom: 8px;">
+                    <strong>${item.product.product_name?.substring(0, 40)}...</strong><br>
+                    <small style="color: #dc2626;">
+                        Fecha desplazada ${item.daysDelayed} días 
+                        (${formatDateSpanish(item.oldDate)} → ${formatDateSpanish(item.newDate)})
+                    </small>
+                </li>
+            `).join('');
+
+            await Swal.fire({
+                icon: 'warning',
+                title: '⚠️ Productos sin actividad',
+                html: `
+                    <div style="text-align: left;">
+                        <p>Los siguientes productos no han recibido aportes y su fecha estimada se ha actualizado:</p>
+                        <ul style="padding-left: 20px; max-height: 200px; overflow-y: auto;">
+                            ${productList}
+                        </ul>
+                        <p style="margin-top: 16px; color: #6b7280; font-size: 0.875rem;">
+                            💡 Realiza aportes regularmente para mantener tu fecha objetivo.
+                        </p>
+                    </div>
+                `,
+                confirmButtonText: 'Ver mis productos',
+                showCancelButton: true,
+                cancelButtonText: 'Entendido'
+            }).then(result => {
+                if (result.isConfirmed) {
+                    // Abrir modal de productos
+                    import('./product-wishlist-modals.js').then(module => {
+                        module.openProductWishlistModal();
+                    });
+                }
+            });
+        }
+
+        return updatedProducts;
+    } catch (error) {
+        console.error('Error checking inactive products:', error);
+        return [];
+    }
+}
+
+/**
+ * Obtener productos próximos a completarse
+ * @param {string} userId - ID del usuario
+ * @param {number} daysThreshold - Días para considerar "próximo"
+ * @returns {Promise<Array>} - Lista de productos próximos
+ */
+export async function getProductsNearCompletion(userId, daysThreshold = 30) {
+    try {
+        const products = await ProductWishlist.getProductWishlist(userId, { status: 'active' });
+        
+        return products.filter(p => 
+            p.days_remaining !== null && 
+            p.days_remaining > 0 && 
+            p.days_remaining <= daysThreshold
+        );
+    } catch (error) {
+        console.error('Error getting products near completion:', error);
+        return [];
+    }
+}
+
+/**
+ * Verificar y notificar productos próximos a completarse
+ * @param {string} userId - ID del usuario
+ */
+export async function checkProductCompletionAlerts(userId) {
+    try {
+        const nearCompletion = await getProductsNearCompletion(userId, 7); // 7 días
+        
+        if (nearCompletion.length > 0) {
+            const productList = nearCompletion.map(p => `
+                <div style="display: flex; align-items: center; gap: 12px; padding: 8px; background: #f0fdf4; border-radius: 8px; margin-bottom: 8px;">
+                    <span style="font-size: 1.5rem;">🎉</span>
+                    <div style="flex: 1;">
+                        <strong>${p.product_name?.substring(0, 30)}...</strong>
+                        <div style="font-size: 0.875rem; color: #059669;">
+                            ¡Solo faltan ${p.days_remaining} día(s)!
+                            (${p.progress_percent}% completado)
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+
+            await Swal.fire({
+                icon: 'success',
+                title: '🎊 ¡Casi lo logras!',
+                html: `
+                    <div style="text-align: left;">
+                        <p>Estos productos están muy cerca de completarse:</p>
+                        ${productList}
+                    </div>
+                `,
+                confirmButtonText: '¡Genial!'
+            });
+        }
+    } catch (error) {
+        console.error('Error checking product completion alerts:', error);
+    }
+}
+
+function formatDateSpanish(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }

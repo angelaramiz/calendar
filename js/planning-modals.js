@@ -3,9 +3,11 @@
  */
 
 import * as Planning from './planning.js';
+import * as ProductWishlistModals from './product-wishlist-modals.js';
 import './components/goal-form.js';
 import './components/envelope-form.js';
 import './components/planned-expense-form.js';
+import './components/product-wishlist-form.js';
 
 // Swal está disponible globalmente desde sweetalert2@11.js
 
@@ -13,6 +15,7 @@ let currentUserId = null;
 
 export function setUserId(userId) {
   currentUserId = userId;
+  ProductWishlistModals.setUserId(userId);
 }
 
 // ==================== MODAL PRINCIPAL DE PLANEACIÓN ====================
@@ -34,6 +37,7 @@ export async function openPlanningModal() {
           <button class="tab-btn" data-tab="goals">🎯 Metas</button>
           <button class="tab-btn" data-tab="envelopes">💰 Apartados</button>
           <button class="tab-btn" data-tab="expenses">📅 Gastos Planificados</button>
+          <button class="tab-btn" data-tab="products">🛒 Productos</button>
         </div>
 
         <div class="tab-content active" id="tab-overview">
@@ -50,6 +54,10 @@ export async function openPlanningModal() {
 
         <div class="tab-content" id="tab-expenses">
           ${renderExpensesTab(dashboard.plannedExpenses)}
+        </div>
+
+        <div class="tab-content" id="tab-products">
+          ${renderProductsTabPreview()}
         </div>
       </div>
     `,
@@ -226,6 +234,92 @@ function renderExpensesTab(expensesData) {
   `;
 }
 
+function renderProductsTabPreview() {
+  return `
+    <div class="products-tab-preview">
+      <div class="products-banner">
+        <div class="banner-illustration">🛒</div>
+        <div class="banner-content">
+          <h3>Planifica tus Compras en Línea</h3>
+          <p>Agrega productos de tiendas como Mercado Libre, Amazon, Liverpool y más. 
+             El sistema analizará tus ingresos y te dará opciones de planificación personalizadas.</p>
+          <div class="banner-features">
+            <div class="feature">
+              <span class="feature-icon">🔍</span>
+              <span>Scraping automático</span>
+            </div>
+            <div class="feature">
+              <span class="feature-icon">📊</span>
+              <span>Análisis financiero</span>
+            </div>
+            <div class="feature">
+              <span class="feature-icon">⏰</span>
+              <span>Seguimiento de progreso</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary btn-large btn-open-products">
+        🛍️ Ver mis Productos en Línea
+      </button>
+    </div>
+    <style>
+      .products-tab-preview {
+        text-align: center;
+        padding: 20px;
+      }
+      .products-banner {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%);
+        border-radius: 16px;
+        padding: 24px;
+        margin-bottom: 24px;
+        text-align: left;
+        border: 1px solid #93c5fd;
+      }
+      .banner-illustration {
+        font-size: 4rem;
+        background: white;
+        padding: 20px;
+        border-radius: 16px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      }
+      .banner-content h3 {
+        margin: 0 0 8px 0;
+        color: #1e40af;
+        font-size: 1.25rem;
+      }
+      .banner-content p {
+        margin: 0 0 16px 0;
+        color: #4b5563;
+        line-height: 1.5;
+      }
+      .banner-features {
+        display: flex;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+      .banner-features .feature {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: white;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        color: #1e40af;
+      }
+      .btn-large {
+        padding: 16px 32px;
+        font-size: 1.1rem;
+        border-radius: 12px;
+      }
+    </style>
+  `;
+}
+
 function getPriorityName(priority) {
   // Si es string, retornar tal cual
   if (typeof priority === 'string') return priority;
@@ -367,6 +461,12 @@ function setupActionButtons() {
       const expTitle = item.querySelector('.expense-title').textContent;
       deleteItemModal('expense', expId, expTitle);
     });
+  });
+
+  // Product Wishlist
+  document.querySelector('.btn-open-products')?.addEventListener('click', () => {
+    Swal.close();
+    setTimeout(() => ProductWishlistModals.openProductWishlistModal(), 100);
   });
 }
 

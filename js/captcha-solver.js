@@ -11,7 +11,7 @@ export class CaptchaSolver {
     }
 
     /**
-     * Abre ventana modal con iframe de Amazon para resolver CAPTCHA
+     * Abre ventana popup de Amazon para resolver CAPTCHA
      * @param {string} amazonUrl - URL del producto en Amazon
      * @returns {Promise<boolean>} - true si se resolvió, false si se canceló
      */
@@ -24,7 +24,27 @@ export class CaptchaSolver {
     }
 
     showCaptchaModal(amazonUrl) {
-        // Crear overlay y modal
+        // Abrir Amazon en ventana popup
+        const width = 800;
+        const height = 700;
+        const left = (window.screen.width - width) / 2;
+        const top = (window.screen.height - height) / 2;
+        
+        const popup = window.open(
+            amazonUrl,
+            'amazon-captcha',
+            `width=${width},height=${height},left=${left},top=${top},toolbar=no,menubar=no,location=yes,status=yes,scrollbars=yes`
+        );
+
+        if (!popup) {
+            alert('Por favor permite ventanas emergentes para resolver el CAPTCHA');
+            if (this.rejectCallback) {
+                this.rejectCallback(new Error('POPUP_BLOCKED'));
+            }
+            return;
+        }
+
+        // Crear overlay y modal de instrucciones
         const modalHTML = `
             <div class="captcha-solver-overlay" id="captcha-solver-overlay">
                 <div class="captcha-solver-modal">
@@ -37,23 +57,16 @@ export class CaptchaSolver {
                         <div class="captcha-instructions">
                             <p><strong>👇 Sigue estos pasos:</strong></p>
                             <ol>
-                                <li>Resuelve el CAPTCHA en la ventana de abajo</li>
+                                <li>Resuelve el CAPTCHA en la <strong>ventana emergente</strong></li>
                                 <li>Espera a que cargue la página del producto</li>
                                 <li>Haz clic en "Continuar" cuando veas el producto</li>
                             </ol>
                         </div>
                         
-                        <div class="captcha-iframe-container">
-                            <iframe 
-                                id="captcha-iframe" 
-                                src="${amazonUrl}"
-                                sandbox="allow-same-origin allow-scripts allow-forms"
-                                loading="eager">
-                            </iframe>
-                            <div class="iframe-loading">
-                                <div class="spinner"></div>
-                                <p>Cargando página de Amazon...</p>
-                            </div>
+                        <div class="popup-status">
+                            <div class="status-icon">🔄</div>
+                            <p class="status-text">Esperando que resuelvas el CAPTCHA...</p>
+                            <p class="status-hint">La ventana de Amazon se abrió en otra pestaña</p>
                         </div>
                     </div>
                     
@@ -76,18 +89,28 @@ export class CaptchaSolver {
         this.injectStyles();
 
         // Event listeners
-        const iframe = document.getElementById('captcha-iframe');
         const continueBtn = document.getElementById('captcha-continue-btn');
         const cancelBtn = document.getElementById('captcha-cancel-btn');
-        const loadingIndicator = document.querySelector('.iframe-loading');
 
-        // Ocultar loading cuando iframe cargue
-        iframe.addEventListener('load', () => {
-            loadingIndicator.style.display = 'none';
-        });
+        // Monitorear si popup se cierra
+        const checkPopupClosed = setInterval(() => {
+            if (popup.closed) {
+                clearInterval(checkPopupClosed);
+                const overlay = document.getElementById('captcha-solver-overlay');
+                if (overlay) {
+                    // Popup cerrado sin confirmar
+                    this.closeCaptchaModal();
+                    if (this.rejectCallback) {
+                        this.rejectCallback(new Error('POPUP_CLOSED'));
+                    }
+                }
+            }
+        }, 500);
 
         // Botón continuar
         continueBtn.addEventListener('click', () => {
+            clearInterval(checkPopupClosed);
+            popup.close();
             this.closeCaptchaModal();
             if (this.resolveCallback) {
                 this.resolveCallback(true);
@@ -96,6 +119,8 @@ export class CaptchaSolver {
 
         // Botón cancelar
         cancelBtn.addEventListener('click', () => {
+            clearInterval(checkPopupClosed);
+            popup.close();
             this.closeCaptchaModal();
             if (this.rejectCallback) {
                 this.rejectCallback(new Error('CAPTCHA_CANCELLED'));
@@ -172,10 +197,10 @@ export class CaptchaSolver {
                 .captcha-modal-body {
                     flex: 1;
                     padding: 1.5rem;
-                    overflow: hidden;
+                    overflow: auto;
                     display: flex;
                     flex-direction: column;
-                    gap: 1rem;
+                    gap: 1.5rem;
                 }
 
                 .captcha-instructions {
@@ -198,51 +223,38 @@ export class CaptchaSolver {
                 }
 
                 .captcha-instructions li {
-                    margin: 0.25rem 0;
+                    margin: 0.5rem 0;
                 }
 
-                .captcha-iframe-container {
+                .popup-status {
                     flex: 1;
-                    position: relative;
-                    background: #f9fafb;
-                    border-radius: 8px;
-                    overflow: hidden;
-                    min-height: 400px;
-                }
-
-                #captcha-iframe {
-                    width: 100%;
-                    height: 100%;
-                    border: none;
-                    border-radius: 8px;
-                }
-
-                .iframe-loading {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: white;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
                     justify-content: center;
                     gap: 1rem;
+                    padding: 2rem;
+                    background: #f9fafb;
+                    border-radius: 8px;
+                    min-height: 200px;
                 }
 
-                .iframe-loading .spinner {
-                    width: 48px;
-                    height: 48px;
-                    border: 4px solid #e5e7eb;
-                    border-top-color: #10b981;
-                    border-radius: 50%;
-                    animation: spin 0.8s linear infinite;
+                .status-icon {
+                    font-size: 4rem;
+                    animation: pulse 2s ease-in-out infinite;
                 }
 
-                .iframe-loading p {
-                    color: #6b7280;
+                .status-text {
+                    font-size: 1.125rem;
+                    font-weight: 600;
+                    color: #1f2937;
+                    margin: 0;
+                }
+
+                .status-hint {
                     font-size: 0.95rem;
+                    color: #6b7280;
+                    margin: 0;
                 }
 
                 .captcha-modal-footer {
@@ -299,6 +311,17 @@ export class CaptchaSolver {
 
                 @keyframes spin {
                     to { transform: rotate(360deg); }
+                }
+
+                @keyframes pulse {
+                    0%, 100% { 
+                        opacity: 1;
+                        transform: scale(1);
+                    }
+                    50% { 
+                        opacity: 0.7;
+                        transform: scale(1.1);
+                    }
                 }
 
                 @media (max-width: 768px) {

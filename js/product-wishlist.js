@@ -748,64 +748,66 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
 
     const options = [];
 
-    // Corto plazo (30%)
+    // Siempre generar las 3 opciones (corto, mediano, largo plazo)
+    
+    // 🚀 Corto plazo (30% del ingreso disponible)
     const shortTermPercent = 0.30;
     const shortTermAmount = availableIncome * shortTermPercent;
     if (shortTermAmount > 0) {
         const shortTermMonths = Math.ceil(targetAmount / shortTermAmount);
-        if (shortTermMonths <= 2) {
-            options.push({
-                type: 'short',
-                name: '🚀 Corto Plazo',
-                description: `Meta alcanzable en ~${shortTermMonths} mes(es)`,
-                monthlyContribution: Math.round(shortTermAmount * 100) / 100,
-                percentOfIncome: Math.round(shortTermPercent * 100),
-                estimatedMonths: shortTermMonths,
-                estimatedWeeks: Math.ceil(shortTermMonths * 4.33),
-                priority: 'high',
-                recommended: targetAmount <= availableIncome * 2
-            });
-        }
+        options.push({
+            type: 'short',
+            name: '🚀 Corto Plazo',
+            description: `Meta alcanzable en ~${shortTermMonths} mes(es)`,
+            monthlyContribution: Math.round(shortTermAmount * 100) / 100,
+            contributionValue: Math.round(shortTermAmount * 100) / 100,
+            contributionType: 'fixed',
+            percentOfIncome: Math.round(shortTermPercent * 100),
+            estimatedMonths: shortTermMonths,
+            estimatedWeeks: Math.ceil(shortTermMonths * 4.33),
+            priority: 'high',
+            recommended: shortTermMonths <= 3
+        });
     }
 
-    // Mediano plazo (15%)
+    // ⚖️ Mediano plazo (15% del ingreso disponible)
     const mediumTermPercent = 0.15;
     const mediumTermAmount = availableIncome * mediumTermPercent;
     if (mediumTermAmount > 0) {
         const mediumTermMonths = Math.ceil(targetAmount / mediumTermAmount);
-        if (mediumTermMonths >= 2 && mediumTermMonths <= 5) {
-            options.push({
-                type: 'medium',
-                name: '⚖️ Mediano Plazo',
-                description: `Meta alcanzable en ~${mediumTermMonths} meses`,
-                monthlyContribution: Math.round(mediumTermAmount * 100) / 100,
-                percentOfIncome: Math.round(mediumTermPercent * 100),
-                estimatedMonths: mediumTermMonths,
-                estimatedWeeks: Math.ceil(mediumTermMonths * 4.33),
-                priority: 'medium',
-                recommended: true
-            });
-        }
+        options.push({
+            type: 'medium',
+            name: '⚖️ Mediano Plazo',
+            description: `Meta alcanzable en ~${mediumTermMonths} meses`,
+            monthlyContribution: Math.round(mediumTermAmount * 100) / 100,
+            contributionValue: Math.round(mediumTermAmount * 100) / 100,
+            contributionType: 'fixed',
+            percentOfIncome: Math.round(mediumTermPercent * 100),
+            estimatedMonths: mediumTermMonths,
+            estimatedWeeks: Math.ceil(mediumTermMonths * 4.33),
+            priority: 'medium',
+            recommended: mediumTermMonths >= 3 && mediumTermMonths <= 6
+        });
     }
 
-    // Largo plazo (8%)
+    // 🐢 Largo plazo (8% del ingreso disponible)
     const longTermPercent = 0.08;
     const longTermAmount = availableIncome * longTermPercent;
     if (longTermAmount > 0) {
         const longTermMonths = Math.ceil(targetAmount / longTermAmount);
-        if (longTermMonths >= 5 && longTermMonths <= 12) {
-            options.push({
-                type: 'long',
-                name: '🐢 Largo Plazo',
-                description: `Meta alcanzable en ~${longTermMonths} meses`,
-                monthlyContribution: Math.round(longTermAmount * 100) / 100,
-                percentOfIncome: Math.round(longTermPercent * 100),
-                estimatedMonths: longTermMonths,
-                estimatedWeeks: Math.ceil(longTermMonths * 4.33),
-                priority: 'low',
-                recommended: targetAmount > availableIncome * 5
-            });
-        }
+        options.push({
+            type: 'long',
+            name: '🐢 Largo Plazo',
+            description: `Meta alcanzable en ~${longTermMonths} meses`,
+            monthlyContribution: Math.round(longTermAmount * 100) / 100,
+            contributionValue: Math.round(longTermAmount * 100) / 100,
+            contributionType: 'fixed',
+            percentOfIncome: Math.round(longTermPercent * 100),
+            estimatedMonths: longTermMonths,
+            estimatedWeeks: Math.ceil(longTermMonths * 4.33),
+            priority: 'low',
+            recommended: longTermMonths > 6
+        });
     }
 
     // Si no hay opciones, crear una personalizada

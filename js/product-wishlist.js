@@ -202,28 +202,6 @@ export async function scrapeProduct(url) {
     } catch (error) {
         logError('scrapeProduct', error, { url });
         
-        // Mostrar mensaje especial para CAPTCHA
-        if (error.error === 'CAPTCHA_DETECTADO') {
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Amazon requiere verificación',
-                    html: `
-                        <p>Amazon está solicitando verificación CAPTCHA.</p>
-                        <p><strong>Por favor ingresa los datos manualmente:</strong></p>
-                        <ul style="text-align: left; margin: 1rem auto; max-width: 300px;">
-                            <li>Nombre del producto</li>
-                            <li>Precio</li>
-                            <li>URL de la imagen (opcional)</li>
-                        </ul>
-                    `,
-                    confirmButtonText: 'Entendido'
-                });
-            } else {
-                alert('Amazon requiere verificación CAPTCHA. Por favor ingresa los datos manualmente.');
-            }
-        }
-        
         // Devolver objeto parcial que indica fallo
         return {
             url,
@@ -235,7 +213,7 @@ export async function scrapeProduct(url) {
             store: detectStoreFromUrl(url),
             needsManualInput: true,
             scrapingFailed: true,
-            error: error.message || error.error
+            error: error.error || error.message
         };
     }
 }

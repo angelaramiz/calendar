@@ -1058,8 +1058,35 @@ class ProductWishlistForm extends HTMLElement {
             this.renderProductPreview();
             this.showStep('step-preview');
             
-            // Si el scraping falló, mostrar mensaje y enfocar el primer campo editable
-            if (data.needsManualInput) {
+            // Si el scraping falló por CAPTCHA, mostrar mensaje especial
+            if (data.scrapingFailed && data.error === 'CAPTCHA_DETECTADO') {
+                if (typeof Swal !== 'undefined') {
+                    Swal.fire({
+                        icon: 'info',
+                        title: '🤖 Amazon bloqueó el scraping',
+                        html: `
+                            <p>Amazon detectó la solicitud automática y requiere verificación.</p>
+                            <p><strong>Por favor completa los campos manualmente:</strong></p>
+                            <div style="text-align: left; margin: 1rem auto; max-width: 350px; background: #f0fdf4; padding: 1rem; border-radius: 8px;">
+                                <p style="margin: 0.5rem 0;"><strong>✓</strong> Nombre del producto</p>
+                                <p style="margin: 0.5rem 0;"><strong>✓</strong> Precio actual</p>
+                                <p style="margin: 0.5rem 0;"><strong>✓</strong> Imagen (opcional)</p>
+                            </div>
+                            <p style="color: #6b7280; font-size: 0.875rem; margin-top: 1rem;">
+                                💡 Consejo: Copia y pega desde la página de Amazon
+                            </p>
+                        `,
+                        confirmButtonText: 'Completar datos',
+                        confirmButtonColor: '#10b981'
+                    });
+                }
+                setTimeout(() => {
+                    const nameInput = this.querySelector('#manual-product-name');
+                    if (nameInput) nameInput.focus();
+                }, 500);
+            }
+            // Si el scraping falló por otra razón
+            else if (data.needsManualInput) {
                 setTimeout(() => {
                     const nameInput = this.querySelector('#manual-product-name');
                     if (nameInput) nameInput.focus();

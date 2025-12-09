@@ -918,6 +918,52 @@ class ProductWishlistForm extends HTMLElement {
         });
 
         this.querySelector('#btn-apply-custom')?.addEventListener('click', () => this.applyCustomPlan());
+        
+        // Escuchar evento de imagen cargada
+        window.addEventListener('product-image-loaded', async (e) => {
+            if (e.detail.url === this.productData?.url && e.detail.imageUrl) {
+                this.productData.image = e.detail.imageUrl;
+                this.productData.imageLoading = false;
+                this.updateProductImage(e.detail.imageUrl);
+                
+                // Si el producto ya fue guardado, actualizar en la base de datos
+                if (this.savedProductId) {
+                    try {
+                        const { error } = await supabase
+                            .from('product_wishlist')
+                            .update({ image: e.detail.imageUrl })
+                            .eq('id', this.savedProductId);
+                        
+                        if (error) {
+                            console.error('Error updating product image:', error);
+                        }
+                    } catch (err) {
+                        console.error('Error updating product image:', err);
+                    }
+                }
+            }
+        });
+    }
+    
+    // Actualizar imagen en todas las vistas del producto
+    updateProductImage(imageUrl) {
+        // Actualizar en preview
+        const previewImg = this.querySelector('.product-image');
+        if (previewImg) {
+            previewImg.src = imageUrl;
+        }
+        
+        // Actualizar en review si está visible
+        const reviewImg = this.querySelector('#review-product-image');
+        if (reviewImg) {
+            reviewImg.src = imageUrl;
+        }
+        
+        // Actualizar input manual si existe
+        const manualImageInput = this.querySelector('#manual-product-image');
+        if (manualImageInput) {
+            manualImageInput.value = imageUrl;
+        }
     }
     
     // Iniciar entrada manual sin URL
@@ -1444,7 +1490,7 @@ class ProductWishlistForm extends HTMLElement {
 
         review.innerHTML = `
             <div class="review-product">
-                <img class="review-product-image" 
+                <img id="review-product-image" class="review-product-image" 
                     src="${this.productData.image || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}"
                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
                 <div>
@@ -1527,6 +1573,9 @@ class ProductWishlistForm extends HTMLElement {
                 estimated_completion_date: estimatedDate?.toISOString().split('T')[0],
                 notes
             });
+            
+            // Guardar ID para actualizar imagen cuando se cargue
+            this.savedProductId = product.id;
 
             // Asignar ingreso
             await ProductWishlist.assignIncomeToProduct(product.id, this.selectedIncome.id, {

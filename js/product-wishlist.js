@@ -9,12 +9,12 @@ import { supabase } from './supabase-client.js';
 // ==================== CONFIGURACIÓN ====================
 
 // URL del API de scraping - Configura esto en config.js o usa variable de entorno
-// En desarrollo: http://localhost:3001
-// En producción (Vercel): https://tu-proyecto.vercel.app
+// En desarrollo: http://localhost:5000
+// En producción (Fly.io): https://calendar-backend-ed6u5g.fly.dev
 const SCRAPER_API_URL = window.SCRAPER_API_URL || 
     (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:3001'
-        : 'https://calendar-scraper-api.vercel.app'); // ← Cambia esto por tu URL de Vercel
+        ? 'http://localhost:5000'
+        : 'https://calendar-backend-ed6u5g.fly.dev');
 
 const DEBUG = true;
 

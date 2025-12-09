@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { captchaSolver } from './captcha-solver.js';
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -119,7 +120,7 @@ async function fetchProductImage(url, productName = 'Producto') {
  * @param {string} url - URL del producto
  * @returns {Promise<Object>} - Datos del producto
  */
-export async function scrapeProduct(url) {
+export async function scrapeProduct(url, retryWithCaptcha = true) {
     try {
         logInfo('scrapeProduct', { url });
 
@@ -201,6 +202,26 @@ export async function scrapeProduct(url) {
         return product;
     } catch (error) {
         logError('scrapeProduct', error, { url });
+        
+        // 🤖 Si es error de CAPTCHA y podemos reintentar, abrir solver
+        if (error.message?.includes('CAPTCHA_DETECTADO') && retryWithCaptcha) {
+            try {
+                logInfo('scrapeProduct', 'CAPTCHA detectado, abriendo solver...');
+                
+                // Abrir modal para que usuario resuelva CAPTCHA
+                await captchaSolver.solveCaptcha(url);
+                
+                // Usuario resolvió CAPTCHA, reintentar scraping
+                logInfo('scrapeProduct', 'CAPTCHA resuelto, reintentando...');
+                return await scrapeProduct(url, false); // No reintentar de nuevo
+                
+            } catch (captchaError) {
+                if (captchaError.message === 'CAPTCHA_CANCELLED') {
+                    logInfo('scrapeProduct', 'Usuario canceló resolución de CAPTCHA');
+                }
+                // Si falla, continuar con entrada manual
+            }
+        }
         
         // Devolver objeto parcial que indica fallo
         return {

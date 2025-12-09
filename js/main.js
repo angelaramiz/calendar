@@ -15,6 +15,7 @@ import {
 } from './notifications.js';
 import { openPlanningModal, setUserId } from './planning-modals.js';
 import { getConfirmedBalanceSummary, formatCurrency } from './balance.js';
+import { initPriceMonitor } from './product-price-monitor.js';
 
 // Current user session
 let currentUser = null;
@@ -46,6 +47,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Inicializar sistema de notificaciones (async)
     initNotificationSystem().catch(err => console.error('Error initializing notifications:', err));
+    
+    // Inicializar monitoreo de precios de productos (async)
+    initPriceMonitor();
     
     // Crear panel de notificaciones en el header
     createNotificationPanel();

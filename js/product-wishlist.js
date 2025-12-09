@@ -29,11 +29,69 @@ function logError(action, error, context = {}) {
 // ==================== SCRAPING ====================
 
 /**
+ * Mostrar toast de progreso para carga de imagen
+ */
+function showImageLoadingToast(productName) {
+    const toastId = `image-toast-${Date.now()}`;
+    const toast = document.createElement('div');
+    toast.id = toastId;
+    toast.className = 'image-loading-toast';
+    toast.innerHTML = `
+        <div class="toast-icon">🖼️</div>
+        <div class="toast-content">
+            <div class="toast-title">Cargando imagen</div>
+            <div class="toast-subtitle">${productName.substring(0, 40)}${productName.length > 40 ? '...' : ''}</div>
+            <div class="toast-progress">
+                <div class="toast-progress-bar"></div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(toast);
+    
+    // Animar entrada
+    setTimeout(() => toast.classList.add('show'), 10);
+    
+    return toastId;
+}
+
+/**
+ * Actualizar toast a completado
+ */
+function completeImageToast(toastId, success = true) {
+    const toast = document.getElementById(toastId);
+    if (!toast) return;
+    
+    const icon = toast.querySelector('.toast-icon');
+    const title = toast.querySelector('.toast-title');
+    const progress = toast.querySelector('.toast-progress');
+    
+    if (success) {
+        icon.textContent = '✅';
+        title.textContent = 'Imagen cargada';
+        progress.style.display = 'none';
+    } else {
+        icon.textContent = '⚠️';
+        title.textContent = 'Sin imagen';
+        progress.style.display = 'none';
+    }
+    
+    // Remover después de 2 segundos
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 2000);
+}
+
+/**
  * Obtener solo la imagen de un producto (llamada en segundo plano)
  * @param {string} url - URL del producto
+ * @param {string} productName - Nombre del producto para el toast
  * @returns {Promise<string>} - URL de la imagen
  */
-async function fetchProductImage(url) {
+async function fetchProductImage(url, productName = 'Producto') {
+    const toastId = showImageLoadingToast(productName);
+    
     try {
         const response = await fetch(`${SCRAPER_API_URL}/api/scrape/image`, {
             method: 'POST',
@@ -44,11 +102,14 @@ async function fetchProductImage(url) {
         const result = await response.json();
         
         if (result.success && result.image) {
+            completeImageToast(toastId, true);
             return result.image;
         }
+        completeImageToast(toastId, false);
         return '';
     } catch (error) {
         console.warn('[fetchProductImage] Error:', error);
+        completeImageToast(toastId, false);
         return '';
     }
 }
@@ -124,7 +185,7 @@ export async function scrapeProduct(url) {
 
         // 🖼️ FASE 2: Obtener imagen en segundo plano (NO bloquea)
         product.imageLoading = true; // Flag para mostrar loading
-        fetchProductImage(url).then(imageUrl => {
+        fetchProductImage(url, product.name || 'Producto').then(imageUrl => {
             product.image = imageUrl;
             product.imageLoading = false;
             // Disparar evento personalizado para actualizar UI si es necesario

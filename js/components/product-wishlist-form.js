@@ -986,14 +986,20 @@ class ProductWishlistForm extends HTMLElement {
         }
 
         try {
-            // Mostrar loading
+            // Mostrar loading animado
             btnScrape.querySelector('.btn-text').style.display = 'none';
             btnScrape.querySelector('.btn-loader').style.display = 'inline';
             btnScrape.disabled = true;
             errorDiv.style.display = 'none';
 
+            // Crear modal de carga creativo
+            this.showScrapingLoadingModal();
+
             const data = await ProductWishlist.scrapeProduct(url);
             this.productData = data;
+
+            // Cerrar modal de carga
+            this.closeScrapingLoadingModal();
 
             // Mostrar preview (con campos editables si scraping falló)
             this.renderProductPreview();
@@ -1007,12 +1013,84 @@ class ProductWishlistForm extends HTMLElement {
                 }, 100);
             }
         } catch (error) {
+            this.closeScrapingLoadingModal();
             errorDiv.textContent = error.message || 'No se pudo obtener información del producto';
             errorDiv.style.display = 'block';
         } finally {
             btnScrape.querySelector('.btn-text').style.display = 'inline';
             btnScrape.querySelector('.btn-loader').style.display = 'none';
             btnScrape.disabled = false;
+        }
+    }
+
+    showScrapingLoadingModal() {
+        const messages = [
+            { icon: '🔍', text: 'Buscando producto...', duration: 2000 },
+            { icon: '🛒', text: 'Obteniendo información de la tienda...', duration: 3000 },
+            { icon: '💰', text: 'Analizando precios...', duration: 3000 },
+            { icon: '📸', text: 'Capturando imagen del producto...', duration: 3000 },
+            { icon: '✨', text: 'Finalizando...', duration: 2000 }
+        ];
+
+        const modalHtml = `
+            <div class="scraping-modal-overlay" id="scraping-loader">
+                <div class="scraping-modal">
+                    <div class="scraping-animation">
+                        <div class="loading-spinner">
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                            <div class="spinner-ring"></div>
+                            <span class="spinner-icon">🛍️</span>
+                        </div>
+                    </div>
+                    <div class="scraping-message">
+                        <span class="message-icon">🔍</span>
+                        <span class="message-text">Conectando con la tienda...</span>
+                    </div>
+                    <div class="scraping-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                    </div>
+                    <p class="scraping-tip">💡 Esto puede tardar hasta 30 segundos</p>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Animar los mensajes
+        let currentIndex = 0;
+        const messageIcon = document.querySelector('.message-icon');
+        const messageText = document.querySelector('.message-text');
+        const progressFill = document.querySelector('.progress-fill');
+        
+        const updateMessage = () => {
+            if (currentIndex < messages.length) {
+                const msg = messages[currentIndex];
+                messageIcon.textContent = msg.icon;
+                messageText.textContent = msg.text;
+                
+                // Actualizar barra de progreso
+                const progress = ((currentIndex + 1) / messages.length) * 100;
+                progressFill.style.width = `${progress}%`;
+                
+                currentIndex++;
+                this.scrapingMessageTimer = setTimeout(updateMessage, msg.duration);
+            }
+        };
+        
+        updateMessage();
+    }
+
+    closeScrapingLoadingModal() {
+        if (this.scrapingMessageTimer) {
+            clearTimeout(this.scrapingMessageTimer);
+        }
+        const modal = document.getElementById('scraping-loader');
+        if (modal) {
+            modal.classList.add('fade-out');
+            setTimeout(() => modal.remove(), 300);
         }
     }
 

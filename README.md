@@ -12,9 +12,29 @@ Calendario interactivo con gestión de ingresos, gastos, **préstamos con intere
 
 ### Setup Frontend
 1. Clonar repositorio
-2. Configurar `js/config.js` con credenciales de Supabase
-3. Abrir `index.html` en navegador o servidor local
-4. Registrar usuario y empezar a usar
+2. **Copiar archivo de configuración:**
+   ```bash
+   cp js/config.example.js js/config.js
+   ```
+3. **Editar `js/config.js`** con tus credenciales:
+   - `SUPABASE_URL`: URL de tu proyecto Supabase
+   - `SUPABASE_ANON_KEY`: Clave anónima de Supabase
+   - `SCRAPER_API_URL`: URL del backend de scraping (ya configurada)
+4. Abrir `index.html` en navegador o servidor local
+5. Registrar usuario y empezar a usar
+
+### Backend de Scraping (Opcional)
+El backend para scraping de productos ya está desplegado en:
+- **Producción:** https://calendar-backend-ed6u5g.fly.dev
+- **Repositorio:** https://github.com/angelaramiz/calendar_backend
+
+Si deseas ejecutarlo localmente:
+```bash
+cd api-example
+pip install -r requirements.txt
+python app.py
+```
+Luego cambia `SCRAPER_API_URL` en `js/config.js` a `http://localhost:5000`
 
 ## 📚 Documentación
 

@@ -6,5 +6,7 @@ window.__ENV__ = {
   SUPABASE_ANON_KEY: 'YOUR_SUPABASE_ANON_KEY'
 };
 
-// URL del API de scraping para productos (URL de producción estable)
-window.SCRAPER_API_URL = 'https://calendar-scraper-api.vercel.app';
+// URL del API de scraping para productos
+// Desarrollo: 'http://localhost:5000'
+// Producción: 'https://calendar-backend-ed6u5g.fly.dev'
+window.SCRAPER_API_URL = 'https://calendar-backend-ed6u5g.fly.dev';

@@ -750,8 +750,8 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
 
     // Siempre generar las 3 opciones (corto, mediano, largo plazo)
     
-    // 🚀 Corto plazo (30% del ingreso disponible)
-    const shortTermPercent = 0.30;
+    // 🚀 Corto plazo (50% del ingreso disponible)
+    const shortTermPercent = 0.50;
     const shortTermAmount = availableIncome * shortTermPercent;
     if (shortTermAmount > 0) {
         const shortTermMonths = Math.ceil(targetAmount / shortTermAmount);
@@ -766,12 +766,12 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
             estimatedMonths: shortTermMonths,
             estimatedWeeks: Math.ceil(shortTermMonths * 4.33),
             priority: 'high',
-            recommended: shortTermMonths <= 3
+            recommended: shortTermMonths <= 2
         });
     }
 
-    // ⚖️ Mediano plazo (15% del ingreso disponible)
-    const mediumTermPercent = 0.15;
+    // ⚖️ Mediano plazo (30% del ingreso disponible)
+    const mediumTermPercent = 0.30;
     const mediumTermAmount = availableIncome * mediumTermPercent;
     if (mediumTermAmount > 0) {
         const mediumTermMonths = Math.ceil(targetAmount / mediumTermAmount);
@@ -786,12 +786,12 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
             estimatedMonths: mediumTermMonths,
             estimatedWeeks: Math.ceil(mediumTermMonths * 4.33),
             priority: 'medium',
-            recommended: mediumTermMonths >= 3 && mediumTermMonths <= 6
+            recommended: mediumTermMonths >= 2 && mediumTermMonths <= 4
         });
     }
 
-    // 🐢 Largo plazo (8% del ingreso disponible)
-    const longTermPercent = 0.08;
+    // 🐢 Largo plazo (15% del ingreso disponible)
+    const longTermPercent = 0.15;
     const longTermAmount = availableIncome * longTermPercent;
     if (longTermAmount > 0) {
         const longTermMonths = Math.ceil(targetAmount / longTermAmount);
@@ -806,7 +806,7 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
             estimatedMonths: longTermMonths,
             estimatedWeeks: Math.ceil(longTermMonths * 4.33),
             priority: 'low',
-            recommended: longTermMonths > 6
+            recommended: longTermMonths > 4
         });
     }
 

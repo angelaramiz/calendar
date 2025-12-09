@@ -754,20 +754,38 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
     const shortTermPercent = 0.50;
     const shortTermAmount = availableIncome * shortTermPercent;
     if (shortTermAmount > 0) {
-        const shortTermMonths = Math.ceil(targetAmount / shortTermAmount);
-        const shortTermWeeks = Math.ceil((targetAmount / shortTermAmount) * 4.33);
+        const shortTermMonths = targetAmount / shortTermAmount;
+        const shortTermWeeks = (targetAmount / shortTermAmount) * 4.33;
+        
+        // Si es menos de 1 mes, calcular por semanas
+        let description, estimatedMonths, estimatedWeeks, monthlyContribution;
+        
+        if (shortTermMonths < 1) {
+            // Calcular cuánto por semana
+            const weeksNeeded = Math.ceil(shortTermWeeks);
+            const weeklyAmount = targetAmount / weeksNeeded;
+            monthlyContribution = weeklyAmount * 4.33; // Convertir a mensual para consistencia
+            estimatedMonths = 1;
+            estimatedWeeks = weeksNeeded;
+            description = `Meta alcanzable en ~${weeksNeeded} semana${weeksNeeded > 1 ? 's' : ''}`;
+        } else {
+            const monthsNeeded = Math.ceil(shortTermMonths);
+            monthlyContribution = shortTermAmount;
+            estimatedMonths = monthsNeeded;
+            estimatedWeeks = Math.ceil(shortTermWeeks);
+            description = `Meta alcanzable en ~${monthsNeeded} mes${monthsNeeded > 1 ? 'es' : ''}`;
+        }
+        
         options.push({
             type: 'short',
             name: '🚀 Corto Plazo',
-            description: shortTermMonths === 1 
-                ? `Meta alcanzable en ~${shortTermWeeks} semanas`
-                : `Meta alcanzable en ~${shortTermMonths} mes(es)`,
-            monthlyContribution: Math.round(shortTermAmount * 100) / 100,
-            contributionValue: Math.round(shortTermAmount * 100) / 100,
+            description: description,
+            monthlyContribution: Math.round(monthlyContribution * 100) / 100,
+            contributionValue: Math.round(monthlyContribution * 100) / 100,
             contributionType: 'fixed',
-            percentOfIncome: Math.round(shortTermPercent * 100),
-            estimatedMonths: shortTermMonths,
-            estimatedWeeks: shortTermWeeks,
+            percentOfIncome: Math.round((monthlyContribution / availableIncome) * 100),
+            estimatedMonths: estimatedMonths,
+            estimatedWeeks: estimatedWeeks,
             priority: 'high',
             recommended: shortTermMonths <= 2
         });
@@ -781,7 +799,7 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
         options.push({
             type: 'medium',
             name: '⚖️ Mediano Plazo',
-            description: `Meta alcanzable en ~${mediumTermMonths} meses`,
+            description: `Meta alcanzable en ~${mediumTermMonths} mes${mediumTermMonths > 1 ? 'es' : ''}`,
             monthlyContribution: Math.round(mediumTermAmount * 100) / 100,
             contributionValue: Math.round(mediumTermAmount * 100) / 100,
             contributionType: 'fixed',
@@ -801,7 +819,7 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
         options.push({
             type: 'long',
             name: '🐢 Largo Plazo',
-            description: `Meta alcanzable en ~${longTermMonths} meses`,
+            description: `Meta alcanzable en ~${longTermMonths} mes${longTermMonths > 1 ? 'es' : ''}`,
             monthlyContribution: Math.round(longTermAmount * 100) / 100,
             contributionValue: Math.round(longTermAmount * 100) / 100,
             contributionType: 'fixed',

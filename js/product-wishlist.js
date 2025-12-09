@@ -208,16 +208,39 @@ export async function scrapeProduct(url, retryWithCaptcha = true) {
             try {
                 logInfo('scrapeProduct', 'CAPTCHA detectado, abriendo solver...');
                 
-                // Abrir modal para que usuario resuelva CAPTCHA
-                await captchaSolver.solveCaptcha(url);
+                // Abrir modal para que usuario resuelva CAPTCHA y extraer datos
+                const productData = await captchaSolver.solveCaptcha(url);
                 
-                // Usuario resolvió CAPTCHA, reintentar scraping
-                logInfo('scrapeProduct', 'CAPTCHA resuelto, reintentando...');
-                return await scrapeProduct(url, false); // No reintentar de nuevo
+                // Retornar datos extraídos directamente del popup
+                logInfo('scrapeProduct', 'Datos extraídos del popup:', productData);
+                
+                // Agregar URL si no está presente
+                if (!productData.url) {
+                    productData.url = url;
+                }
+                
+                // 🖼️ Obtener imagen en segundo plano si no se extrajo
+                if (!productData.image && productData.name) {
+                    productData.imageLoading = true;
+                    fetchProductImage(url, productData.name).then(imageUrl => {
+                        productData.image = imageUrl;
+                        productData.imageLoading = false;
+                        window.dispatchEvent(new CustomEvent('product-image-loaded', { 
+                            detail: { url, imageUrl } 
+                        }));
+                    }).catch(err => {
+                        console.warn('No se pudo cargar la imagen:', err);
+                        productData.imageLoading = false;
+                    });
+                }
+                
+                return productData;
                 
             } catch (captchaError) {
                 if (captchaError.message === 'CAPTCHA_CANCELLED') {
                     logInfo('scrapeProduct', 'Usuario canceló resolución de CAPTCHA');
+                } else if (captchaError.message === 'POPUP_CLOSED') {
+                    logInfo('scrapeProduct', 'Usuario cerró el popup sin confirmar');
                 }
                 // Si falla, continuar con entrada manual
             }

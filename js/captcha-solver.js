@@ -11,14 +11,15 @@ export class CaptchaSolver {
     }
 
     /**
-     * Abre ventana popup de Amazon para resolver CAPTCHA
+     * Abre ventana popup de Amazon para resolver CAPTCHA y extraer datos
      * @param {string} amazonUrl - URL del producto en Amazon
-     * @returns {Promise<boolean>} - true si se resolvió, false si se canceló
+     * @returns {Promise<object>} - Datos del producto extraídos del popup
      */
     async solveCaptcha(amazonUrl) {
         return new Promise((resolve, reject) => {
             this.resolveCallback = resolve;
             this.rejectCallback = reject;
+            this.amazonUrl = amazonUrl;
             this.showCaptchaModal(amazonUrl);
         });
     }
@@ -107,13 +108,28 @@ export class CaptchaSolver {
             }
         }, 500);
 
-        // Botón continuar
-        continueBtn.addEventListener('click', () => {
-            clearInterval(checkPopupClosed);
-            popup.close();
-            this.closeCaptchaModal();
-            if (this.resolveCallback) {
-                this.resolveCallback(true);
+        // Botón continuar - extraer datos del popup
+        continueBtn.addEventListener('click', async () => {
+            try {
+                // Extraer datos directamente del popup
+                const productData = await this.extractDataFromPopup(popup);
+                
+                clearInterval(checkPopupClosed);
+                popup.close();
+                this.closeCaptchaModal();
+                
+                if (this.resolveCallback) {
+                    this.resolveCallback(productData);
+                }
+            } catch (error) {
+                console.error('Error extrayendo datos del popup:', error);
+                clearInterval(checkPopupClosed);
+                popup.close();
+                this.closeCaptchaModal();
+                
+                if (this.rejectCallback) {
+                    this.rejectCallback(error);
+                }
             }
         });
 
@@ -141,6 +157,99 @@ export class CaptchaSolver {
         const overlay = document.getElementById('captcha-solver-overlay');
         if (overlay) {
             overlay.remove();
+        }
+    }
+
+    /**
+     * Extraer datos del producto directamente del popup de Amazon
+     * @param {Window} popup - Ventana popup con la página de Amazon
+     * @returns {Promise<object>} - Datos del producto
+     */
+    async extractDataFromPopup(popup) {
+        try {
+            // Verificar que el popup esté en el mismo origen (Amazon)
+            if (!popup || popup.closed) {
+                throw new Error('Popup cerrado o inaccesible');
+            }
+
+            const popupDoc = popup.document;
+            
+            // Extraer nombre del producto
+            let name = '';
+            const nameSelectors = [
+                '#productTitle',
+                '#title',
+                'h1.product-title',
+                '[data-feature-name="title"] h1'
+            ];
+            
+            for (const selector of nameSelectors) {
+                const element = popupDoc.querySelector(selector);
+                if (element) {
+                    name = element.textContent.trim();
+                    if (name && name.length > 5) break;
+                }
+            }
+
+            // Extraer precio
+            let price = 0;
+            const priceSelectors = [
+                '.a-price .a-offscreen',
+                '#priceblock_ourprice',
+                '#priceblock_dealprice',
+                '.a-price-whole',
+                '[data-a-color="price"] .a-offscreen',
+                '.a-price-range .a-offscreen'
+            ];
+
+            for (const selector of priceSelectors) {
+                const element = popupDoc.querySelector(selector);
+                if (element) {
+                    const priceText = element.textContent.trim();
+                    const priceMatch = priceText.match(/[\d,]+\.?\d*/);
+                    if (priceMatch) {
+                        price = parseFloat(priceMatch[0].replace(/,/g, ''));
+                        if (price > 0) break;
+                    }
+                }
+            }
+
+            // Extraer imagen
+            let image = '';
+            const imageSelectors = [
+                '#landingImage',
+                '#imgBlkFront',
+                '#main-image',
+                '.a-dynamic-image'
+            ];
+
+            for (const selector of imageSelectors) {
+                const element = popupDoc.querySelector(selector);
+                if (element) {
+                    image = element.src || element.dataset.src || element.dataset.oldHires || '';
+                    // Limpiar parámetros de tamaño para obtener imagen de alta calidad
+                    if (image) {
+                        image = image.split('._')[0] + '.jpg';
+                        break;
+                    }
+                }
+            }
+
+            return {
+                name: name || '',
+                price: price || 0,
+                image: image || '',
+                currency: 'MXN',
+                platform: 'amazon',
+                store: 'Amazon',
+                url: this.amazonUrl,
+                success: true
+            };
+
+        } catch (error) {
+            console.error('Error accediendo al contenido del popup:', error);
+            // Si falla por CORS (cross-origin), no podemos acceder al DOM del popup
+            throw new Error('NO_SE_PUEDE_ACCEDER_AL_POPUP');
         }
     }
 

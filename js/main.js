@@ -268,7 +268,8 @@ async function showWelcomeToasts() {
         
         // Obtener resumen de balance
         const summary = await getConfirmedBalanceSummary();
-        const balance = summary?.balance || 0;
+        const rawBalance = summary?.balance || 0;
+        const balance = Math.abs(rawBalance) < 0.01 ? 0 : rawBalance;
         
         // Toast de balance actual (después de 500ms)
         setTimeout(() => {

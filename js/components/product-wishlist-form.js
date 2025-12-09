@@ -886,9 +886,16 @@ class ProductWishlistForm extends HTMLElement {
         const btnScrape = this.querySelector('#btn-scrape');
         const urlInput = this.querySelector('#product-url');
 
-        btnScrape?.addEventListener('click', () => this.handleScrape());
+        btnScrape?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.handleScrape();
+        });
+        
         urlInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.handleScrape();
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.handleScrape();
+            }
         });
         
         // Botón de entrada manual
@@ -1032,6 +1039,13 @@ class ProductWishlistForm extends HTMLElement {
             { icon: '✨', text: 'Finalizando...', duration: 2000 }
         ];
 
+        const waitingMessages = [
+            { icon: '⏳', text: 'Casi listo, procesando datos...' },
+            { icon: '🎯', text: 'Verificando información del producto...' },
+            { icon: '🔄', text: 'Optimizando resultados...' },
+            { icon: '✅', text: 'Preparando vista previa...' }
+        ];
+
         const modalHtml = `
             <div class="scraping-modal-overlay" id="scraping-loader">
                 <div class="scraping-modal">
@@ -1061,6 +1075,7 @@ class ProductWishlistForm extends HTMLElement {
         
         // Animar los mensajes
         let currentIndex = 0;
+        let waitingIndex = 0;
         const messageIcon = document.querySelector('.message-icon');
         const messageText = document.querySelector('.message-text');
         const progressFill = document.querySelector('.progress-fill');
@@ -1077,6 +1092,14 @@ class ProductWishlistForm extends HTMLElement {
                 
                 currentIndex++;
                 this.scrapingMessageTimer = setTimeout(updateMessage, msg.duration);
+            } else {
+                // Después del último mensaje, rotar entre mensajes de espera
+                const msg = waitingMessages[waitingIndex % waitingMessages.length];
+                messageIcon.textContent = msg.icon;
+                messageText.textContent = msg.text;
+                
+                waitingIndex++;
+                this.scrapingMessageTimer = setTimeout(updateMessage, 2500);
             }
         };
         

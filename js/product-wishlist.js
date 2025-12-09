@@ -29,7 +29,32 @@ function logError(action, error, context = {}) {
 // ==================== SCRAPING ====================
 
 /**
- * Hacer scraping de un producto por URL
+ * Obtener solo la imagen de un producto (llamada en segundo plano)
+ * @param {string} url - URL del producto
+ * @returns {Promise<string>} - URL de la imagen
+ */
+async function fetchProductImage(url) {
+    try {
+        const response = await fetch(`${SCRAPER_API_URL}/api/scrape/image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+
+        const result = await response.json();
+        
+        if (result.success && result.image) {
+            return result.image;
+        }
+        return '';
+    } catch (error) {
+        console.warn('[fetchProductImage] Error:', error);
+        return '';
+    }
+}
+
+/**
+ * Hacer scraping de un producto por URL (progresivo: datos rápido, imagen después)
  * @param {string} url - URL del producto
  * @returns {Promise<Object>} - Datos del producto
  */
@@ -37,7 +62,8 @@ export async function scrapeProduct(url) {
     try {
         logInfo('scrapeProduct', { url });
 
-        const response = await fetch(`${SCRAPER_API_URL}/api/scrape`, {
+        // 🚀 FASE 1: Obtener datos básicos (nombre + precio) RÁPIDO
+        const response = await fetch(`${SCRAPER_API_URL}/api/scrape/quick`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url })
@@ -95,6 +121,20 @@ export async function scrapeProduct(url) {
             if (!isValidScrape) product.scrapingFailed = true;
             logInfo('scrapeProduct', { message: 'Scraping parcial, requiere datos manuales', product });
         }
+
+        // 🖼️ FASE 2: Obtener imagen en segundo plano (NO bloquea)
+        product.imageLoading = true; // Flag para mostrar loading
+        fetchProductImage(url).then(imageUrl => {
+            product.image = imageUrl;
+            product.imageLoading = false;
+            // Disparar evento personalizado para actualizar UI si es necesario
+            window.dispatchEvent(new CustomEvent('product-image-loaded', { 
+                detail: { url, imageUrl } 
+            }));
+        }).catch(err => {
+            console.warn('No se pudo cargar la imagen:', err);
+            product.imageLoading = false;
+        });
 
         logInfo('scrapeProduct', { product });
         return product;

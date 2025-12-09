@@ -259,6 +259,7 @@ export async function openAddProductModal() {
         width: '700px',
         showConfirmButton: false,
         showCloseButton: true,
+        allowEnterKey: false, // Prevenir que Enter cierre el modal
         customClass: {
             popup: 'product-form-popup'
         },

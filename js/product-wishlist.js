@@ -750,27 +750,30 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
 
     // Siempre generar las 3 opciones (corto, mediano, largo plazo)
     
-    // 🚀 Corto plazo (50% del ingreso disponible)
+    // 🚀 Corto plazo (50%+ del ingreso disponible - 1 a 2 meses máximo)
     const shortTermPercent = 0.50;
     const shortTermAmount = availableIncome * shortTermPercent;
     if (shortTermAmount > 0) {
         const shortTermMonths = Math.ceil(targetAmount / shortTermAmount);
+        const shortTermWeeks = Math.ceil((targetAmount / shortTermAmount) * 4.33);
         options.push({
             type: 'short',
             name: '🚀 Corto Plazo',
-            description: `Meta alcanzable en ~${shortTermMonths} mes(es)`,
+            description: shortTermMonths === 1 
+                ? `Meta alcanzable en ~${shortTermWeeks} semanas`
+                : `Meta alcanzable en ~${shortTermMonths} mes(es)`,
             monthlyContribution: Math.round(shortTermAmount * 100) / 100,
             contributionValue: Math.round(shortTermAmount * 100) / 100,
             contributionType: 'fixed',
             percentOfIncome: Math.round(shortTermPercent * 100),
             estimatedMonths: shortTermMonths,
-            estimatedWeeks: Math.ceil(shortTermMonths * 4.33),
+            estimatedWeeks: shortTermWeeks,
             priority: 'high',
             recommended: shortTermMonths <= 2
         });
     }
 
-    // ⚖️ Mediano plazo (30% del ingreso disponible)
+    // ⚖️ Mediano plazo (30% del ingreso disponible - 2 a 4 meses)
     const mediumTermPercent = 0.30;
     const mediumTermAmount = availableIncome * mediumTermPercent;
     if (mediumTermAmount > 0) {
@@ -790,7 +793,7 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
         });
     }
 
-    // 🐢 Largo plazo (15% del ingreso disponible)
+    // 🐢 Largo plazo (15% del ingreso disponible - hasta 6 meses)
     const longTermPercent = 0.15;
     const longTermAmount = availableIncome * longTermPercent;
     if (longTermAmount > 0) {
@@ -806,7 +809,7 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
             estimatedMonths: longTermMonths,
             estimatedWeeks: Math.ceil(longTermMonths * 4.33),
             priority: 'low',
-            recommended: longTermMonths > 4
+            recommended: longTermMonths > 4 && longTermMonths <= 6
         });
     }
 

@@ -77,16 +77,21 @@ export class CaptchaSolver {
                         <div class="captcha-instructions">
                             <p><strong>👇 Sigue estos pasos:</strong></p>
                             <ol>
-                                <li>Resuelve el CAPTCHA en la <strong>ventana emergente</strong></li>
-                                <li>Espera a que cargue la página del producto</li>
-                                <li>Haz clic en "Continuar" cuando veas el producto</li>
+                                <li>En la <strong>ventana emergente</strong>, verifica que veas el producto de Amazon</li>
+                                <li>Copia el <strong>nombre</strong>, <strong>precio</strong> e <strong>imagen</strong> (URL) del producto</li>
+                                <li>Haz clic en "Continuar" para ingresar los datos manualmente</li>
                             </ol>
+                            <div style="background: #fef3c7; padding: 0.75rem; border-radius: 6px; margin-top: 0.75rem; border-left: 3px solid #f59e0b;">
+                                <p style="margin: 0; font-size: 0.875rem; color: #92400e;">
+                                    ⚠️ <strong>Nota:</strong> Amazon bloquea el scraping automático. Necesitarás copiar los datos manualmente.
+                                </p>
+                            </div>
                         </div>
                         
                         <div class="popup-status">
-                            <div class="status-icon">🔄</div>
-                            <p class="status-text">Esperando que resuelvas el CAPTCHA...</p>
-                            <p class="status-hint">La ventana de Amazon se abrió en otra pestaña</p>
+                            <div class="status-icon">📋</div>
+                            <p class="status-text">Copia los datos del producto desde la ventana emergente</p>
+                            <p class="status-hint">Los ingresarás manualmente en el siguiente paso</p>
                         </div>
                     </div>
                     
@@ -95,7 +100,7 @@ export class CaptchaSolver {
                             ❌ Cancelar
                         </button>
                         <button id="captcha-continue-btn" class="btn-primary">
-                            ✅ Continuar (CAPTCHA resuelto)
+                            ✅ Continuar (Ingresar datos manualmente)
                         </button>
                     </div>
                 </div>
@@ -127,65 +132,26 @@ export class CaptchaSolver {
             }
         }, 500);
 
-        // Botón continuar - copiar URL del popup y usar para scraping
-        continueBtn.addEventListener('click', async () => {
-            try {
-                continueBtn.disabled = true;
-                continueBtn.textContent = '⏳ Extrayendo datos...';
-                
-                // Intentar obtener la URL actual del popup
-                let finalUrl = amazonUrl;
-                try {
-                    if (popup && !popup.closed && popup.location) {
-                        finalUrl = popup.location.href;
-                    }
-                } catch (e) {
-                    // Cross-origin, usar URL original
-                    console.log('No se puede acceder a popup URL, usando original');
-                }
-                
-                // Llamar al backend con la URL (ahora con cookies resueltas en el navegador)
-                const response = await fetch(`${window.SCRAPER_API_URL || 'https://calendar-backend-ed6u5g.fly.dev'}/api/scrape/quick`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
-                        url: finalUrl,
-                        userResolved: true // Flag para indicar que usuario ya resolvió
-                    })
+        // Botón continuar - cerrar popup y permitir entrada manual
+        continueBtn.addEventListener('click', () => {
+            clearInterval(checkPopupClosed);
+            window.removeEventListener('message', handleMessage);
+            popup.close();
+            this.closeCaptchaModal();
+            
+            // Devolver estructura vacía para activar entrada manual
+            if (this.resolveCallback) {
+                this.resolveCallback({
+                    url: amazonUrl,
+                    platform: 'amazon',
+                    store: 'Amazon',
+                    name: '',
+                    price: 0,
+                    image: '',
+                    currency: 'MXN',
+                    needsManualInput: true,
+                    manualFromPopup: true
                 });
-                
-                const result = await response.json();
-                
-                clearInterval(checkPopupClosed);
-                window.removeEventListener('message', handleMessage);
-                popup.close();
-                this.closeCaptchaModal();
-                
-                if (result.success) {
-                    if (this.resolveCallback) {
-                        this.resolveCallback({
-                            ...result.data,
-                            url: amazonUrl,
-                            platform: 'amazon',
-                            store: 'Amazon'
-                        });
-                    }
-                } else {
-                    throw new Error(result.error || 'Error extrayendo datos');
-                }
-                
-            } catch (error) {
-                console.error('Error extrayendo datos:', error);
-                
-                // Si falla todo, pedir entrada manual
-                clearInterval(checkPopupClosed);
-                window.removeEventListener('message', handleMessage);
-                popup.close();
-                this.closeCaptchaModal();
-                
-                if (this.rejectCallback) {
-                    this.rejectCallback(new Error('EXTRACTION_FAILED'));
-                }
             }
         });
 

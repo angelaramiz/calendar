@@ -20,3 +20,4 @@ yarn-error.log*
 # (Opcional) Documentación/API local, si no deseas incluirla
 docs
 api-example
+.venv/

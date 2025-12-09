@@ -251,6 +251,8 @@ function renderCompletedTab(completed) {
 // ==================== MODAL PARA AGREGAR PRODUCTO ====================
 
 export async function openAddProductModal() {
+    console.log('[ProductWishlistModals] Opening add product modal...');
+    
     await Swal.fire({
         title: '🛒 Agregar Producto en Línea',
         html: '<product-wishlist-form></product-wishlist-form>',
@@ -261,6 +263,7 @@ export async function openAddProductModal() {
             popup: 'product-form-popup'
         },
         didOpen: () => {
+            console.log('[ProductWishlistModals] Modal opened, form element:', document.querySelector('product-wishlist-form'));
             const form = document.querySelector('product-wishlist-form');
             form?.addEventListener('product-created', async () => {
                 Swal.close();
@@ -269,6 +272,8 @@ export async function openAddProductModal() {
             });
         }
     });
+    
+    console.log('[ProductWishlistModals] Modal closed');
 }
 
 // ==================== MODAL PARA VER DETALLES ====================

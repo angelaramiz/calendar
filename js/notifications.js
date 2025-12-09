@@ -270,6 +270,139 @@ export async function getPendingAlerts() {
 }
 
 /**
+ * Muestra las alertas en un modal/popup
+ */
+function showAlertsModal(alerts) {
+    // Remover modal existente si hay
+    const existingModal = document.getElementById('alerts-modal');
+    if (existingModal) existingModal.remove();
+    
+    const priorityColor = {
+        critical: '#e74c3c',
+        high: '#e67e22',
+        medium: '#f39c12',
+        low: '#95a5a6'
+    };
+    
+    const alertsHTML = alerts.map(alert => {
+        const color = priorityColor[alert.priority] || '#95a5a6';
+        const icon = alert.icon || '🔔';
+        const bgColor = alert.atRisk ? '#fee2e2' : '#f9f9f9';
+        
+        return `
+            <div class="alert-item" style="
+                border-left: 4px solid ${color};
+                padding: 12px 14px;
+                margin-bottom: 10px;
+                background: ${bgColor};
+                border-radius: 6px;
+                cursor: pointer;
+                transition: all 0.2s;
+            " data-date="${alert.date || ''}" data-type="${alert.type || ''}">
+                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                    <span style="font-size: 1.3em;">${icon}</span>
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: ${color}; margin-bottom: 4px;">
+                            ${alert.message || 'Alerta'}
+                        </div>
+                        ${alert.amount ? `<div style="font-size: 0.9em; color: #555;">Monto: $${alert.amount.toLocaleString('es-MX')}</div>` : ''}
+                        ${alert.progress !== undefined ? `<div style="font-size: 0.85em; color: #666;">Progreso: ${alert.progress.toFixed(0)}%</div>` : ''}
+                        ${alert.daysUntil !== undefined ? `<div style="font-size: 0.85em; color: #888;">En ${alert.daysUntil} día(s)</div>` : ''}
+                        ${alert.atRisk ? `<div style="font-size: 0.85em; color: #e74c3c; font-weight: 600; margin-top: 4px;">⚠️ En riesgo</div>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    const modal = document.createElement('div');
+    modal.id = 'alerts-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        animation: fadeIn 0.2s ease;
+    `;
+    
+    modal.innerHTML = `
+        <div style="
+            background: white;
+            border-radius: 12px;
+            max-width: 450px;
+            width: 90%;
+            max-height: 80vh;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: slideUp 0.3s ease;
+        ">
+            <div style="
+                padding: 16px 20px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            ">
+                <h3 style="margin: 0; font-size: 1.1rem;">🔔 Alertas Pendientes (${alerts.length})</h3>
+                <button id="close-alerts-modal" style="
+                    background: rgba(255,255,255,0.2);
+                    border: none;
+                    color: white;
+                    width: 30px;
+                    height: 30px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    font-size: 1.2rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                ">×</button>
+            </div>
+            <div style="padding: 16px; max-height: 60vh; overflow-y: auto;">
+                ${alertsHTML}
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Cerrar modal
+    const closeBtn = modal.querySelector('#close-alerts-modal');
+    closeBtn.addEventListener('click', () => modal.remove());
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
+    });
+    
+    // Agregar estilos de animación si no existen
+    if (!document.getElementById('alerts-modal-styles')) {
+        const style = document.createElement('style');
+        style.id = 'alerts-modal-styles';
+        style.textContent = `
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            @keyframes slideUp {
+                from { transform: translateY(20px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+            }
+            #alerts-modal .alert-item:hover {
+                transform: translateX(4px);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+/**
  * Determina si una alerta personalizada debe activarse
  */
 function shouldTriggerAlert(alert, eventDateISO) {
@@ -288,8 +421,14 @@ function shouldTriggerAlert(alert, eventDateISO) {
 /**
  * Muestra alertas en la UI
  */
-export function displayAlerts(alerts, container) {
+export function displayAlerts(alerts, container = null) {
     if (!alerts || alerts.length === 0) return;
+    
+    // Si no se proporciona container, crear un modal/popup
+    if (!container) {
+        showAlertsModal(alerts);
+        return;
+    }
     
     const alertHTML = alerts.map(alert => {
         const priorityColor = {

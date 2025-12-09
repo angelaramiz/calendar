@@ -49,11 +49,97 @@ export async function scrapeProduct(url) {
             throw new Error(result.error || 'Error al obtener información del producto');
         }
 
-        logInfo('scrapeProduct', { product: result.data });
-        return result.data;
+        const product = result.data;
+        
+        // Limpiar nombre si tiene sufijo de tienda
+        if (product.name) {
+            // Remover sufijos como ": Amazon.com.mx: Deportes y Aire Libre"
+            product.name = product.name
+                .replace(/\s*:\s*Amazon\.com\.mx.*$/i, '')
+                .replace(/\s*:\s*Amazon\.com.*$/i, '')
+                .replace(/\s*\|\s*MercadoLibre.*$/i, '')
+                .replace(/\s*-\s*\$\s*[\d,.]+\s*$/i, '')
+                .trim();
+        }
+        
+        // Corregir tienda si es solo una letra
+        if (product.store && product.store.length <= 2) {
+            if (product.platform === 'amazon' || product.url?.toLowerCase().includes('amazon') || product.url?.toLowerCase().includes('a.co')) {
+                product.store = 'Amazon';
+            } else if (product.platform === 'mercadolibre' || product.url?.toLowerCase().includes('mercadolibre')) {
+                product.store = 'MercadoLibre';
+            }
+        }
+        
+        // Verificar si el scraping fue exitoso (tiene datos reales)
+        const genericNames = [
+            'mercado libre', 
+            'preferencias de cookies', 
+            'producto de mercadolibre',
+            'producto de amazon',
+            'amazon.com.mx',
+            'sign in'
+        ];
+        
+        // Solo es genérico si el nombre COMPLETO coincide o está vacío
+        const nameIsGeneric = !product.name || 
+                             product.name.length < 10 ||
+                             genericNames.some(g => product.name.toLowerCase() === g.toLowerCase());
+        
+        // Considerar válido si tiene nombre real (aunque no tenga precio)
+        const isValidScrape = !nameIsGeneric;
+        
+        if (!isValidScrape || product.price <= 0) {
+            // Scraping parcial o falló, marcar para edición
+            product.needsManualInput = true;
+            if (!isValidScrape) product.scrapingFailed = true;
+            logInfo('scrapeProduct', { message: 'Scraping parcial, requiere datos manuales', product });
+        }
+
+        logInfo('scrapeProduct', { product });
+        return product;
     } catch (error) {
         logError('scrapeProduct', error, { url });
-        throw error;
+        // Devolver objeto parcial que indica fallo
+        return {
+            url,
+            platform: detectPlatformFromUrl(url),
+            name: '',
+            price: 0,
+            image: '',
+            currency: 'MXN',
+            store: detectStoreFromUrl(url),
+            needsManualInput: true,
+            scrapingFailed: true,
+            error: error.message
+        };
+    }
+}
+
+/**
+ * Detectar plataforma desde URL (fallback local)
+ */
+function detectPlatformFromUrl(url) {
+    const urlLower = url.toLowerCase();
+    if (urlLower.includes('mercadolibre') || urlLower.includes('mercadolivre')) return 'mercadolibre';
+    if (urlLower.includes('amazon')) return 'amazon';
+    if (urlLower.includes('ebay')) return 'ebay';
+    if (urlLower.includes('aliexpress')) return 'aliexpress';
+    return 'generic';
+}
+
+/**
+ * Detectar tienda desde URL (fallback local)
+ */
+function detectStoreFromUrl(url) {
+    try {
+        const urlObj = new URL(url);
+        const host = urlObj.hostname.replace('www.', '');
+        if (host.includes('mercadolibre')) return 'MercadoLibre';
+        if (host.includes('amazon')) return 'Amazon';
+        return host.split('.')[0].charAt(0).toUpperCase() + host.split('.')[0].slice(1);
+    } catch (e) {
+        return 'Tienda Online';
     }
 }
 
@@ -211,17 +297,19 @@ export async function getProductById(productId) {
 export async function createProductWishlist(userId, productData) {
     try {
         if (!userId) throw new Error('userId es requerido');
-        if (!productData.product_url) throw new Error('product_url es requerido');
         if (!productData.product_name) throw new Error('product_name es requerido');
         if (!productData.product_price || productData.product_price <= 0) {
             throw new Error('product_price debe ser mayor a 0');
         }
+        
+        // Permitir URL vacía para entrada manual
+        const productUrl = productData.product_url || 'manual://entry';
 
         logInfo('createProductWishlist', { userId, productName: productData.product_name });
 
         const insertData = {
             user_id: userId,
-            product_url: productData.product_url,
+            product_url: productUrl,
             product_name: productData.product_name,
             product_image_url: productData.product_image_url || null,
             product_price: parseFloat(productData.product_price),
@@ -475,28 +563,7 @@ export async function analyzeProductPlan(targetAmount, incomePatterns, expensePa
     try {
         logInfo('analyzeProductPlan', { targetAmount, incomes: incomePatterns.length });
 
-        // Intentar usar API externa si está disponible
-        try {
-            const response = await fetch(`${SCRAPER_API_URL}/api/analyze-plan`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    targetAmount,
-                    incomePatterns,
-                    expensePatterns,
-                    existingPlans
-                })
-            });
-
-            const result = await response.json();
-            if (result.success) {
-                return result.data;
-            }
-        } catch (apiError) {
-            logInfo('analyzeProductPlan', 'API no disponible, usando cálculo local');
-        }
-
-        // Fallback: cálculo local
+        // Usar cálculo local (más rápido y sin dependencias externas)
         return calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns, existingPlans);
     } catch (error) {
         logError('analyzeProductPlan', error);

@@ -12,6 +12,7 @@ import { createIncomePattern, createExpensePattern, getIncomePatternById, getExp
 import { createPlan } from './plans-v2.js';
 import { getConfirmedBalanceSummary, getIncomePatternAllocations, calculateAvailablePercentage, formatCurrency } from './balance.js';
 import { getSavingsPatterns, getSavingsSummary, createSavingsDeposit, createSavingsWithdrawal, getSavingsPatternById, createSavingsPattern, getSavingsSuggestionsForIncome, getRemainderSavingsSuggestion } from './savings.js';
+import { analyzeNewExpense, analyzeNewPlan, analyzeNewSavings, generateAnalysisPanel, generateQuickInsight, loadFinancialState } from './smart-financial-assistant.js';
 
 // SweetAlert2 está disponible globalmente desde index.html
 const Swal = window.Swal;
@@ -2295,6 +2296,24 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                 
                 ${destinationHTML}
                 ${sourceHTML}
+
+                <!-- Panel de Análisis Inteligente -->
+                <div id="smart-analysis-panel" class="smart-analysis-panel" style="
+                    margin-top: 15px;
+                    padding: 15px;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                    border: 1px solid #cbd5e1;
+                    display: none;
+                ">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.2rem;">🧠</span>
+                        <span style="font-weight: 600; color: #1e40af;">Análisis Inteligente</span>
+                    </div>
+                    <div id="analysis-content" style="font-size: 0.9rem; color: #475569;">
+                        Ingresa el monto para ver el análisis...
+                    </div>
+                </div>
             </div>
         `,
         showCancelButton: true,
@@ -2303,7 +2322,32 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
         confirmButtonColor: type === 'ingreso' ? '#10b981' : '#ef4444',
         cancelButtonColor: '#6b7280',
         focusConfirm: false,
-        didOpen: () => {
+        didOpen: async () => {
+            // Importar el asistente financiero inteligente
+            const { SmartFinancialAssistant, updateAnalysisPanel } = await import('./smart-financial-assistant.js');
+            const assistant = new SmartFinancialAssistant();
+            
+            // Pre-cargar estado financiero
+            await assistant.preloadFinancialState();
+            
+            // Función para actualizar el análisis en tiempo real
+            const updateMovementAnalysis = async () => {
+                const amount = parseFloat(document.getElementById('movement-amount').value) || 0;
+                const category = document.getElementById('movement-category').value;
+                
+                if (amount > 0) {
+                    const analysis = await assistant.getMovementAnalysis(amount, type === 'ingreso' ? 'income' : 'expense', category);
+                    updateAnalysisPanel(analysis, 'movement');
+                } else {
+                    const panel = document.getElementById('smart-analysis-panel');
+                    if (panel) panel.style.display = 'none';
+                }
+            };
+            
+            // Escuchar cambios en monto y categoría
+            document.getElementById('movement-amount').addEventListener('input', updateMovementAnalysis);
+            document.getElementById('movement-category').addEventListener('input', updateMovementAnalysis);
+            
             // Toggle visibilidad del selector de ahorro y planeación para ingresos
             if (type === 'ingreso') {
                 const radios = document.querySelectorAll('input[name="income-destination"]');
@@ -2855,14 +2899,29 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                         placeholder="Detalles adicionales..."
                     ></textarea>
                 </div>
+                
+                <!-- Panel de Análisis Inteligente (solo para gastos) -->
+                ${!isIncome ? `
+                <div id="smart-analysis-container" style="margin-top: 16px;">
+                    <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 13px;">
+                        <span style="font-size: 20px;">🧠</span><br>
+                        Completa el monto y categoría para ver el análisis inteligente
+                    </div>
+                </div>
+                ` : ''}
             </div>
         `,
         showCancelButton: true,
         confirmButtonText: 'Crear Patrón',
         cancelButtonText: 'Cancelar',
         confirmButtonColor: isIncome ? '#10b981' : '#ef4444',
-        width: '600px',
-        didOpen: () => {
+        width: '650px',
+        didOpen: async () => {
+            // Precargar estado financiero para análisis
+            if (!isIncome) {
+                await loadFinancialState();
+            }
+            
             // Setup income source toggle for expense patterns
             if (!isIncome && incomePatterns.length > 0) {
                 const incomeSourceSelect = document.getElementById('pattern-income-source');
@@ -2871,6 +2930,32 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                 const percentSection = document.getElementById('percent-input-section');
                 const percentInput = document.getElementById('pattern-allocation-percent');
                 const availableHint = document.getElementById('available-percent-hint');
+                const amountInputForAlloc = document.getElementById('pattern-amount');
+                
+                // Función para calcular y sugerir el porcentaje automáticamente
+                const updateSuggestedAllocation = async () => {
+                    const selectedId = incomeSourceSelect?.value;
+                    const expenseAmount = parseFloat(amountInputForAlloc?.value) || 0;
+                    const allocationType = allocationTypeSelect?.value || 'percent';
+                    
+                    if (!selectedId || expenseAmount <= 0 || !percentInput) return;
+                    
+                    // Obtener el ingreso seleccionado
+                    const selectedIncome = incomePatterns.find(ip => ip.id === selectedId);
+                    if (!selectedIncome) return;
+                    
+                    const incomeAmount = parseFloat(selectedIncome.base_amount) || 0;
+                    if (incomeAmount <= 0) return;
+                    
+                    if (allocationType === 'percent') {
+                        // Calcular porcentaje: (gasto / ingreso) * 100
+                        const suggestedPercent = (expenseAmount / incomeAmount) * 100;
+                        percentInput.value = suggestedPercent.toFixed(1);
+                    } else {
+                        // Monto fijo = el monto del gasto
+                        percentInput.value = expenseAmount.toFixed(2);
+                    }
+                };
                 
                 if (incomeSourceSelect && allocationSection) {
                     incomeSourceSelect.addEventListener('change', async () => {
@@ -2888,10 +2973,21 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                                 console.error('Error calculating available %:', e);
                                 if (availableHint) availableHint.textContent = 'Disponible: 100%';
                             }
+                            // Auto-calcular porcentaje sugerido
+                            await updateSuggestedAllocation();
                         } else {
                             allocationSection.style.display = 'none';
                         }
                     });
+                    
+                    // También actualizar cuando cambia el monto del gasto
+                    if (amountInputForAlloc) {
+                        amountInputForAlloc.addEventListener('input', () => {
+                            if (incomeSourceSelect.value) {
+                                updateSuggestedAllocation();
+                            }
+                        });
+                    }
                     
                     // Toggle percent vs fixed input
                     if (allocationTypeSelect) {
@@ -2907,9 +3003,112 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                                     percentSpan.textContent = isPercent ? '%' : '$';
                                 }
                             }
+                            // Recalcular con el nuevo tipo
+                            updateSuggestedAllocation();
                         });
                     }
                 }
+            }
+            
+            // ==================== ANÁLISIS INTELIGENTE EN TIEMPO REAL ====================
+            if (!isIncome) {
+                const amountInput = document.getElementById('pattern-amount');
+                const nameInput = document.getElementById('pattern-name');
+                const categoryInput = document.getElementById('pattern-category');
+                const frequencySelect = document.getElementById('pattern-frequency');
+                const analysisContainer = document.getElementById('smart-analysis-container');
+                
+                // Función para actualizar el análisis
+                let analysisTimeout = null;
+                const updateAnalysis = async () => {
+                    const amount = parseFloat(amountInput?.value) || 0;
+                    const name = nameInput?.value?.trim() || '';
+                    const category = categoryInput?.value?.trim() || '';
+                    const frequency = frequencySelect?.value || 'monthly';
+                    
+                    if (!analysisContainer) return;
+                    
+                    // Si no hay monto, mostrar mensaje inicial
+                    if (amount <= 0) {
+                        analysisContainer.innerHTML = `
+                            <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 13px;">
+                                <span style="font-size: 20px;">🧠</span><br>
+                                Ingresa un monto para ver el análisis inteligente
+                            </div>
+                        `;
+                        return;
+                    }
+                    
+                    // Mostrar loading
+                    analysisContainer.innerHTML = `
+                        <div style="text-align: center; padding: 15px; color: #6366f1; font-size: 13px;">
+                            <span style="font-size: 18px;">⏳</span> Analizando impacto financiero...
+                        </div>
+                    `;
+                    
+                    try {
+                        // Obtener análisis
+                        const analysis = await analyzeNewExpense({
+                            name: name || 'Nuevo gasto',
+                            amount,
+                            frequency,
+                            category: category || name,
+                            priority: 3
+                        });
+                        
+                        // Renderizar panel de análisis
+                        analysisContainer.innerHTML = generateAnalysisPanel(analysis, 'expense');
+                        
+                        // Agregar botón para aplicar monto sugerido SOLO si debe reducir
+                        if (analysis.optimalAmount && analysis.optimalAmount.showSuggestion && analysis.optimalAmount.suggested < amount) {
+                            const suggestBtn = document.createElement('button');
+                            suggestBtn.type = 'button';
+                            suggestBtn.innerHTML = `💡 Reducir a monto sugerido: ${formatCurrency(analysis.optimalAmount.suggested)}`;
+                            suggestBtn.style.cssText = `
+                                display: block;
+                                width: 100%;
+                                margin-top: 8px;
+                                padding: 10px;
+                                background: #fef3c7;
+                                border: 1px solid #f59e0b;
+                                border-radius: 8px;
+                                color: #92400e;
+                                font-weight: 500;
+                                cursor: pointer;
+                                transition: all 0.2s;
+                            `;
+                            suggestBtn.onmouseover = () => suggestBtn.style.background = '#fde68a';
+                            suggestBtn.onmouseout = () => suggestBtn.style.background = '#fef3c7';
+                            suggestBtn.onclick = () => {
+                                if (amountInput) {
+                                    amountInput.value = analysis.optimalAmount.suggested;
+                                    updateAnalysis();
+                                }
+                            };
+                            analysisContainer.appendChild(suggestBtn);
+                        }
+                    } catch (error) {
+                        console.error('Error in smart analysis:', error);
+                        analysisContainer.innerHTML = `
+                            <div style="text-align: center; padding: 15px; color: #9ca3af; font-size: 13px;">
+                                <span style="font-size: 18px;">📊</span><br>
+                                No se pudo cargar el análisis
+                            </div>
+                        `;
+                    }
+                };
+                
+                // Debounce para no hacer muchas llamadas
+                const debouncedUpdate = () => {
+                    if (analysisTimeout) clearTimeout(analysisTimeout);
+                    analysisTimeout = setTimeout(updateAnalysis, 500);
+                };
+                
+                // Escuchar cambios en los campos relevantes
+                if (amountInput) amountInput.addEventListener('input', debouncedUpdate);
+                if (categoryInput) categoryInput.addEventListener('input', debouncedUpdate);
+                if (frequencySelect) frequencySelect.addEventListener('change', debouncedUpdate);
+                if (nameInput) nameInput.addEventListener('input', debouncedUpdate);
             }
         },
         preConfirm: () => {
@@ -3055,6 +3254,58 @@ async function showCreatePlanDialog(targetDate, onCreated) {
  * PASO 1: Formulario básico de datos de la planeación
  */
 async function showPlanStep1(targetDate) {
+    // Primero preguntar qué tipo de planeación quiere crear
+    const { value: planType } = await Swal.fire({
+        title: '🎯 Nueva Planeación',
+        html: `
+            <div style="text-align: left; padding: 10px;">
+                <p style="color: #6b7280; margin-bottom: 20px;">
+                    ¿Qué tipo de planeación deseas crear?
+                </p>
+                
+                <div class="plan-type-options" style="display: flex; flex-direction: column; gap: 12px;">
+                    <label class="plan-type-card" style="display: flex; align-items: center; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+                        <input type="radio" name="plan-type" value="traditional" checked style="margin-right: 12px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 1rem; color: #1f2937;">🎯 Meta de Ahorro</div>
+                            <div style="font-size: 0.85rem; color: #6b7280;">Para cualquier objetivo: vacaciones, emergencias, proyectos...</div>
+                        </div>
+                    </label>
+                    
+                    <label class="plan-type-card" style="display: flex; align-items: center; padding: 16px; border: 2px solid #e5e7eb; border-radius: 12px; cursor: pointer; transition: all 0.2s;">
+                        <input type="radio" name="plan-type" value="product" style="margin-right: 12px; width: 18px; height: 18px;">
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; font-size: 1rem; color: #1f2937;">🛒 Producto en Línea</div>
+                            <div style="font-size: 0.85rem; color: #6b7280;">Pega el enlace de MercadoLibre, Amazon, etc. y extrae los datos automáticamente</div>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <style>
+                .plan-type-card:hover { border-color: #3b82f6; background: #f0f9ff; }
+                .plan-type-card:has(input:checked) { border-color: #3b82f6; background: #eff6ff; }
+            </style>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Siguiente →',
+        cancelButtonText: 'Cancelar',
+        width: '500px',
+        preConfirm: () => {
+            const selected = document.querySelector('input[name="plan-type"]:checked');
+            return selected ? selected.value : 'traditional';
+        }
+    });
+
+    if (!planType) return null; // Usuario canceló
+
+    // Si eligió producto en línea, abrir el modal de productos
+    if (planType === 'product') {
+        const productModals = await import('./product-wishlist-modals.js');
+        productModals.openAddProductModal();
+        return null;
+    }
+
+    // Continuar con el formulario tradicional
     const { value: formValues } = await Swal.fire({
         title: '🎯 Nueva Planeación - Paso 1 de 3',
         html: `
@@ -3151,6 +3402,24 @@ async function showPlanStep1(targetDate) {
                         <span>Crear recordatorios automáticos</span>
                     </label>
                 </div>
+
+                <!-- Panel de Análisis Inteligente -->
+                <div id="smart-analysis-panel" class="smart-analysis-panel" style="
+                    margin-top: 20px;
+                    padding: 15px;
+                    border-radius: 12px;
+                    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                    border: 1px solid #cbd5e1;
+                    display: none;
+                ">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <span style="font-size: 1.2rem;">🧠</span>
+                        <span style="font-weight: 600; color: #1e40af;">Análisis Inteligente</span>
+                    </div>
+                    <div id="analysis-content" style="font-size: 0.9rem; color: #475569;">
+                        Ingresa el monto objetivo para ver el análisis...
+                    </div>
+                </div>
             </div>
         `,
         showCancelButton: true,
@@ -3158,6 +3427,39 @@ async function showPlanStep1(targetDate) {
         cancelButtonText: 'Cancelar',
         confirmButtonColor: '#3b82f6',
         width: '600px',
+        didOpen: async () => {
+            // Importar el asistente financiero inteligente
+            const { SmartFinancialAssistant, updateAnalysisPanel } = await import('./smart-financial-assistant.js');
+            const assistant = new SmartFinancialAssistant();
+            
+            // Pre-cargar estado financiero
+            await assistant.preloadFinancialState();
+            
+            // Función para actualizar el análisis de plan en tiempo real
+            const updatePlanAnalysis = async () => {
+                const amount = parseFloat(document.getElementById('plan-amount').value) || 0;
+                const targetDate = document.getElementById('plan-target-date').value;
+                const priority = parseInt(document.getElementById('plan-priority').value) || 3;
+                const title = document.getElementById('plan-title').value.trim();
+                
+                if (amount > 0) {
+                    const analysis = await assistant.getPlanAnalysis(amount, targetDate, priority, title);
+                    updateAnalysisPanel(analysis, 'plan');
+                } else {
+                    const panel = document.getElementById('smart-analysis-panel');
+                    if (panel) panel.style.display = 'none';
+                }
+            };
+            
+            // Escuchar cambios en los campos relevantes
+            const amountInput = document.getElementById('plan-amount');
+            const dateInput = document.getElementById('plan-target-date');
+            const prioritySelect = document.getElementById('plan-priority');
+            
+            if (amountInput) amountInput.addEventListener('input', updatePlanAnalysis);
+            if (dateInput) dateInput.addEventListener('change', updatePlanAnalysis);
+            if (prioritySelect) prioritySelect.addEventListener('change', updatePlanAnalysis);
+        },
         preConfirm: () => {
             const title = document.getElementById('plan-title').value.trim();
             const amount = document.getElementById('plan-amount').value;
@@ -5056,7 +5358,9 @@ export async function showBalanceSummaryDialog() {
         // Nombres de meses
         const monthName = new Date().toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
         
-        const balanceColor = balance.balance >= 0 ? '#10b981' : '#ef4444';
+        // Normalizar balance para evitar -$0.00
+        const normalizedBalance = Math.abs(balance.balance) < 0.01 ? 0 : balance.balance;
+        const balanceColor = normalizedBalance >= 0 ? '#10b981' : '#ef4444';
         
         await Swal.fire({
             title: '💰 Mi Balance Financiero',
@@ -5067,7 +5371,7 @@ export async function showBalanceSummaryDialog() {
                         <div class="balance-main-value">
                             <span class="balance-label">Balance Disponible</span>
                             <span class="balance-amount" style="color: ${balanceColor}">
-                                ${formatCurrency(balance.balance)}
+                                ${formatCurrency(normalizedBalance)}
                             </span>
                         </div>
                         <div class="balance-stats-row">
@@ -5107,8 +5411,8 @@ export async function showBalanceSummaryDialog() {
                                 </div>
                                 <div class="month-stat highlight">
                                     <span class="month-label">Balance del mes</span>
-                                    <span class="month-value ${monthStats.balance >= 0 ? 'positive' : 'negative'}">
-                                        ${formatCurrency(monthStats.balance)}
+                                    <span class="month-value ${Math.abs(monthStats.balance) < 0.01 ? 'positive' : monthStats.balance >= 0 ? 'positive' : 'negative'}">
+                                        ${formatCurrency(Math.abs(monthStats.balance) < 0.01 ? 0 : monthStats.balance)}
                                     </span>
                                 </div>
                             </div>
@@ -5179,7 +5483,7 @@ export async function showBalanceSummaryDialog() {
                                 <div class="asset-card balance-card">
                                     <span class="asset-icon">💵</span>
                                     <span class="asset-label">Balance disponible</span>
-                                    <span class="asset-value">${formatCurrency(balance.balance)}</span>
+                                    <span class="asset-value">${formatCurrency(normalizedBalance)}</span>
                                 </div>
                                 <div class="asset-card savings-card">
                                     <span class="asset-icon">🐷</span>
@@ -5194,7 +5498,7 @@ export async function showBalanceSummaryDialog() {
                                 <div class="asset-card total-card">
                                     <span class="asset-icon">💎</span>
                                     <span class="asset-label">Total activos</span>
-                                    <span class="asset-value">${formatCurrency(balance.balance + savings.total_saved + totalPlans)}</span>
+                                    <span class="asset-value">${formatCurrency(normalizedBalance + savings.total_saved + totalPlans)}</span>
                                 </div>
                             </div>
                             
@@ -5348,6 +5652,17 @@ export async function showSavingsManagementDialog() {
                         >
                             ➖ Retirar
                         </button>
+                        <button 
+                            type="button" 
+                            class="btn-savings-delete" 
+                            data-pattern-id="${pattern.id}"
+                            data-pattern-name="${pattern.name}"
+                            data-balance="${pattern.current_balance}"
+                            style="padding: 6px 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.85em;"
+                            title="Eliminar ahorro"
+                        >
+                            🗑️
+                        </button>
                     </div>
                 </div>
                 `;
@@ -5399,6 +5714,17 @@ export async function showSavingsManagementDialog() {
                         await showSavingsWithdrawalDialog(patternId, balance);
                     });
                 });
+
+                // Eventos para eliminar
+                document.querySelectorAll('.btn-savings-delete').forEach(btn => {
+                    btn.addEventListener('click', async (e) => {
+                        const patternId = e.target.dataset.patternId;
+                        const patternName = e.target.dataset.patternName;
+                        const balance = parseFloat(e.target.dataset.balance) || 0;
+                        Swal.close();
+                        await showDeleteSavingsDialog(patternId, patternName, balance);
+                    });
+                });
             }
         });
         
@@ -5416,6 +5742,105 @@ export async function showSavingsManagementDialog() {
             title: 'Error',
             text: 'No se pudo cargar la gestión de ahorros'
         });
+    }
+}
+
+/**
+ * Modal para eliminar un ahorro con opciones sobre qué hacer con el dinero
+ */
+async function showDeleteSavingsDialog(patternId, patternName, currentBalance) {
+    const { deleteSavingsPattern, createSavingsWithdrawal } = await import('./savings.js');
+    
+    const hasBalance = currentBalance > 0;
+    
+    const { value: action } = await Swal.fire({
+        icon: 'warning',
+        title: `🗑️ Eliminar "${patternName}"`,
+        html: `
+            <div style="text-align: left; padding: 10px;">
+                ${hasBalance ? `
+                    <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #f59e0b;">
+                        <div style="font-weight: 600; color: #92400e; margin-bottom: 8px;">⚠️ Este ahorro tiene dinero</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #d97706;">
+                            $${currentBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                        </div>
+                    </div>
+                    <p style="margin-bottom: 15px; color: #374151;">¿Qué deseas hacer con el dinero?</p>
+                    
+                    <div style="display: flex; flex-direction: column; gap: 10px;">
+                        <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; cursor: pointer;">
+                            <input type="radio" name="delete-action" value="transfer" checked style="margin-right: 10px;">
+                            <div>
+                                <div style="font-weight: 600; color: #059669;">💰 Transferir al balance</div>
+                                <div style="font-size: 0.85em; color: #6b7280;">El dinero se añade a tu balance general</div>
+                            </div>
+                        </label>
+                        
+                        <label style="display: flex; align-items: center; padding: 12px; border: 2px solid #e5e7eb; border-radius: 8px; cursor: pointer;">
+                            <input type="radio" name="delete-action" value="delete" style="margin-right: 10px;">
+                            <div>
+                                <div style="font-weight: 600; color: #dc2626;">🔥 Eliminar con el dinero</div>
+                                <div style="font-size: 0.85em; color: #6b7280;">El dinero se pierde permanentemente</div>
+                            </div>
+                        </label>
+                    </div>
+                ` : `
+                    <p style="color: #374151;">¿Estás seguro de que deseas eliminar este patrón de ahorro?</p>
+                    <p style="font-size: 0.9em; color: #6b7280;">Esta acción no se puede deshacer.</p>
+                `}
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Eliminar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#dc2626',
+        width: '450px',
+        preConfirm: () => {
+            if (hasBalance) {
+                const selected = document.querySelector('input[name="delete-action"]:checked');
+                return selected ? selected.value : 'transfer';
+            }
+            return 'delete';
+        }
+    });
+    
+    if (!action) {
+        await showSavingsManagementDialog();
+        return;
+    }
+    
+    try {
+        // Si eligió transferir, primero retirar el dinero
+        if (action === 'transfer' && currentBalance > 0) {
+            await createSavingsWithdrawal(patternId, currentBalance, 'Retiro por eliminación de ahorro');
+        }
+        
+        // Eliminar el patrón
+        await deleteSavingsPattern(patternId, true); // hard delete
+        
+        if (window.refreshBalanceIndicator) window.refreshBalanceIndicator();
+        
+        const message = action === 'transfer' && currentBalance > 0
+            ? `El ahorro fue eliminado y $${currentBalance.toLocaleString('es-MX', { minimumFractionDigits: 2 })} fueron transferidos a tu balance.`
+            : 'El ahorro fue eliminado.';
+        
+        await Swal.fire({
+            icon: 'success',
+            title: '✅ Eliminado',
+            text: message,
+            timer: 2500,
+            showConfirmButton: false
+        });
+        
+        await showSavingsManagementDialog();
+    } catch (error) {
+        console.error('Error deleting savings:', error);
+        await Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'No se pudo eliminar el ahorro: ' + error.message
+        });
+        await showSavingsManagementDialog();
     }
 }
 
@@ -5530,6 +5955,24 @@ export async function showCreateSavingsPatternDialog() {
                         </div>
                         <small style="color: #6b7280;">El ahorro se sugerirá cuando confirmes estos ingresos.</small>
                     </div>
+
+                    <!-- Panel de Análisis Inteligente -->
+                    <div id="smart-analysis-panel" class="smart-analysis-panel" style="
+                        margin-top: 15px;
+                        padding: 15px;
+                        border-radius: 12px;
+                        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+                        border: 1px solid #cbd5e1;
+                        display: none;
+                    ">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                            <span style="font-size: 1.2rem;">🧠</span>
+                            <span style="font-weight: 600; color: #1e40af;">Análisis Inteligente</span>
+                        </div>
+                        <div id="analysis-content" style="font-size: 0.9rem; color: #475569;">
+                            Ingresa el monto para ver el análisis...
+                        </div>
+                    </div>
                 </div>
             `,
             showCancelButton: true,
@@ -5537,7 +5980,47 @@ export async function showCreateSavingsPatternDialog() {
             cancelButtonText: 'Cancelar',
             confirmButtonColor: '#22c55e',
             width: '550px',
-            didOpen: () => {
+            didOpen: async () => {
+                // Importar el asistente financiero inteligente
+                const { SmartFinancialAssistant, updateAnalysisPanel } = await import('./smart-financial-assistant.js');
+                const assistant = new SmartFinancialAssistant();
+                
+                // Pre-cargar estado financiero
+                await assistant.preloadFinancialState();
+                
+                // Función para actualizar el análisis de ahorro en tiempo real
+                const updateSavingsAnalysis = async () => {
+                    const type = document.getElementById('savings-type').value;
+                    const valueInput = document.getElementById('savings-value').value;
+                    const frequency = document.getElementById('enable-schedule').checked 
+                        ? document.getElementById('savings-frequency').value 
+                        : 'monthly';
+                    
+                    let amount = 0;
+                    if (type === 'fixed') {
+                        amount = parseFloat(valueInput) || 0;
+                    } else if (type === 'percent') {
+                        // Estimar basado en balance disponible
+                        const percent = parseFloat(valueInput) || 0;
+                        // Usaremos un estimado del ingreso mensual
+                        amount = 10000 * (percent / 100); // Placeholder - se ajustará en análisis real
+                    }
+                    
+                    if (amount > 0) {
+                        const analysis = await assistant.getSavingsAnalysis(amount, frequency);
+                        updateAnalysisPanel(analysis, 'savings');
+                    } else if (type !== 'remainder') {
+                        const panel = document.getElementById('smart-analysis-panel');
+                        if (panel) panel.style.display = 'none';
+                    } else {
+                        // Para remainder, mostrar panel con info
+                        const analysis = await assistant.getSavingsAnalysis(0, frequency);
+                        analysis.viability = 'excellent';
+                        analysis.reason = 'Guardar el sobrante es una excelente estrategia';
+                        updateAnalysisPanel(analysis, 'savings');
+                    }
+                };
+
                 const typeSelect = document.getElementById('savings-type');
                 const valueContainer = document.getElementById('savings-value-container');
                 const valueLabel = document.getElementById('savings-value-label');
@@ -5562,11 +6045,18 @@ export async function showCreateSavingsPatternDialog() {
                             valueInput.placeholder = '500.00';
                         }
                     }
+                    // Actualizar análisis cuando cambia el tipo
+                    updateSavingsAnalysis();
                 });
+                
+                // Escuchar cambios en el valor
+                valueInput.addEventListener('input', updateSavingsAnalysis);
                 
                 // Toggle programación
                 enableSchedule.addEventListener('change', () => {
                     scheduleOptions.style.display = enableSchedule.checked ? 'block' : 'none';
+                    // Actualizar análisis cuando cambia la programación
+                    updateSavingsAnalysis();
                 });
                 
                 // Toggle día semana/mes según frecuencia
@@ -5578,6 +6068,8 @@ export async function showCreateSavingsPatternDialog() {
                         dayOfWeekContainer.style.display = 'none';
                         dayOfMonthContainer.style.display = 'block';
                     }
+                    // Actualizar análisis cuando cambia la frecuencia
+                    updateSavingsAnalysis();
                 });
             },
             preConfirm: () => {
@@ -5783,7 +6275,20 @@ async function showSavingsDepositDialog(patternId) {
                     return false;
                 }
                 
-                return { amount: parseFloat(amount), notes: notes.trim() || null };
+                let finalAmount = parseFloat(amount);
+                let excessAmount = 0;
+                
+                // Si hay meta y el monto excede lo necesario, limitar al máximo
+                if (targetAmount > 0 && remainingToGoal > 0 && finalAmount > remainingToGoal) {
+                    excessAmount = finalAmount - remainingToGoal;
+                    finalAmount = remainingToGoal;
+                }
+                
+                return { 
+                    amount: finalAmount, 
+                    notes: notes.trim() || null,
+                    excessAmount: excessAmount 
+                };
             }
         });
         
@@ -5798,6 +6303,11 @@ async function showSavingsDepositDialog(patternId) {
                 const newBalance = result.new_balance;
                 const goalCompleted = targetAmount > 0 && newBalance >= targetAmount;
                 
+                // Mensaje sobre el excedente si lo hay
+                const excessMessage = formValues.excessAmount > 0 
+                    ? `<p style="color: #059669; font-size: 0.9em;">💡 El excedente de <strong>$${formValues.excessAmount.toFixed(2)}</strong> se mantiene en tu balance.</p>` 
+                    : '';
+                
                 if (goalCompleted) {
                     // Mostrar mensaje de meta completada y preguntar qué hacer
                     await handleGoalCompletion(patternId, pattern.name, newBalance, targetAmount);
@@ -5809,9 +6319,10 @@ async function showSavingsDepositDialog(patternId) {
                             <p>Se depositaron <strong>$${formValues.amount.toFixed(2)}</strong></p>
                             <p>Nuevo balance: <strong>$${newBalance.toFixed(2)}</strong></p>
                             ${targetAmount > 0 ? `<p style="color: #6b7280;">Progreso: ${((newBalance / targetAmount) * 100).toFixed(1)}%</p>` : ''}
+                            ${excessMessage}
                         `,
-                        timer: 2000,
-                        showConfirmButton: false
+                        timer: formValues.excessAmount > 0 ? 4000 : 2000,
+                        showConfirmButton: formValues.excessAmount > 0
                     });
                     
                     await showSavingsManagementDialog();

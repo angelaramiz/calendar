@@ -18,8 +18,12 @@ class ProductWishlistForm extends HTMLElement {
     }
 
     connectedCallback() {
-        this.render();
-        this.attachEvents();
+        try {
+            this.render();
+            this.attachEvents();
+        } catch (error) {
+            console.error('[ProductWishlistForm] Error in connectedCallback:', error);
+        }
     }
 
     static get observedAttributes() {
@@ -72,24 +76,30 @@ class ProductWishlistForm extends HTMLElement {
                             <label for="product-url">URL del producto</label>
                             <div class="url-input-wrapper">
                                 <input type="url" id="product-url" 
-                                    placeholder="https://articulo.mercadolibre.com.mx/..." 
+                                    placeholder="https://www.amazon.com.mx/dp/..." 
                                     autocomplete="off" />
                                 <button type="button" id="btn-scrape" class="btn-primary">
                                     <span class="btn-text">🔍 Buscar</span>
                                     <span class="btn-loader" style="display:none;">⏳</span>
                                 </button>
                             </div>
-                            <small class="help-text">Pega la URL completa del producto de Mercado Libre, Amazon, Liverpool, etc.</small>
+                            <small class="help-text">Pega la URL completa del producto (funciona mejor con Amazon)</small>
                         </div>
                         <div id="scrape-error" class="error-message" style="display:none;"></div>
+                        
+                        <div class="manual-entry-divider">
+                            <span>o también puedes</span>
+                        </div>
+                        
+                        <button type="button" id="btn-manual-entry" class="btn-secondary btn-full">
+                            ✏️ Agregar producto manualmente
+                        </button>
                     </div>
                     <div class="supported-stores">
                         <span>Tiendas soportadas:</span>
                         <div class="store-badges">
+                            <span class="store-badge">📦 Amazon ✓</span>
                             <span class="store-badge">🛒 Mercado Libre</span>
-                            <span class="store-badge">📦 Amazon</span>
-                            <span class="store-badge">🏬 Liverpool</span>
-                            <span class="store-badge">🏪 Walmart</span>
                             <span class="store-badge">🌐 Otras</span>
                         </div>
                     </div>
@@ -715,6 +725,127 @@ class ProductWishlistForm extends HTMLElement {
                     flex: 1;
                 }
 
+                /* Manual Entry Divider */
+                .manual-entry-divider {
+                    display: flex;
+                    align-items: center;
+                    margin: 20px 0;
+                    gap: 16px;
+                }
+
+                .manual-entry-divider::before,
+                .manual-entry-divider::after {
+                    content: '';
+                    flex: 1;
+                    height: 1px;
+                    background: #e5e7eb;
+                }
+
+                .manual-entry-divider span {
+                    color: #9ca3af;
+                    font-size: 0.875rem;
+                    white-space: nowrap;
+                }
+
+                .btn-full {
+                    width: 100%;
+                    justify-content: center;
+                }
+
+                /* Manual Input Notice and Form */
+                .manual-input-notice {
+                    display: flex;
+                    align-items: flex-start;
+                    gap: 12px;
+                    background: linear-gradient(135deg, #fef3c7, #fde68a);
+                    padding: 16px;
+                    border-radius: 12px;
+                    margin-bottom: 20px;
+                    border: 1px solid #f59e0b;
+                }
+
+                .manual-input-notice.manual-mode {
+                    background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+                    border-color: #3b82f6;
+                }
+
+                .manual-input-notice.manual-mode .notice-text strong {
+                    color: #1e40af;
+                }
+
+                .manual-input-notice.manual-mode .notice-text p {
+                    color: #1d4ed8;
+                }
+
+                .manual-input-notice .notice-icon {
+                    font-size: 1.5rem;
+                }
+
+                .manual-input-notice .notice-text strong {
+                    display: block;
+                    color: #92400e;
+                    margin-bottom: 4px;
+                }
+
+                .manual-input-notice .notice-text p {
+                    margin: 0;
+                    color: #a16207;
+                    font-size: 0.875rem;
+                }
+
+                .manual-input-form {
+                    background: #f9fafb;
+                    padding: 20px;
+                    border-radius: 12px;
+                    border: 1px solid #e5e7eb;
+                }
+
+                .manual-input-form .form-group {
+                    margin-bottom: 16px;
+                }
+
+                .manual-input-form .form-group:last-child {
+                    margin-bottom: 0;
+                }
+
+                .manual-input-form .form-row {
+                    display: flex;
+                    gap: 16px;
+                }
+
+                .manual-input-form .form-row .form-group {
+                    flex: 1;
+                    margin-bottom: 0;
+                }
+
+                .manual-input-form label {
+                    display: block;
+                    margin-bottom: 6px;
+                    font-weight: 500;
+                    color: #374151;
+                    font-size: 0.875rem;
+                }
+
+                .manual-input-form input {
+                    width: 100%;
+                    padding: 10px 14px;
+                    border: 2px solid #d1d5db;
+                    border-radius: 8px;
+                    font-size: 1rem;
+                    transition: border-color 0.2s;
+                    box-sizing: border-box;
+                }
+
+                .manual-input-form input:focus {
+                    outline: none;
+                    border-color: #3b82f6;
+                    background: white;
+                }
+
+                .manual-input-form input::placeholder {
+                    color: #9ca3af;
+                }
+
                 /* Empty state */
                 .empty-state {
                     text-align: center;
@@ -759,10 +890,13 @@ class ProductWishlistForm extends HTMLElement {
         urlInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.handleScrape();
         });
+        
+        // Botón de entrada manual
+        this.querySelector('#btn-manual-entry')?.addEventListener('click', () => this.startManualEntry());
 
         // Navigation buttons
         this.querySelector('#btn-back-url')?.addEventListener('click', () => this.showStep('step-url'));
-        this.querySelector('#btn-next-income')?.addEventListener('click', () => this.loadIncomes());
+        this.querySelector('#btn-next-income')?.addEventListener('click', () => this.validateAndContinue());
         this.querySelector('#btn-back-preview')?.addEventListener('click', () => this.showStep('step-preview'));
         this.querySelector('#btn-analyze')?.addEventListener('click', () => this.analyzeOptions());
         this.querySelector('#btn-back-income')?.addEventListener('click', () => this.showStep('step-income'));
@@ -778,10 +912,65 @@ class ProductWishlistForm extends HTMLElement {
 
         this.querySelector('#btn-apply-custom')?.addEventListener('click', () => this.applyCustomPlan());
     }
+    
+    // Iniciar entrada manual sin URL
+    startManualEntry() {
+        this.productData = {
+            url: '',
+            platform: 'manual',
+            name: '',
+            price: 0,
+            image: '',
+            currency: 'MXN',
+            store: '',
+            needsManualInput: true,
+            isFullManual: true
+        };
+        this.renderProductPreview();
+        this.showStep('step-preview');
+        
+        // Enfocar el primer campo
+        setTimeout(() => {
+            this.querySelector('#manual-product-name')?.focus();
+        }, 100);
+    }
 
     showStep(stepId) {
         this.querySelectorAll('.form-step').forEach(step => step.classList.remove('active'));
         this.querySelector(`#${stepId}`)?.classList.add('active');
+    }
+
+    validateAndContinue() {
+        // Si fue entrada manual, validar que tenga nombre y precio
+        if (this.productData?.needsManualInput) {
+            const name = this.productData.name?.trim();
+            const price = this.productData.price;
+            
+            if (!name) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Nombre requerido',
+                    text: 'Por favor ingresa el nombre del producto',
+                    confirmButtonText: 'Entendido'
+                });
+                this.querySelector('#manual-product-name')?.focus();
+                return;
+            }
+            
+            if (!price || price <= 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Precio requerido',
+                    text: 'Por favor ingresa el precio del producto',
+                    confirmButtonText: 'Entendido'
+                });
+                this.querySelector('#manual-product-price')?.focus();
+                return;
+            }
+        }
+        
+        // Continuar al siguiente paso
+        this.loadIncomes();
     }
 
     async handleScrape() {
@@ -806,9 +995,17 @@ class ProductWishlistForm extends HTMLElement {
             const data = await ProductWishlist.scrapeProduct(url);
             this.productData = data;
 
-            // Mostrar preview
+            // Mostrar preview (con campos editables si scraping falló)
             this.renderProductPreview();
             this.showStep('step-preview');
+            
+            // Si el scraping falló, mostrar mensaje y enfocar el primer campo editable
+            if (data.needsManualInput) {
+                setTimeout(() => {
+                    const nameInput = this.querySelector('#manual-product-name');
+                    if (nameInput) nameInput.focus();
+                }, 100);
+            }
         } catch (error) {
             errorDiv.textContent = error.message || 'No se pudo obtener información del producto';
             errorDiv.style.display = 'block';
@@ -824,18 +1021,99 @@ class ProductWishlistForm extends HTMLElement {
         if (!preview || !this.productData) return;
 
         const storeIcon = ProductWishlist.getStoreIcon(this.productData.store);
+        const needsManual = this.productData.needsManualInput;
+        const isFullManual = this.productData.isFullManual;
 
-        preview.innerHTML = `
-            <img class="product-image" 
-                src="${this.productData.image || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}" 
-                alt="${this.productData.name}"
-                onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
-            <div class="product-info">
-                <div class="product-name">${this.productData.name}</div>
-                <div class="product-store">${storeIcon} ${this.productData.store || 'Tienda en línea'}</div>
-                <div class="product-price">${ProductWishlist.formatCurrency(this.productData.price)}</div>
-            </div>
-        `;
+        if (needsManual) {
+            // Determinar el mensaje según si es entrada manual completa o scraping fallido
+            const noticeHtml = isFullManual ? `
+                <div class="manual-input-notice manual-mode">
+                    <span class="notice-icon">✏️</span>
+                    <div class="notice-text">
+                        <strong>Modo manual</strong>
+                        <p>Ingresa los datos del producto que deseas:</p>
+                    </div>
+                </div>
+            ` : `
+                <div class="manual-input-notice">
+                    <span class="notice-icon">⚠️</span>
+                    <div class="notice-text">
+                        <strong>No pudimos obtener todos los datos</strong>
+                        <p>Completa o corrige la información del producto:</p>
+                    </div>
+                </div>
+            `;
+            
+            // Modo de entrada manual
+            preview.innerHTML = `
+                ${noticeHtml}
+                <div class="manual-input-form">
+                    <div class="form-group">
+                        <label for="manual-product-name">Nombre del producto *</label>
+                        <input type="text" id="manual-product-name" 
+                            placeholder="Ej: iPhone 15 Pro Max 256GB"
+                            value="${this.productData.name || ''}" />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="manual-product-price">Precio *</label>
+                            <input type="number" id="manual-product-price" 
+                                placeholder="0.00"
+                                min="1"
+                                step="0.01"
+                                value="${this.productData.price || ''}" />
+                        </div>
+                        <div class="form-group">
+                            <label for="manual-product-store">Tienda</label>
+                            <input type="text" id="manual-product-store" 
+                                placeholder="MercadoLibre"
+                                value="${this.productData.store || ''}" />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="manual-product-image">URL de imagen (opcional)</label>
+                        <input type="url" id="manual-product-image" 
+                            placeholder="https://..."
+                            value="${this.productData.image || ''}" />
+                    </div>
+                </div>
+            `;
+            
+            // Agregar listeners para actualizar productData en tiempo real
+            this.setupManualInputListeners();
+        } else {
+            // Modo normal - el scraping funcionó
+            preview.innerHTML = `
+                <img class="product-image" 
+                    src="${this.productData.image || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}" 
+                    alt="${this.productData.name}"
+                    onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
+                <div class="product-info">
+                    <div class="product-name">${this.productData.name}</div>
+                    <div class="product-store">${storeIcon} ${this.productData.store || 'Tienda en línea'}</div>
+                    <div class="product-price">${ProductWishlist.formatCurrency(this.productData.price)}</div>
+                </div>
+            `;
+        }
+    }
+    
+    setupManualInputListeners() {
+        const nameInput = this.querySelector('#manual-product-name');
+        const priceInput = this.querySelector('#manual-product-price');
+        const storeInput = this.querySelector('#manual-product-store');
+        const imageInput = this.querySelector('#manual-product-image');
+        
+        const updateData = () => {
+            if (nameInput) this.productData.name = nameInput.value.trim();
+            if (priceInput) this.productData.price = parseFloat(priceInput.value) || 0;
+            if (storeInput) this.productData.store = storeInput.value.trim() || 'Tienda Online';
+            if (imageInput) this.productData.image = imageInput.value.trim();
+        };
+        
+        nameInput?.addEventListener('input', updateData);
+        priceInput?.addEventListener('input', updateData);
+        storeInput?.addEventListener('input', updateData);
+        imageInput?.addEventListener('input', updateData);
     }
 
     async loadIncomes() {
@@ -854,7 +1132,7 @@ class ProductWishlistForm extends HTMLElement {
 
         try {
             // Importar el módulo de planning para obtener ingresos
-            const { getIncomePatterns } = await import('./patterns.js');
+            const { getIncomePatterns } = await import('../patterns.js');
             const incomes = await getIncomePatterns(userId);
 
             if (!incomes || incomes.length === 0) {
@@ -913,8 +1191,8 @@ class ProductWishlistForm extends HTMLElement {
 
         try {
             // Obtener gastos y planes existentes para análisis completo
-            const { getExpensePatterns } = await import('./patterns.js');
-            const { getProductWishlist } = await import('./product-wishlist.js');
+            const { getExpensePatterns } = await import('../patterns.js');
+            const { getProductWishlist } = await import('../product-wishlist.js');
 
             const [expenses, existingProducts] = await Promise.all([
                 getExpensePatterns(userId).catch(() => []),
@@ -1190,7 +1468,9 @@ class ProductWishlistForm extends HTMLElement {
     }
 }
 
-// Registrar el componente
-customElements.define('product-wishlist-form', ProductWishlistForm);
+// Registrar el componente solo si no está registrado
+if (!customElements.get('product-wishlist-form')) {
+    customElements.define('product-wishlist-form', ProductWishlistForm);
+}
 
 export default ProductWishlistForm;

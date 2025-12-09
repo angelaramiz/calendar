@@ -360,12 +360,39 @@ async function openQuickAccessPanel() {
             return sum + (amount * factor);
         }, 0);
         
-        const totalSavings = activeSavings.reduce((sum, s) => sum + (s.current_amount || 0), 0);
+        const totalSavings = activeSavings.reduce((sum, s) => sum + (parseFloat(s.current_balance) || 0), 0);
         const totalPlansAccumulated = activePlans.reduce((sum, p) => sum + (p.current_amount || 0), 0);
         
         // Generar HTML del panel
         const html = `
             <div class="quick-access-panel">
+                <!-- Botones de acceso rápido -->
+                <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                    <!-- Botón de Planeación Financiera -->
+                    <div class="planning-access-banner" style="flex: 1; background: linear-gradient(135deg, #dbeafe 0%, #e0f2fe 100%); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #93c5fd;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.5rem;">🛒</span>
+                            <div>
+                                <div style="font-weight: 600; color: #1e40af;">Planifica Compras</div>
+                                <div style="font-size: 0.75rem; color: #3b82f6;">Productos y metas</div>
+                            </div>
+                        </div>
+                        <button id="open-planning-modal-btn" style="background: #3b82f6; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 500;">Abrir</button>
+                    </div>
+                    
+                    <!-- Botón de Análisis Financiero -->
+                    <div class="analysis-access-banner" style="flex: 1; background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; border: 1px solid #86efac;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.5rem;">📊</span>
+                            <div>
+                                <div style="font-weight: 600; color: #166534;">Análisis Inteligente</div>
+                                <div style="font-size: 0.75rem; color: #22c55e;">Salud financiera</div>
+                            </div>
+                        </div>
+                        <button id="open-financial-analysis-btn" style="background: #22c55e; color: white; border: none; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-weight: 500;">Ver</button>
+                    </div>
+                </div>
+
                 <!-- Resumen superior -->
                 <div class="quick-summary-cards">
                     <div class="summary-card income-card">
@@ -462,7 +489,7 @@ async function openQuickAccessPanel() {
                                         <span class="item-name">${s.name}</span>
                                         <span class="item-desc">${s.description || 'Sin descripción'}</span>
                                     </div>
-                                    <span class="item-amount savings-amount">${formatCurrency(s.current_amount)}</span>
+                                    <span class="item-amount savings-amount">${formatCurrency(parseFloat(s.current_balance) || 0)}</span>
                                 </div>
                             `).join('')
                         }
@@ -482,6 +509,27 @@ async function openQuickAccessPanel() {
                 htmlContainer: 'quick-access-container'
             },
             didOpen: () => {
+                // Botón para abrir Planeación Financiera
+                const openPlanningBtn = document.getElementById('open-planning-modal-btn');
+                if (openPlanningBtn) {
+                    openPlanningBtn.addEventListener('click', async () => {
+                        Swal.close();
+                        // Importar y abrir el modal de planeación
+                        const planningModals = await import('./planning-modals.js');
+                        planningModals.openPlanningModal();
+                    });
+                }
+                
+                // Botón para abrir Análisis Financiero Inteligente
+                const openAnalysisBtn = document.getElementById('open-financial-analysis-btn');
+                if (openAnalysisBtn) {
+                    openAnalysisBtn.addEventListener('click', async () => {
+                        Swal.close();
+                        // Importar y abrir el modal de análisis financiero
+                        openFinancialAnalysisModal();
+                    });
+                }
+
                 // Manejar cambio de tabs
                 const tabs = document.querySelectorAll('.quick-tab');
                 const panes = document.querySelectorAll('.quick-tab-pane');
@@ -538,6 +586,67 @@ async function openQuickAccessPanel() {
 }
 
 /**
+ * Abre el modal de Análisis Financiero Inteligente
+ */
+async function openFinancialAnalysisModal() {
+    try {
+        // Mostrar loading mientras se carga el análisis
+        Swal.fire({
+            title: '📊 Análisis Financiero',
+            html: `
+                <div style="padding: 40px; text-align: center;">
+                    <div style="font-size: 3rem; margin-bottom: 20px;">📊</div>
+                    <h3 style="margin-bottom: 10px;">Analizando tus finanzas...</h3>
+                    <p style="color: #64748b;">Esto solo tomará un momento</p>
+                </div>
+            `,
+            width: '900px',
+            showConfirmButton: false,
+            showCloseButton: true,
+            allowOutsideClick: false,
+            didOpen: async () => {
+                try {
+                    // Importar y ejecutar el dashboard
+                    const { initFinancialDashboard, showExpenseLinkingModal } = await import('./financial-dashboard.js');
+                    
+                    // Reemplazar contenido con contenedor del dashboard
+                    const container = Swal.getHtmlContainer();
+                    container.innerHTML = '<div id="financial-dashboard-modal"></div>';
+                    
+                    // Inicializar dashboard
+                    await initFinancialDashboard('financial-dashboard-modal');
+                    
+                    // Hacer disponible la función de vinculación globalmente
+                    window.showExpenseLinkingModal = showExpenseLinkingModal;
+                    
+                } catch (error) {
+                    console.error('Error loading financial analysis:', error);
+                    const container = Swal.getHtmlContainer();
+                    container.innerHTML = `
+                        <div style="padding: 40px; text-align: center;">
+                            <div style="font-size: 3rem; margin-bottom: 20px; color: #ef4444;">⚠️</div>
+                            <h3 style="margin-bottom: 10px;">Error al cargar el análisis</h3>
+                            <p style="color: #64748b;">${error.message}</p>
+                            <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 16px;">
+                                Asegúrate de tener patrones de ingreso y gasto registrados.
+                            </p>
+                        </div>
+                    `;
+                }
+            }
+        });
+        
+    } catch (err) {
+        console.error('Error opening financial analysis:', err);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'No se pudo abrir el análisis financiero'
+        });
+    }
+}
+
+/**
  * Traducir frecuencia al español
  */
 function translateFrequency(freq) {
@@ -575,7 +684,10 @@ async function updateBalanceIndicator() {
     
     try {
         const summary = await getConfirmedBalanceSummary();
-        const balance = summary?.balance || 0;
+        const rawBalance = summary?.balance || 0;
+        
+        // Normalizar balance para evitar -$0.00
+        const balance = Math.abs(rawBalance) < 0.01 ? 0 : rawBalance;
         
         // Update value
         balanceValueEl.textContent = formatCurrency(balance);

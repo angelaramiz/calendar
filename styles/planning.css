@@ -543,6 +543,59 @@
   min-width: 180px;
 }
 
+/* ==================== FINANCIAL ANALYSIS DASHBOARD ==================== */
+
+/* Estilos para el modal de análisis financiero */
+.swal2-popup.financial-analysis-popup {
+  max-width: 950px !important;
+  width: 95% !important;
+  padding: 0;
+}
+
+.swal2-html-container:has(.financial-dashboard) {
+  padding: 0;
+  margin: 0;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* Hacer que el anillo de salud tenga animación suave */
+@keyframes dashoffset {
+  from { stroke-dashoffset: 339.292; }
+}
+
+.fd-health-ring .progress {
+  animation: dashoffset 1.5s ease-out forwards;
+}
+
+/* Hover effects mejorados */
+.fd-recommendation-card {
+  cursor: pointer;
+}
+
+.fd-recommendation-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Scrollbar personalizado para el dashboard */
+.financial-dashboard::-webkit-scrollbar {
+  width: 8px;
+}
+
+.financial-dashboard::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.financial-dashboard::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.financial-dashboard::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 /* ==================== RESPONSIVE ==================== */
 
 @media (max-width: 768px) {
@@ -565,5 +618,26 @@
   .tab-btn {
     flex: 1 1 auto;
     min-width: 120px;
+  }
+  
+  /* Financial Dashboard responsive */
+  .fd-metrics-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  
+  .fd-health-score {
+    flex-direction: column !important;
+    text-align: center;
+  }
+  
+  .fd-allocation-item {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .fd-metrics-grid {
+    grid-template-columns: 1fr !important;
   }
 }

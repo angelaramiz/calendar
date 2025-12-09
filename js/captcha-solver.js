@@ -45,6 +45,25 @@ export class CaptchaSolver {
             return;
         }
 
+        // Listener para recibir datos del popup
+        let messageReceived = false;
+        const handleMessage = (event) => {
+            // Verificar que venga de Amazon
+            if (event.origin.includes('amazon.com')) {
+                messageReceived = true;
+                window.removeEventListener('message', handleMessage);
+                
+                clearInterval(checkPopupClosed);
+                popup.close();
+                this.closeCaptchaModal();
+                
+                if (this.resolveCallback) {
+                    this.resolveCallback(event.data);
+                }
+            }
+        };
+        window.addEventListener('message', handleMessage);
+
         // Crear overlay y modal de instrucciones
         const modalHTML = `
             <div class="captcha-solver-overlay" id="captcha-solver-overlay">
@@ -108,27 +127,64 @@ export class CaptchaSolver {
             }
         }, 500);
 
-        // Botón continuar - extraer datos del popup
+        // Botón continuar - copiar URL del popup y usar para scraping
         continueBtn.addEventListener('click', async () => {
             try {
-                // Extraer datos directamente del popup
-                const productData = await this.extractDataFromPopup(popup);
+                continueBtn.disabled = true;
+                continueBtn.textContent = '⏳ Extrayendo datos...';
+                
+                // Intentar obtener la URL actual del popup
+                let finalUrl = amazonUrl;
+                try {
+                    if (popup && !popup.closed && popup.location) {
+                        finalUrl = popup.location.href;
+                    }
+                } catch (e) {
+                    // Cross-origin, usar URL original
+                    console.log('No se puede acceder a popup URL, usando original');
+                }
+                
+                // Llamar al backend con la URL (ahora con cookies resueltas en el navegador)
+                const response = await fetch(`${window.SCRAPER_API_URL || 'https://calendar-backend-ed6u5g.fly.dev'}/api/scrape/quick`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        url: finalUrl,
+                        userResolved: true // Flag para indicar que usuario ya resolvió
+                    })
+                });
+                
+                const result = await response.json();
                 
                 clearInterval(checkPopupClosed);
+                window.removeEventListener('message', handleMessage);
                 popup.close();
                 this.closeCaptchaModal();
                 
-                if (this.resolveCallback) {
-                    this.resolveCallback(productData);
+                if (result.success) {
+                    if (this.resolveCallback) {
+                        this.resolveCallback({
+                            ...result.data,
+                            url: amazonUrl,
+                            platform: 'amazon',
+                            store: 'Amazon'
+                        });
+                    }
+                } else {
+                    throw new Error(result.error || 'Error extrayendo datos');
                 }
+                
             } catch (error) {
-                console.error('Error extrayendo datos del popup:', error);
+                console.error('Error extrayendo datos:', error);
+                
+                // Si falla todo, pedir entrada manual
                 clearInterval(checkPopupClosed);
+                window.removeEventListener('message', handleMessage);
                 popup.close();
                 this.closeCaptchaModal();
                 
                 if (this.rejectCallback) {
-                    this.rejectCallback(error);
+                    this.rejectCallback(new Error('EXTRACTION_FAILED'));
                 }
             }
         });
@@ -157,99 +213,6 @@ export class CaptchaSolver {
         const overlay = document.getElementById('captcha-solver-overlay');
         if (overlay) {
             overlay.remove();
-        }
-    }
-
-    /**
-     * Extraer datos del producto directamente del popup de Amazon
-     * @param {Window} popup - Ventana popup con la página de Amazon
-     * @returns {Promise<object>} - Datos del producto
-     */
-    async extractDataFromPopup(popup) {
-        try {
-            // Verificar que el popup esté en el mismo origen (Amazon)
-            if (!popup || popup.closed) {
-                throw new Error('Popup cerrado o inaccesible');
-            }
-
-            const popupDoc = popup.document;
-            
-            // Extraer nombre del producto
-            let name = '';
-            const nameSelectors = [
-                '#productTitle',
-                '#title',
-                'h1.product-title',
-                '[data-feature-name="title"] h1'
-            ];
-            
-            for (const selector of nameSelectors) {
-                const element = popupDoc.querySelector(selector);
-                if (element) {
-                    name = element.textContent.trim();
-                    if (name && name.length > 5) break;
-                }
-            }
-
-            // Extraer precio
-            let price = 0;
-            const priceSelectors = [
-                '.a-price .a-offscreen',
-                '#priceblock_ourprice',
-                '#priceblock_dealprice',
-                '.a-price-whole',
-                '[data-a-color="price"] .a-offscreen',
-                '.a-price-range .a-offscreen'
-            ];
-
-            for (const selector of priceSelectors) {
-                const element = popupDoc.querySelector(selector);
-                if (element) {
-                    const priceText = element.textContent.trim();
-                    const priceMatch = priceText.match(/[\d,]+\.?\d*/);
-                    if (priceMatch) {
-                        price = parseFloat(priceMatch[0].replace(/,/g, ''));
-                        if (price > 0) break;
-                    }
-                }
-            }
-
-            // Extraer imagen
-            let image = '';
-            const imageSelectors = [
-                '#landingImage',
-                '#imgBlkFront',
-                '#main-image',
-                '.a-dynamic-image'
-            ];
-
-            for (const selector of imageSelectors) {
-                const element = popupDoc.querySelector(selector);
-                if (element) {
-                    image = element.src || element.dataset.src || element.dataset.oldHires || '';
-                    // Limpiar parámetros de tamaño para obtener imagen de alta calidad
-                    if (image) {
-                        image = image.split('._')[0] + '.jpg';
-                        break;
-                    }
-                }
-            }
-
-            return {
-                name: name || '',
-                price: price || 0,
-                image: image || '',
-                currency: 'MXN',
-                platform: 'amazon',
-                store: 'Amazon',
-                url: this.amazonUrl,
-                success: true
-            };
-
-        } catch (error) {
-            console.error('Error accediendo al contenido del popup:', error);
-            // Si falla por CORS (cross-origin), no podemos acceder al DOM del popup
-            throw new Error('NO_SE_PUEDE_ACCEDER_AL_POPUP');
         }
     }
 

@@ -754,26 +754,32 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
     const shortTermPercent = 0.50;
     const shortTermAmount = availableIncome * shortTermPercent;
     if (shortTermAmount > 0) {
-        const shortTermMonths = targetAmount / shortTermAmount;
-        const shortTermWeeks = (targetAmount / shortTermAmount) * 4.33;
+        let description, estimatedMonths, estimatedWeeks, monthlyContribution, percentOfIncome;
         
-        // Si es menos de 1 mes, calcular por semanas
-        let description, estimatedMonths, estimatedWeeks, monthlyContribution;
-        
-        if (shortTermMonths < 1) {
-            // Calcular cuánto por semana
-            const weeksNeeded = Math.ceil(shortTermWeeks);
-            const weeklyAmount = targetAmount / weeksNeeded;
-            monthlyContribution = weeklyAmount * 4.33; // Convertir a mensual para consistencia
-            estimatedMonths = 1;
+        // Si el producto cuesta menos del 50% del ingreso mensual, calcular en semanas
+        if (targetAmount < shortTermAmount) {
+            // Producto muy barato - calcular en semanas (mínimo 1 semana)
+            const weeklyBudget = shortTermAmount / 4.33;
+            const weeksNeeded = Math.max(1, Math.ceil(targetAmount / weeklyBudget));
+            const actualWeeklyAmount = targetAmount / weeksNeeded;
+            
+            monthlyContribution = actualWeeklyAmount * 4.33;
+            estimatedMonths = 1; // Siempre menos de 1 mes
             estimatedWeeks = weeksNeeded;
-            description = `Meta alcanzable en ~${weeksNeeded} semana${weeksNeeded > 1 ? 's' : ''}`;
+            percentOfIncome = Math.round((monthlyContribution / availableIncome) * 100);
+            description = weeksNeeded === 1 
+                ? `Meta alcanzable en 1 semana`
+                : `Meta alcanzable en ${weeksNeeded} semanas`;
         } else {
-            const monthsNeeded = Math.ceil(shortTermMonths);
+            // Producto normal - calcular en meses
+            const monthsNeeded = Math.ceil(targetAmount / shortTermAmount);
             monthlyContribution = shortTermAmount;
             estimatedMonths = monthsNeeded;
-            estimatedWeeks = Math.ceil(shortTermWeeks);
-            description = `Meta alcanzable en ~${monthsNeeded} mes${monthsNeeded > 1 ? 'es' : ''}`;
+            estimatedWeeks = Math.ceil(monthsNeeded * 4.33);
+            percentOfIncome = Math.round(shortTermPercent * 100);
+            description = monthsNeeded === 1 
+                ? `Meta alcanzable en 1 mes`
+                : `Meta alcanzable en ${monthsNeeded} meses`;
         }
         
         options.push({
@@ -783,11 +789,11 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
             monthlyContribution: Math.round(monthlyContribution * 100) / 100,
             contributionValue: Math.round(monthlyContribution * 100) / 100,
             contributionType: 'fixed',
-            percentOfIncome: Math.round((monthlyContribution / availableIncome) * 100),
+            percentOfIncome: percentOfIncome,
             estimatedMonths: estimatedMonths,
             estimatedWeeks: estimatedWeeks,
             priority: 'high',
-            recommended: shortTermMonths <= 2
+            recommended: estimatedMonths <= 2
         });
     }
 

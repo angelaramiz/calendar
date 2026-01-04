@@ -5,10 +5,11 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { getExpensePatterns } from './patterns.js';
 
 // ==================== LOGGING ====================
 
-const DEBUG = true; // Cambiar a false en producción
+const DEBUG = true; // TEMPORALMENTE TRUE PARA DEBUG - cambiar a false en producción
 
 function logInfo(module, action, data) {
   if (DEBUG) {
@@ -522,38 +523,54 @@ export async function getGoalFundings(goalId) {
 
 /**
  * Obtener gastos planificados del usuario
- * DESHABILITADO: planned_expenses no existe en V2
- * En V2, usar expense_patterns para gastos recurrentes
+ * En V2, usa expense_patterns activos
  */
 export async function getPlannedExpenses(userId) {
-  console.warn('getPlannedExpenses está deshabilitado - no existe planned_expenses en V2');
-  return [];
-  
-  // try {
-  //   if (!userId) {
-  //     logWarning('EXPENSES', 'getPlannedExpenses', 'userId is required');
-  //     return [];
-  //   }
+  try {
+    if (!userId) {
+      logWarning('EXPENSES', 'getPlannedExpenses', 'userId is required');
+      return [];
+    }
 
-  //   logInfo('EXPENSES', 'getPlannedExpenses', { userId });
+    logInfo('EXPENSES', 'getPlannedExpenses', { userId });
 
-  //   const { data, error } = await supabase
-  //     .from('planned_expenses')
-  //     .select('*')
-  //     .eq('user_id', userId)
-  //     .order('planned_date', { ascending: true });
+    const expensePatterns = await getExpensePatterns(userId, true); // activeOnly = true
+    logInfo('EXPENSES', 'Raw expensePatterns from DB:', expensePatterns);
+    
+    if (!expensePatterns || expensePatterns.length === 0) {
+      logInfo('EXPENSES', 'getPlannedExpenses', 'No expense patterns found');
+      return [];
+    }
 
-  //   if (error) {
-  //     logError('EXPENSES', 'getPlannedExpenses', error, { userId });
-  //     return [];
-  //   }
+    // Adaptar la estructura para compatibilidad con código existente
+    const adaptedExpenses = (expensePatterns || []).map((pattern, idx) => {
+      logInfo('EXPENSES', `Processing pattern ${idx}:`, pattern);
+      
+      // Validar que los campos críticos existan y tengan valores válidos
+      const adapted = {
+        id: pattern.id,
+        title: (pattern.name && pattern.name.trim()) ? pattern.name : `Gasto ${idx + 1}`,
+        description: pattern.description || null,
+        amount: (pattern.base_amount && parseFloat(pattern.base_amount) > 0) ? parseFloat(pattern.base_amount) : 0,
+        category: pattern.category || 'Sin categoría',
+        status: (pattern.active === true) ? 'planned' : 'inactive',
+        planned_date: pattern.start_date || new Date().toISOString().split('T')[0],
+        frequency: pattern.frequency || 'monthly',
+        priority: pattern.priority || 5,
+        user_id: pattern.user_id,
+        created_at: pattern.created_at,
+        updated_at: pattern.updated_at
+      };
+      logInfo('EXPENSES', `Adapted pattern ${idx}:`, adapted);
+      return adapted;
+    });
 
-  //   logInfo('EXPENSES', 'getPlannedExpenses', `Found ${data?.length || 0} expenses`);
-  //   return data || [];
-  // } catch (error) {
-  //   logError('EXPENSES', 'getPlannedExpenses', error, { userId });
-  //   return [];
-  // }
+    logInfo('EXPENSES', 'getPlannedExpenses', `Found ${adaptedExpenses.length} expenses`);
+    return adaptedExpenses;
+  } catch (error) {
+    logError('EXPENSES', 'getPlannedExpenses', error, { userId });
+    return [];
+  }
 }
 
 /**
@@ -593,16 +610,14 @@ export async function createPlannedExpense(userId, expenseData) {
 
     const insertData = {
       user_id: userId,
-      title: title,
+      name: title, // title -> name
       description: expenseData.description?.trim() || null,
-      amount: amount,
-      planned_date: plannedDate,
+      base_amount: amount, // amount -> base_amount
+      start_date: plannedDate, // planned_date -> start_date
       category: expenseData.category?.trim() || null,
-      priority: priorityNum,
-      status: expenseData.status || 'planned',
-      envelope_id: expenseData.envelope_id || null, // Solo envelope_id según schema
-      frequency: expenseData.frequency || 'once',
-      auto_create_event: expenseData.auto_create_event !== false
+      frequency: expenseData.frequency || 'monthly', // default to monthly for recurring
+      active: true, // status 'planned' -> active: true
+      is_essential: expenseData.is_essential || false
     };
 
     const { data, error } = await supabase
@@ -636,40 +651,45 @@ export async function updatePlannedExpense(expenseId, updates) {
 
     logInfo('EXPENSES', 'updatePlannedExpense', { expenseId, updates });
 
-    // Validar campos
-    const cleanUpdates = { ...updates };
+    // Validar campos y mapear a campos de expense_patterns
+    const cleanUpdates = {};
 
-    if (cleanUpdates.title !== undefined) {
-      cleanUpdates.title = (cleanUpdates.title || '').trim();
-      if (!cleanUpdates.title) {
-        throw new Error('El título no puede estar vacío');
+    if (updates.title !== undefined) {
+      cleanUpdates.name = (updates.title || '').trim(); // title -> name
+      if (!cleanUpdates.name) {
+        throw new Error('El nombre no puede estar vacío');
       }
     }
 
-    if (cleanUpdates.amount !== undefined && cleanUpdates.amount <= 0) {
-      throw new Error('El monto debe ser mayor a 0');
+    if (updates.amount !== undefined) {
+      cleanUpdates.base_amount = parseFloat(updates.amount); // amount -> base_amount
+      if (cleanUpdates.base_amount <= 0) {
+        throw new Error('El monto debe ser mayor a 0');
+      }
     }
 
-    if (cleanUpdates.priority !== undefined) {
-      // Priority puede venir como string (low, medium, high, critical) o número (1-5)
-      let priorityNum;
-      if (typeof cleanUpdates.priority === 'number') {
-        priorityNum = cleanUpdates.priority;
-      } else if (typeof cleanUpdates.priority === 'string') {
-        const priorityMap = { low: 2, medium: 3, high: 4, critical: 5 };
-        priorityNum = priorityMap[cleanUpdates.priority] || 3;
+    if (updates.description !== undefined) {
+      cleanUpdates.description = updates.description ? updates.description.trim() : null;
+    }
+
+    if (updates.category !== undefined) {
+      cleanUpdates.category = updates.category ? updates.category.trim() : null;
+    }
+
+    if (updates.frequency !== undefined) {
+      cleanUpdates.frequency = updates.frequency;
+    }
+
+    if (updates.status !== undefined) {
+      if (updates.status === 'done' || updates.status === 'completed') {
+        cleanUpdates.active = false; // completed -> inactive
       } else {
-        priorityNum = parseInt(cleanUpdates.priority);
+        cleanUpdates.active = updates.status === 'planned' || updates.status === 'active';
       }
-      
-      if (isNaN(priorityNum) || priorityNum < 1 || priorityNum > 5) {
-        throw new Error('La prioridad debe ser un número entre 1 y 5');
-      }
-      cleanUpdates.priority = priorityNum;
     }
 
-    if (cleanUpdates.description !== undefined) {
-      cleanUpdates.description = cleanUpdates.description ? cleanUpdates.description.trim() : null;
+    if (updates.planned_date !== undefined) {
+      cleanUpdates.start_date = updates.planned_date; // planned_date -> start_date
     }
 
     const { data, error } = await supabase
@@ -705,7 +725,7 @@ export async function completePlannedExpense(expenseId, actualAmount = null) {
     logInfo('EXPENSES', 'completePlannedExpense', { expenseId, actualAmount });
 
     const updates = {
-      status: 'done'
+      status: 'done' // This will be mapped to active: false in updatePlannedExpense
     };
 
     const result = await updatePlannedExpense(expenseId, updates);
@@ -731,7 +751,7 @@ export async function deletePlannedExpense(expenseId) {
 
     const { error } = await supabase
       .from('expense_patterns')
-      .update({ status: 'cancelled' })
+      .update({ active: false }) // cancelled -> inactive
       .eq('id', expenseId);
     // NOTA: Convertido a expense_patterns (V2)
 
@@ -765,19 +785,19 @@ export async function getPlanningDashboard(userId) {
     const [goals, envelopes, plannedExpenses] = await Promise.all([
       getGoals(userId),
       getEnvelopes(userId),
-      getPlannedExpenses(userId)
+      getExpensePatterns(userId, true) // activeOnly = true
     ]);
 
-    const activeGoals = goals.filter(g => g.status === 'active');
-    const activeEnvelopes = envelopes.filter(e => e.active);
-    const pendingExpenses = plannedExpenses.filter(e => e.status === 'planned' || e.status === 'scheduled');
+    const activeGoals = (goals || []).filter(g => g.status === 'active');
+    const activeEnvelopes = (envelopes || []).filter(e => e.active);
+    const pendingExpenses = (plannedExpenses || []).filter(e => e.active); // In V2, active expense_patterns are "planned"
 
     const dashboard = {
       goals: {
         total: activeGoals.length,
-        completed: activeGoals.filter(g => (g.current_amount || 0) >= g.target_amount).length,
-        totalTarget: activeGoals.reduce((sum, g) => sum + (parseFloat(g.target_amount) || 0), 0),
-        totalCurrent: activeGoals.reduce((sum, g) => sum + (parseFloat(g.current_amount) || 0), 0),
+        completed: (activeGoals || []).filter(g => (g.current_amount || 0) >= g.target_amount).length,
+        totalTarget: (activeGoals || []).reduce((sum, g) => sum + (parseFloat(g.target_amount) || 0), 0),
+        totalCurrent: (activeGoals || []).reduce((sum, g) => sum + (parseFloat(g.current_amount) || 0), 0),
         items: activeGoals
       },
       envelopes: {

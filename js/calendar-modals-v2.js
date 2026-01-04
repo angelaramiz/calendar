@@ -137,6 +137,12 @@ export async function showConfirmProjectedDialog(projectionData, onConfirmed) {
                     projectionData.pattern_id,
                     formValues.amount
                 );
+                
+                // Luego productos
+                await promptProductContributionsAfterIncomeConfirmation(
+                    projectionData.pattern_id,
+                    formValues.amount
+                );
             }
             
             // Si es un gasto vinculado a ingreso, verificar si hay sobrante para ahorro
@@ -562,6 +568,132 @@ async function promptPlanContributionsAfterIncomeConfirmation(incomePatternId, c
         }
     } catch (error) {
         console.error('Error prompting plan contributions after income:', error);
+        // No mostrar error al usuario, es opcional
+    }
+}
+
+/**
+ * Pregunta al usuario si desea contribuir a productos en wishlist después de confirmar un ingreso
+ */
+async function promptProductContributionsAfterIncomeConfirmation(incomePatternId, confirmedAmount) {
+    try {
+        const { getProductSuggestionsForIncome, addContribution } = await import('./product-wishlist.js');
+        const suggestions = await getProductSuggestionsForIncome(incomePatternId, confirmedAmount);
+        
+        if (!suggestions.hasSuggestions || suggestions.products.length === 0) {
+            return; // No hay productos vinculados
+        }
+
+        const productsListHTML = suggestions.products.map((p, idx) => {
+            const progressColor = p.progress_percent >= 80 ? '#10b981' : p.progress_percent >= 50 ? '#f59e0b' : '#3b82f6';
+            const storeIcon = getStoreIcon ? getStoreIcon(p.store) : '🛍️';
+            return `
+                <div style="display: flex; align-items: center; padding: 12px; background: #eff6ff; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${progressColor};">
+                    <img src="${p.image_url || '/images/no-image.png'}" 
+                         style="width: 50px; height: 50px; object-fit: cover; border-radius: 6px; margin-right: 12px;" 
+                         onerror="this.src='/images/no-image.png'">
+                    <div style="flex: 1;">
+                        <div style="font-weight: 600; color: #1e40af;">${storeIcon} ${p.name}</div>
+                        <div style="font-size: 0.85em; color: #6b7280;">
+                            Progreso: ${p.progress_percent}% · Meta: $${p.target_price.toLocaleString('es-MX')}
+                        </div>
+                        <div style="font-size: 0.8em; color: #9ca3af;">
+                            Restante: $${p.remaining_amount.toLocaleString('es-MX')}
+                        </div>
+                    </div>
+                    <div style="text-align: right;">
+                        <input type="number" 
+                            id="product-check-${idx}" 
+                            data-product-id="${p.product_id}" 
+                            data-amount="${p.suggested_amount}" 
+                            value="${p.suggested_amount.toFixed(2)}" 
+                            step="0.01" 
+                            min="0"
+                            max="${p.remaining_amount}"
+                            style="width: 100px; padding: 5px; border: 1px solid #d1d5db; border-radius: 4px; text-align: right;"
+                        >
+                        <div style="font-size: 0.75em; color: #6b7280; margin-top: 2px;">
+                            ${p.contribution_type === 'percent' ? `(${(p.contribution_value * 100).toFixed(0)}%)` : '(fijo)'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const result = await Swal.fire({
+            title: '🛒 Contribuir a Productos',
+            html: `
+                <div style="text-align: left; padding: 10px;">
+                    <p style="color: #374151; margin-bottom: 15px;">
+                        Este ingreso tiene productos en wishlist vinculados. ¿Deseas hacer las contribuciones?
+                    </p>
+                    <div style="background: #dbeafe; padding: 10px; border-radius: 8px; margin-bottom: 15px;">
+                        <span style="font-weight: 600; color: #1e40af;">💰 Ingreso confirmado:</span>
+                        <span style="color: #059669; font-weight: 600;"> $${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style="max-height: 300px; overflow-y: auto;">
+                        ${productsListHTML}
+                    </div>
+                </div>
+            `,
+            showCancelButton: true,
+            confirmButtonText: '🛒 Contribuir',
+            cancelButtonText: 'Omitir',
+            confirmButtonColor: '#3b82f6',
+            cancelButtonColor: '#6b7280',
+            width: '500px',
+            preConfirm: () => {
+                const contributions = [];
+                suggestions.products.forEach((p, idx) => {
+                    const amountInput = document.getElementById(`product-check-${idx}`);
+                    
+                    if (amountInput) {
+                        const amount = parseFloat(amountInput.value) || 0;
+                        if (amount > 0) {
+                            contributions.push({
+                                product_id: p.product_id,
+                                product_name: p.name,
+                                amount: amount
+                            });
+                        }
+                    }
+                });
+                return contributions;
+            }
+        });
+
+        if (result.isConfirmed && result.value && result.value.length > 0) {
+            let successCount = 0;
+            
+            for (const contrib of result.value) {
+                try {
+                    await addContribution(contrib.product_id, {
+                        amount: contrib.amount,
+                        notes: `Aporte desde ingreso`,
+                        date: new Date().toISOString().split('T')[0]
+                    });
+                    
+                    successCount++;
+                } catch (err) {
+                    console.error(`Error contributing to product ${contrib.product_id}:`, err);
+                }
+            }
+
+            if (successCount > 0) {
+                // Actualizar indicadores si existen
+                if (window.refreshProductWishlist) window.refreshProductWishlist();
+                
+                await Swal.fire({
+                    icon: 'success',
+                    title: '🛒 Contribuciones Exitosas',
+                    text: `Se contribuyó a ${successCount} producto(s) en wishlist`,
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error prompting product contributions after income:', error);
         // No mostrar error al usuario, es opcional
     }
 }
@@ -3192,6 +3324,19 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                 timer: 1500,
                 showConfirmButton: false
             });
+
+            // Si es un patrón de ingreso, verificar si hay planes vinculados para hacer aportes
+            if (isIncome && pattern?.id) {
+                await promptPlanContributionsAfterIncomeConfirmation(
+                    pattern.id,
+                    formValues.base_amount
+                );
+                
+                await promptProductContributionsAfterIncomeConfirmation(
+                    pattern.id,
+                    formValues.base_amount
+                );
+            }
 
             if (onCreated) onCreated(pattern);
         } catch (error) {

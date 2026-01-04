@@ -57,6 +57,7 @@ export async function openProductWishlistModal() {
         didOpen: () => {
             setupTabSwitching();
             setupProductActions();
+            checkProductAlerts(dashboard.items);
             addProductWishlistStyles();
         }
     });
@@ -294,6 +295,7 @@ export async function openProductDetailModal(productId) {
         html: `
             <div class="product-detail-modal">
                 <div class="product-detail-header">
+                    <button class="nav-btn back-btn" data-action="back-to-products">Volver a Productos</button>
                     <img class="product-detail-image" 
                         src="${product.product_image_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}"
                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
@@ -364,11 +366,18 @@ export async function openProductDetailModal(productId) {
         `,
         width: '600px',
         showConfirmButton: true,
-        confirmButtonText: '💰 Agregar Aporte',
+        confirmButtonText: 'Agregar Aporte',
         showCancelButton: true,
         cancelButtonText: 'Cerrar',
         customClass: {
             popup: 'product-detail-popup'
+        },
+        didOpen: () => {
+            // Botón de navegación
+            document.querySelector('.back-btn').addEventListener('click', () => {
+                Swal.close();
+                setTimeout(() => openProductWishlistModal(), 100);
+            });
         }
     }).then(result => {
         if (result.isConfirmed) {
@@ -387,10 +396,11 @@ export async function openContributionModal(productId) {
     }
 
     const { value: formValues } = await Swal.fire({
-        title: '💰 Agregar Aporte',
+        title: 'Agregar Aporte',
         html: `
             <div class="contribution-form">
                 <div class="product-mini-header">
+                    <button class="nav-btn back-btn" data-action="back-to-details">Volver a Detalles</button>
                     <img src="${product.product_image_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}"
                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
                     <div>
@@ -433,7 +443,7 @@ export async function openContributionModal(productId) {
             </div>
         `,
         showCancelButton: true,
-        confirmButtonText: '✅ Agregar Aporte',
+        confirmButtonText: 'Agregar Aporte',
         cancelButtonText: 'Cancelar',
         preConfirm: () => {
             const amount = parseFloat(document.getElementById('contribution-amount').value);
@@ -447,6 +457,12 @@ export async function openContributionModal(productId) {
             return { amount, notes };
         },
         didOpen: () => {
+            // Botón de navegación
+            document.querySelector('.back-btn').addEventListener('click', () => {
+                Swal.close();
+                setTimeout(() => openProductDetailModal(productId), 100);
+            });
+
             // Quick amount buttons
             document.querySelectorAll('.quick-amount-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -1304,6 +1320,157 @@ function addProductWishlistStyles() {
             color: white;
             border-color: #3b82f6;
         }
+
+        /* Botones de navegación */
+        .product-detail-header .nav-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .product-mini-header .nav-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .nav-btn {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .nav-btn:hover {
+            background: #e5e7eb;
+            border-color: #9ca3af;
+        }
+
+        .nav-btn.back-btn {
+            font-weight: 500;
+        }
     `;
     document.head.appendChild(style);
+}
+
+/**
+ * Revisar productos y mostrar alertas cuando la fecha estimada llegue a 0 días
+ */
+function checkProductAlerts(products) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Solo fecha, sin hora
+
+    products.forEach(async (product) => {
+        if (product.days_remaining !== null && product.days_remaining <= 0) {
+            const completionDate = new Date(product.estimated_completion_date);
+            completionDate.setHours(0, 0, 0, 0);
+
+            if (completionDate <= today) { // Fecha ya llegó o pasó
+                if (product.progress_percent >= 100) {
+                    // Producto completado, se puede comprar
+                    await Swal.fire({
+                        title: '🎉 ¡Producto Listo para Comprar!',
+                        html: `
+                            <div style="text-align: center;">
+                                <img src="${product.product_image_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}" 
+                                     style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; margin: 10px auto;" 
+                                     onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
+                                <p><strong>${product.product_name}</strong></p>
+                                <p>¡Has alcanzado el 100% del ahorro! Ya puedes comprar este producto.</p>
+                                <p style="color: #10b981; font-weight: bold;">Meta completada: ${ProductWishlist.formatCurrency(product.target_amount)}</p>
+                            </div>
+                        `,
+                        icon: 'success',
+                        confirmButtonText: '¡Genial!',
+                        confirmButtonColor: '#10b981'
+                    });
+                } else {
+                    // Producto no completado, fecha se aplaza
+                    const remaining = product.target_amount - product.current_amount;
+                    
+                    // Verificar si se puede recalcular
+                    const activeIncomeSource = product.product_wishlist_income_sources?.find(s => s.active);
+                    let canRecalculate = product.contribution_value > 0;
+                    
+                    // Si no hay contribución en el producto, verificar la asignación
+                    if (!canRecalculate && activeIncomeSource) {
+                        canRecalculate = activeIncomeSource.allocation_value > 0;
+                    }
+                    
+                    if (canRecalculate) {
+                        // Mostrar alerta con indicador de carga
+                        const result = await Swal.fire({
+                            title: '⚠️ Fecha de Compra Aplazada',
+                            html: `
+                                <div style="text-align: center;">
+                                    <img src="${product.product_image_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}" 
+                                         style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; margin: 10px auto;" 
+                                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
+                                    <p><strong>${product.product_name}</strong></p>
+                                    <p>No se han realizado suficientes aportes. La fecha estimada de compra se ha aplazado.</p>
+                                    <p style="color: #ef4444;">Falta: ${ProductWishlist.formatCurrency(remaining)}</p>
+                                    <p style="color: #6b7280; font-size: 0.9em;">Progreso actual: ${product.progress_percent}%</p>
+                                    <p style="color: #f59e0b; font-size: 0.9em;">🔄 Recalculando fecha estimada...</p>
+                                    <div class="loading-spinner" style="margin: 10px auto; width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #f59e0b; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                                </div>
+                                <style>
+                                    @keyframes spin {
+                                        0% { transform: rotate(0deg); }
+                                        100% { transform: rotate(360deg); }
+                                    }
+                                </style>
+                            `,
+                            showConfirmButton: false,
+                            allowOutsideClick: false,
+                            allowEscapeKey: false
+                        });
+
+                        // Recalcular la fecha estimada
+                        try {
+                            await ProductWishlist.recalculateProductDate(product.id);
+                            // Mostrar confirmación y cerrar
+                            await Swal.fire({
+                                title: '✅ Fecha Recalculada',
+                                text: 'La fecha estimada de compra ha sido actualizada.',
+                                icon: 'success',
+                                timer: 2000,
+                                showConfirmButton: false
+                            });
+                        } catch (error) {
+                            console.error('Error recalculating date:', error);
+                            await Swal.fire({
+                                title: '⚠️ Error',
+                                text: 'No se pudo recalcular la fecha. Verifica la configuración del producto.',
+                                icon: 'warning',
+                                confirmButtonText: 'Entendido'
+                            });
+                        }
+                    } else {
+                        // No se puede recalcular
+                        await Swal.fire({
+                            title: '⚠️ Fecha de Compra Aplazada',
+                            html: `
+                                <div style="text-align: center;">
+                                    <img src="${product.product_image_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'}" 
+                                         style="width: 100px; height: 100px; object-fit: cover; border-radius: 8px; margin: 10px auto;" 
+                                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>📦</text></svg>'" />
+                                    <p><strong>${product.product_name}</strong></p>
+                                    <p>No se han realizado suficientes aportes. La fecha estimada de compra se ha aplazado.</p>
+                                    <p style="color: #ef4444;">Falta: ${ProductWishlist.formatCurrency(remaining)}</p>
+                                    <p style="color: #6b7280; font-size: 0.9em;">Progreso actual: ${product.progress_percent}%</p>
+                                    <p style="color: #6b7280; font-size: 0.9em;">La fecha no se puede recalcular automáticamente porque no hay configuración de aportes.</p>
+                                </div>
+                            `,
+                            icon: 'warning',
+                            confirmButtonText: 'Entendido',
+                            confirmButtonColor: '#f59e0b'
+                        });
+                    }
+                }
+            }
+        }
+    });
 }

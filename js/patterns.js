@@ -12,12 +12,25 @@ import { supabase } from './supabase-client.js';
 /**
  * Obtiene todos los income_patterns del usuario
  */
-export async function getIncomePatterns(activeOnly = false) {
+export async function getIncomePatterns(userId = null, activeOnly = false) {
     try {
+        // Si no se proporciona userId, obtenerlo del usuario autenticado
+        if (!userId) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                userId = user.id;
+            }
+        }
+
         let query = supabase
             .from('income_patterns')
             .select('*')
             .order('name', { ascending: true });
+
+        // Filtrar por usuario si se tiene el userId
+        if (userId) {
+            query = query.eq('user_id', userId);
+        }
 
         if (activeOnly) {
             query = query.eq('active', true);
@@ -160,22 +173,49 @@ export async function deleteIncomePattern(id, hard = false) {
 /**
  * Obtiene todos los expense_patterns del usuario
  */
-export async function getExpensePatterns(activeOnly = false) {
+export async function getExpensePatterns(userId = null, activeOnly = false) {
     try {
+        console.log('[PATTERNS] getExpensePatterns START', { userId, activeOnly });
+        
+        // Si no se proporciona userId, obtenerlo del usuario autenticado
+        if (!userId) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                userId = user.id;
+                console.log('[PATTERNS] Got userId from auth:', userId);
+            } else {
+                console.warn('[PATTERNS] No user authenticated');
+            }
+        }
+
         let query = supabase
             .from('expense_patterns')
             .select('*')
             .order('name', { ascending: true });
 
-        if (activeOnly) {
-            query = query.eq('active', true);
+        // Filtrar por usuario si se tiene el userId
+        if (userId) {
+            query = query.eq('user_id', userId);
+            console.log('[PATTERNS] Added user_id filter:', userId);
         }
 
+        if (activeOnly) {
+            query = query.eq('active', true);
+            console.log('[PATTERNS] Added active filter');
+        }
+
+        console.log('[PATTERNS] Executing query...');
         const { data, error } = await query;
-        if (error) throw error;
+        
+        if (error) {
+            console.error('[PATTERNS] Supabase error:', error);
+            throw error;
+        }
+        
+        console.log('[PATTERNS] getExpensePatterns SUCCESS, found:', data?.length || 0, data);
         return data || [];
     } catch (error) {
-        console.error('Error fetching expense patterns:', error);
+        console.error('[PATTERNS] getExpensePatterns ERROR:', error);
         throw error;
     }
 }

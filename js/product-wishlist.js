@@ -6,6 +6,7 @@
 
 import { supabase } from './supabase-client.js';
 import { captchaSolver } from './captcha-solver.js';
+import { getIncomePatterns } from './patterns.js';
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -17,7 +18,7 @@ const SCRAPER_API_URL = window.SCRAPER_API_URL ||
         ? 'http://localhost:5000'
         : 'https://calendar-backend-ed6u5g.fly.dev');
 
-const DEBUG = true;
+const DEBUG = false; // USAR VARIABLES DE ENTORNO EN PRODUCCIÓN
 
 function logInfo(action, data) {
     if (DEBUG) console.log(`[PRODUCT-WISHLIST] ${action}`, data);
@@ -426,7 +427,10 @@ export async function getProductById(productId) {
             progress_percent: data.target_amount > 0
                 ? Math.min(100, Math.round((data.current_amount / data.target_amount) * 100))
                 : 0,
-            remaining_amount: Math.max(0, data.target_amount - data.current_amount)
+            remaining_amount: Math.max(0, data.target_amount - data.current_amount),
+            days_remaining: data.estimated_completion_date
+                ? Math.ceil((new Date(data.estimated_completion_date) - new Date()) / (1000 * 60 * 60 * 24))
+                : null
         };
     } catch (error) {
         logError('getProductById', error, { productId });
@@ -733,11 +737,11 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
         }
     };
 
-    const totalMonthlyIncome = incomePatterns.reduce((sum, p) => sum + calculateMonthlyAmount(p), 0);
-    const totalMonthlyExpenses = expensePatterns.reduce((sum, p) => sum + calculateMonthlyAmount(p), 0);
+    const totalMonthlyIncome = (incomePatterns || []).reduce((sum, p) => sum + calculateMonthlyAmount(p), 0);
+    const totalMonthlyExpenses = (expensePatterns || []).reduce((sum, p) => sum + calculateMonthlyAmount(p), 0);
 
     // Calcular compromisos existentes
-    const existingCommitments = existingPlans.reduce((sum, plan) => {
+    const existingCommitments = (existingPlans || []).reduce((sum, plan) => {
         if (plan.contribution_type === 'percent') {
             return sum + (totalMonthlyIncome * parseFloat(plan.contribution_value));
         }
@@ -877,8 +881,13 @@ function calculatePlanOptionsLocal(targetAmount, incomePatterns, expensePatterns
  * @returns {Date|null} - Fecha estimada
  */
 export function calculateEstimatedDate(targetAmount, currentAmount, contributionValue, contributionType, incomeAmount, frequency) {
+    logInfo('calculateEstimatedDate', 'Input params', { targetAmount, currentAmount, contributionValue, contributionType, incomeAmount, frequency });
+    
     const remaining = targetAmount - (currentAmount || 0);
-    if (remaining <= 0) return new Date();
+    if (remaining <= 0) {
+        logInfo('calculateEstimatedDate', 'Already completed');
+        return new Date();
+    }
 
     let perPeriodContribution;
     if (contributionType === 'percent') {
@@ -887,7 +896,12 @@ export function calculateEstimatedDate(targetAmount, currentAmount, contribution
         perPeriodContribution = contributionValue;
     }
 
-    if (perPeriodContribution <= 0) return null;
+    logInfo('calculateEstimatedDate', 'Per period contribution', { perPeriodContribution, remaining });
+
+    if (perPeriodContribution <= 0) {
+        logWarning('calculateEstimatedDate', 'Invalid per period contribution');
+        return null;
+    }
 
     const periodsNeeded = Math.ceil(remaining / perPeriodContribution);
 
@@ -904,6 +918,7 @@ export function calculateEstimatedDate(targetAmount, currentAmount, contribution
     const estimatedDate = new Date();
     estimatedDate.setDate(estimatedDate.getDate() + totalDays);
 
+    logInfo('calculateEstimatedDate', 'Final result', { periodsNeeded, daysPerPeriod, totalDays, estimatedDate });
     return estimatedDate;
 }
 
@@ -984,20 +999,20 @@ export async function getProductWishlistDashboard(userId) {
     try {
         const products = await getProductWishlist(userId);
 
-        const active = products.filter(p => p.status === 'active');
-        const completed = products.filter(p => p.status === 'completed');
-        const paused = products.filter(p => p.status === 'paused');
+        const active = (products || []).filter(p => p.status === 'active');
+        const completed = (products || []).filter(p => p.status === 'completed');
+        const paused = (products || []).filter(p => p.status === 'paused');
 
-        const totalTarget = active.reduce((sum, p) => sum + parseFloat(p.target_amount), 0);
-        const totalCurrent = active.reduce((sum, p) => sum + parseFloat(p.current_amount), 0);
+        const totalTarget = (active || []).reduce((sum, p) => sum + parseFloat(p.target_amount), 0);
+        const totalCurrent = (active || []).reduce((sum, p) => sum + parseFloat(p.current_amount), 0);
 
         // Productos próximos a completar (menos de 30 días)
-        const nearCompletion = active.filter(p => p.days_remaining !== null && p.days_remaining <= 30 && p.days_remaining > 0);
+        const nearCompletion = (active || []).filter(p => p.days_remaining !== null && p.days_remaining <= 30 && p.days_remaining > 0);
 
         // Productos inactivos (sin contribuciones recientes)
         const today = new Date();
         const inactivityThresholds = { short: 7, medium: 14, long: 30 };
-        const inactive = active.filter(p => {
+        const inactive = (active || []).filter(p => {
             const lastActivity = p.last_contribution_date
                 ? new Date(p.last_contribution_date)
                 : new Date(p.start_date);
@@ -1044,6 +1059,140 @@ export function formatCurrency(amount) {
         style: 'currency',
         currency: 'MXN'
     }).format(amount || 0);
+}
+
+/**
+ * Obtiene sugerencias de contribuciones para productos vinculados a un patrón de ingreso
+ * @param {string} incomePatternId - ID del patrón de ingreso
+ * @param {number} confirmedAmount - Monto confirmado del ingreso
+ * @returns {Object} - { hasSuggestions: boolean, products: Array }
+ */
+export async function getProductSuggestionsForIncome(incomePatternId, confirmedAmount) {
+    try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return { hasSuggestions: false, products: [] };
+
+        // Obtener productos vinculados a este patrón de ingreso
+        const { data: products, error } = await supabase
+            .from('product_wishlist')
+            .select('*')
+            .eq('income_pattern_id', incomePatternId)
+            .eq('status', 'active');
+
+        if (error) throw error;
+
+        if (!products || products.length === 0) {
+            return { hasSuggestions: false, products: [] };
+        }
+
+        // Calcular sugerencias para cada producto
+        const suggestions = products
+            .filter(p => p.status === 'active')
+            .map(p => {
+                const product = p;
+                let suggestedAmount = 0;
+
+                if (product.contribution_type === 'fixed') {
+                    suggestedAmount = parseFloat(product.contribution_value) || 0;
+                } else if (product.contribution_type === 'percent') {
+                    const percent = parseFloat(product.contribution_value) || 0;
+                    suggestedAmount = confirmedAmount * percent;
+                }
+
+                const currentAmount = parseFloat(product.current_amount) || 0;
+                const targetAmount = parseFloat(product.target_price);
+                const remaining = targetAmount - currentAmount;
+
+                // No sugerir más de lo que falta
+                suggestedAmount = Math.min(suggestedAmount, remaining);
+
+                return {
+                    product_id: product.id,
+                    name: product.name,
+                    store: product.store,
+                    target_price: targetAmount,
+                    current_amount: currentAmount,
+                    remaining_amount: remaining,
+                    contribution_type: product.contribution_type,
+                    contribution_value: product.contribution_value,
+                    suggested_amount: Math.max(0, suggestedAmount),
+                    progress_percent: targetAmount > 0 ? (currentAmount / targetAmount * 100).toFixed(1) : 0,
+                    image_url: product.image_url
+                };
+            })
+            .filter(s => s.suggested_amount > 0); // Solo incluir productos con sugerencia > 0
+
+        return {
+            hasSuggestions: suggestions.length > 0,
+            products: suggestions
+        };
+
+    } catch (error) {
+        logError('getProductSuggestionsForIncome', error, { incomePatternId, confirmedAmount });
+        return { hasSuggestions: false, products: [] };
+    }
+}
+
+/**
+ * Recalcular la fecha estimada de un producto basado en el progreso actual
+ * @param {string} productId - ID del producto
+ */
+export async function recalculateProductDate(productId) {
+    try {
+        logInfo('recalculateProductDate', 'Starting recalculation', { productId });
+        const product = await getProductById(productId);
+        if (!product) return;
+
+        // Obtener el patrón de ingreso vinculado
+        const incomePatterns = await getIncomePatterns(true); // Activos
+        const activeIncomeSource = product.product_wishlist_income_sources?.find(s => s.active);
+        const linkedIncome = activeIncomeSource ? incomePatterns.find(ip => ip.id === activeIncomeSource.income_pattern_id) : null;
+        
+        if (!linkedIncome) return; // No hay patrón vinculado
+
+        // Calcular nueva fecha estimada
+        const remaining = product.target_amount - product.current_amount;
+        if (remaining <= 0) {
+            // Ya completado, no recalcular
+            return;
+        }
+
+        // Determinar el valor de contribución a usar
+        let contributionValue = product.contribution_value;
+        let contributionType = product.contribution_type;
+        
+        // Si no hay contribución configurada en el producto, usar la asignación del ingreso
+        if (!contributionValue || contributionValue <= 0) {
+            if (activeIncomeSource) {
+                contributionType = activeIncomeSource.allocation_type;
+                if (contributionType === 'percent') {
+                    contributionValue = activeIncomeSource.allocation_value;
+                } else {
+                    contributionValue = activeIncomeSource.allocation_value;
+                }
+            }
+        }
+
+        const newEstimatedDate = calculateEstimatedDate(
+            product.target_amount,
+            product.current_amount,
+            contributionValue,
+            contributionType,
+            linkedIncome.base_amount,
+            linkedIncome.frequency
+        );
+
+        logInfo('recalculateProductDate', 'Calculated date result', { newEstimatedDate, contributionValue, contributionType });
+
+        if (newEstimatedDate) {
+            await updateProductWishlist(productId, {
+                estimated_completion_date: newEstimatedDate
+            });
+            logInfo('recalculateProductDate', { productId, newEstimatedDate });
+        }
+    } catch (error) {
+        logError('recalculateProductDate', error, { productId });
+    }
 }
 
 /**

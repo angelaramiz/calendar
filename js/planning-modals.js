@@ -198,16 +198,16 @@ function renderExpensesTab(expensesData) {
       <button class="btn-primary btn-add-expense">➕ Nuevo Gasto Planificado</button>
     </div>
     <div class="expenses-list">
-      ${expensesData.items.length === 0 ? `
+      ${!expensesData || !expensesData.items || expensesData.items.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">📅</div>
           <div class="empty-text">No tienes gastos planificados</div>
           <div class="empty-hint">Planea tus gastos futuros para mejor control</div>
         </div>
       ` : expensesData.items.map(exp => `
-        <div class="expense-item ${exp.status === 'done' ? 'completed' : ''}" data-expense-id="${exp.id}">
+        <div class="expense-item ${exp.status === 'done' ? 'completed' : ''}" data-expense-id="${exp.id || 'unknown'}">
           <div class="expense-header">
-            <div class="expense-title">${exp.title}</div>
+            <div class="expense-title">${exp.title || 'Sin nombre'}</div>
             <div class="expense-actions">
               ${exp.status !== 'done' ? `
                 <button class="btn-icon btn-assign-incomes-expense" title="Asignar Ingresos">💰</button>
@@ -219,10 +219,10 @@ function renderExpensesTab(expensesData) {
           </div>
           ${exp.description ? `<div class="expense-description">${exp.description}</div>` : ''}
           <div class="expense-info">
-            <span class="expense-amount">${Planning.formatCurrency(exp.amount)}</span>
-            <span class="expense-date">📅 ${formatDateSpanish(exp.planned_date)}</span>
-            <span class="badge badge-priority-${getPriorityName(exp.priority)}">
-              ${getPriorityLabel(exp.priority)}
+            <span class="expense-amount">${exp.amount ? Planning.formatCurrency(exp.amount) : '$0.00'}</span>
+            <span class="expense-date">📅 ${exp.planned_date ? formatDateSpanish(exp.planned_date) : 'Por definir'}</span>
+            <span class="badge badge-priority-${getPriorityName(exp.priority || 5)}">
+              ${getPriorityLabel(exp.priority || 5)}
             </span>
           </div>
           ${exp.status === 'done' ? `

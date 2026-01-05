@@ -2,9 +2,11 @@
 **Documento: Planeación, Guía y Planificación para Migración a React**
 
 **Fecha de Creación:** 4 de enero de 2026  
+**Última Actualización:** 5 de enero de 2026  
 **Proyecto:** Sistema de Planificación Financiera  
-**Estado:** Planeación  
-**Tiempo Estimado Total:** 40-60 horas (3-4 semanas)
+**Estado:** Planeación - Revisado y Mejorado  
+**Tiempo Estimado Total:** 80-100 horas (4-5 semanas)  
+**Cambios:** Estimaciones aumentadas, testing integrado desde Fase 1, CI/CD y rollback plan incluidos
 
 ---
 
@@ -55,6 +57,10 @@
 - Testing inexistente
 - Build process básico (no Vite/Webpack)
 - Duplicación de lógica en UI (patterns.js duplica getExpensePatterns)
+- Mitigación de riesgo: usuarios activos durante migración
+- Rollback plan no documentado
+- Monitoreo y error tracking no configurado
+- CI/CD pipeline no existe
 
 ---
 
@@ -270,6 +276,14 @@ PostgreSQL + RLS
 
 ## 4. Stack Tecnológico Recomendado
 
+### ✅ DECISIONES TECNOLÓGICAS FINALES (Sección 5)
+
+**NOTA IMPORTANTE:** Las decisiones tecnológicas específicas están en la **Sección 5 - Decisiones Tecnológicas Previas** que DEBE completarse ANTES de empezar la Fase 1.
+
+---
+
+## 5. Stack Tecnológico Base Recomendado
+
 ### Core Frontend
 
 | Tecnología | Versión | Propósito | Razón |
@@ -376,7 +390,183 @@ PostgreSQL + RLS
 
 ---
 
-## 5. Plan de Migración por Fases
+## 5. Decisiones Tecnológicas Previas
+
+### ⚠️ ANTES DE INICIAR - DECISIONES REQUERIDAS
+
+Estas decisiones DEBEN tomarse antes de empezar cualquier desarrollo:
+
+| Decisión | Opciones | Recomendación | Impacto |
+|----------|----------|---------------|--------|
+| **State Manager** | Zustand / Redux | ✅ Zustand | Bajo boilerplate, ideal para app finanzas |
+| **UI Framework** | Shadcn/ui / MUI / Ant Design | ✅ Shadcn/ui + Tailwind | Customizable, accesible, moderno |
+| **Calendar Lib** | React Big Calendar / FullCalendar / TUI | ✅ React Big Calendar | Ligero, flexible, mantenido |
+| **Charts Lib** | Recharts / Chart.js / Visx | ✅ Recharts | React-native, componentes, fácil |
+| **Hosting** | Vercel / Netlify / Servidor propio | ✅ Vercel | CI/CD automático, preview, monitoreo |
+| **Error Tracking** | Sentry / LogRocket / Rollbar | ✅ Sentry | Mejor para apps financieras |
+| **Form Lib** | React Hook Form / Formik | ✅ React Hook Form | Performance, Zod integration |
+| **Date Lib** | date-fns / dayjs / luxon | ✅ date-fns | Más mantenido, modular |
+
+### ✅ Checklist Pre-Inicio
+
+- [ ] Stack tecnológico confirmado por todo el equipo
+- [ ] Backup completo de código actual (js/ y routes/ folders)
+- [ ] Base de datos con backups automáticos configurados
+- [ ] Variables de entorno documentadas (.env.example)
+- [ ] Supabase RLS policies revisadas y documentadas
+- [ ] Database schema V2 está completo y validado
+- [ ] Equipo capacitado en React, TypeScript, Zustand
+- [ ] CI/CD infrastructure lista (GitHub, Vercel/Netlify)
+- [ ] Monitoring tools accounts creadas (Sentry, etc.)
+- [ ] Communication plan para usuarios durante migración
+- [ ] Rollback procedure documentado y testeado
+- [ ] Performance baseline medido (actual build size, lighthouse)
+
+---
+
+## 6. Plan de Migración por Fases (REVISADO)
+
+### ⏱️ Fase 0: Pre-Setup (2-3 horas) 🔴 CRÍTICA - ANTES DE TODO
+
+**Objetivo:** Preparar environment y documentar estado actual
+
+**Tareas:**
+- [ ] Crear rama `feat/react-migration` en git
+- [ ] Backup completo de proyecto actual
+- [ ] Documentar URL actual de Supabase y todas las env vars
+- [ ] Crear issue de GitHub para tracking de progreso
+- [ ] Setup Sentry account para error tracking
+- [ ] **Crear documento ROLLBACK PLAN** (ver abajo)
+- [ ] Database schema snapshot y documentación
+- [ ] Documentar current performance baseline (Lighthouse, bundle size)
+- [ ] Crear spreadsheet de tracking de features
+
+**Entregables:**
+- Backups seguros
+- Documento de rollback plan firmado
+- Environment variables documentadas
+- Performance baseline establecido
+- GitHub issue con checklist de tracking
+
+**Estimado:** 2-3 horas
+
+---
+
+### ⏱️ Fase 1: Preparación y Setup (6-8 horas) 🔴 CRÍTICA
+
+**Objetivo:** Crear estructura base de React con CI/CD desde el inicio
+
+**Tareas:**
+- [ ] Crear nuevo proyecto Vite + React + TypeScript
+- [ ] Instalar todas las dependencias del package.json
+- [ ] Configurar Tailwind CSS y Shadcn/ui
+- [ ] Configurar ESLint y Prettier
+- [ ] Crear estructura de directorios (src/features, src/shared, etc.)
+- [ ] Migrar variables de entorno a .env.local + .env.example
+- [ ] Configurar Zustand stores básicos
+- [ ] Crear supabaseClient.ts reutilizable
+- [ ] Configurar React Router con layout base
+- [ ] **Setup Vitest + React Testing Library**
+- [ ] **Configurar CI/CD (GitHub Actions o Vercel)**
+- [ ] **Setup Sentry para error tracking**
+- [ ] **Crear GitHub issue tracker del progreso**
+- [ ] **Crear primeros tests de ejemplo**
+- [ ] **Setup pre-commit hooks (husky + lint-staged)**
+
+**Entregables:**
+- Proyecto Vite funcional
+- Build exitoso
+- Dev server corriendo en http://localhost:5173
+- Todos los linters pasando
+- CI/CD pipeline funcionando
+- Sentry configurado
+- Tests setup working
+- README actualizado con instrucciones de setup
+- GitHub Actions passing
+- Pre-commit hooks configurados
+
+**Estimado:** 6-8 horas
+
+---
+
+### ⏱️ Fase 2: Componentes Shared y Hooks (8-10 horas) 🔴 CRÍTICA
+
+**Objetivo:** Crear base de componentes reutilizables y custom hooks CON TESTS
+
+**Tareas:**
+- [ ] Migrar/crear componentes UI desde Shadcn (Button, Input, Card, Modal, Dialog)
+- [ ] Crear Header y Navigation principal
+- [ ] Crear Layout wrapper component
+- [ ] Crear custom hooks:
+  - [ ] `useSupabase()` - wrapper de supabaseClient
+  - [ ] `useCurrency()` - formateo de moneda
+  - [ ] `useDateFormat()` - formateo de fechas
+  - [ ] `useNotification()` - toasts (reemplazar SweetAlert2)
+  - [ ] `useDebounce()` - para búsquedas
+  - [ ] `useLocalStorage()` - persistencia de datos
+- [ ] Migrar utilidades (formatting.ts, validation.ts, etc.)
+- [ ] Crear tipos TypeScript globales
+- [ ] Configurar constants (currencies, frequencies, config)
+- [ ] **Escribir tests para cada componente y hook**
+- [ ] **Tests coverage > 80% para este módulo**
+
+**Entregables:**
+- Librería de componentes funcionando
+- Hooks reutilizables
+- Sistema de notificaciones sin SweetAlert2
+- Todos los tipos TypeScript definidos
+- Tests para componentes shared
+- Documentación de componentes (Storybook opcional)
+
+**Estimado:** 8-10 horas
+
+---
+
+## 7. Modules Prioritarios (REVISADO)
+
+### 🔴 Fase 0 + Fase 1 (Semana 1): Preparación y Setup
+
+1. **Pre-Setup** (2-3h) - Backups, decisiones, rollback plan
+2. **Setup Inicial + CI/CD** (6-8h)
+3. **Componentes Shared** (8-10h)
+
+**Total Fases 0-1:** 16-21 horas
+
+### 🔴 Fase 2-3 (Semana 1-2): Crítica
+
+1. **Autenticación con Tests** (5-7h)
+2. **Patrones con Tests** (7-9h)
+
+**Total Fases 2-3:** 12-16 horas
+
+### 🟠 Fase 4-6 (Semana 2-3): Alta Prioridad
+
+1. **Planificación con Tests** (10-14h)
+2. **Calendario con Tests** (9-11h)
+3. **Financial Dashboard** (8-10h)
+
+**Total Fases 4-6:** 27-35 horas
+
+### 🟡 Fase 7-9 (Semana 4): Media Prioridad
+
+1. **Wishlist con Tests** (7-9h)
+2. **Loans & Savings con Tests** (5-7h)
+
+**Total Fases 7-9:** 12-16 horas
+
+### 🟠 Fase 10-12 (Semana 4-5): Testing, Optimización y Deploy
+
+1. **Testing Integral & Performance** (10-12h)
+2. **Migration & User Communication** (4-6h)
+3. **Deployment & Documentation** (5-7h)
+
+**Total Fases 10-12:** 19-25 horas
+
+---
+
+**TOTAL ESTIMADO REVISADO: 86-113 horas (4-5 semanas full-time)**
+
+*Nota: Estimación anterior era 40-60h - incremento por testing integrado desde inicio y gestión de usuarios en producción.*
 
 ### ⏱️ Fase 1: Preparación y Setup (4-6 horas) 🔴 CRÍTICA
 
@@ -432,9 +622,9 @@ PostgreSQL + RLS
 
 ---
 
-### ⏱️ Fase 3: Módulo de Autenticación (3-5 horas) 🔴 CRÍTICA
+### ⏱️ Fase 3: Módulo de Autenticación (5-7 horas) 🔴 CRÍTICA
 
-**Objetivo:** Migrar login, registro y recuperación de contraseña
+**Objetivo:** Migrar login, registro y recuperación de contraseña CON TESTS COMPLETOS
 
 **Tareas:**
 - [ ] Crear authStore con Zustand (user, isAuthenticated, login, logout, register)
@@ -446,20 +636,27 @@ PostgreSQL + RLS
 - [ ] Crear authService.ts (login, register, logout, resetPassword)
 - [ ] Agregar persistent login (localStorage + hydration)
 - [ ] Crear useAuth hook
+- [ ] **Escribir tests de auth store**
+- [ ] **Tests de formularios (validación, submit, errors)**
+- [ ] **Tests de integración Supabase Auth**
+- [ ] **Tests de ProtectedRoute**
+- [ ] **Coverage > 85% para auth crítico**
 
 **Entregables:**
 - Login/Register funcionando
 - Auth persistente entre refreshes
 - ProtectedRoute implementado
 - Validación de formularios con mensajes claros
+- Tests de auth suite completa
+- Documentación de auth flow
 
-**Estimado:** 3-5 horas
+**Estimado:** 5-7 horas
 
 ---
 
-### ⏱️ Fase 4: Módulo de Patrones (Patterns) (5-7 horas) 🟠 ALTA
+### ⏱️ Fase 4: Módulo de Patrones (Patterns) (7-9 horas) 🟠 ALTA
 
-**Objetivo:** Migrar getIncomePatterns y getExpensePatterns a React
+**Objetivo:** Migrar getIncomePatterns y getExpensePatterns a React CON TESTS
 
 **Tareas:**
 - [ ] Crear patternsStore con Zustand (patterns, loading, error)
@@ -473,6 +670,11 @@ PostgreSQL + RLS
 - [ ] Integrar TanStack Query para data fetching
 - [ ] Implementar búsqueda y filtros
 - [ ] Crear pattern-types.ts con interfaces TypeScript
+- [ ] **Tests para patternsService (mock Supabase)**
+- [ ] **Tests para usePatterns hook**
+- [ ] **Tests de componentes UI**
+- [ ] **Tests e2e: crear patrón, editar, eliminar**
+- [ ] **Coverage > 80%**
 
 **Entregables:**
 - CRUD de patrones funcionando
@@ -480,14 +682,16 @@ PostgreSQL + RLS
 - Formulario de creación/edición
 - Validación con Zod
 - Caching con React Query
+- Tests suite for patterns module
+- Error handling documentado
 
-**Estimado:** 5-7 horas
+**Estimado:** 7-9 horas
 
 ---
 
-### ⏱️ Fase 5: Módulo de Planificación (Planning) (8-10 horas) 🟠 ALTA
+### ⏱️ Fase 5: Módulo de Planificación (Planning) (10-14 horas) 🟠 ALTA
 
-**Objetivo:** Migrar dashboard de planificación, objetivos, sobres
+**Objetivo:** Migrar dashboard de planificación, objetivos, sobres CON TESTS EXHAUSTIVOS
 
 **Tareas:**
 - [ ] Crear planningStore con Zustand
@@ -501,9 +705,16 @@ PostgreSQL + RLS
   - [ ] EnvelopeForm.tsx
   - [ ] ExpenseSummary.tsx
   - [ ] AllocationChart.tsx
-- [ ] Integrar gráficos (opcional: recharts o chart.js)
+- [ ] Integrar gráficos (✅ recharts recomendado)
 - [ ] Implementar drag-and-drop para distribución de ingresos (react-beautiful-dnd)
 - [ ] Crear planning-types.ts
+- [ ] **Tests para cada hook (usePlanning, useGoals, useEnvelopes)**
+- [ ] **Tests de cálculos financieros (validar exactitud)**
+- [ ] **Tests de componentes UI (especially forms)**
+- [ ] **Tests e2e: flujo completo de planning**
+- [ ] **Tests de gráficos (snapshot testing)**
+- [ ] **Coverage > 80%**
+- [ ] **Validar que cálculos matchean versión vieja**
 
 **Entregables:**
 - Dashboard de planificación funcional
@@ -511,19 +722,22 @@ PostgreSQL + RLS
 - Crear/editar/borrar sobres
 - Visualizar asignaciones
 - Gráficos de distribución
+- Tests suite exhaustivos
+- Validación de exactitud numérica
+- Documentación de cálculos
 
-**Estimado:** 8-10 horas
+**Estimado:** 10-14 horas
 
 ---
 
-### ⏱️ Fase 6: Módulo de Calendario (Calendar) (7-9 horas) 🟠 ALTA
+### ⏱️ Fase 6: Módulo de Calendario (Calendar) (9-11 horas) 🟠 ALTA
 
-**Objetivo:** Migrar vista de calendario y eventos de movimientos
+**Objetivo:** Migrar vista de calendario y eventos de movimientos CON TESTS
 
 **Tareas:**
 - [ ] Crear calendarStore con Zustand
 - [ ] Crear calendarService.ts (obtener movimientos por fecha)
-- [ ] Usar librería calendar (react-big-calendar o similar)
+- [ ] Usar librería calendar (✅ React Big Calendar recomendado)
 - [ ] Crear UI components:
   - [ ] CalendarView.tsx (vista principal)
   - [ ] EventModal.tsx
@@ -531,20 +745,27 @@ PostgreSQL + RLS
   - [ ] DayDetail.tsx
 - [ ] Implementar filtros (por tipo, por categoría)
 - [ ] Crear event-types.ts
+- [ ] **Tests para calendarService (date handling)**
+- [ ] **Tests para componentes de calendario**
+- [ ] **Tests de filtros (edge cases con fechas)**
+- [ ] **Tests de navegación en calendario**
+- [ ] **Coverage > 75%**
 
 **Entregables:**
 - Calendario navegable
 - Movimientos por fecha
 - Modal con detalles del evento
 - Filtros funcionales
+- Tests de calendario
+- Manejo correcto de timezones
 
-**Estimado:** 7-9 horas
+**Estimado:** 9-11 horas
 
 ---
 
-### ⏱️ Fase 7: Módulo Financial (Dashboard Financiero) (6-8 horas) 🟡 MEDIA
+### ⏱️ Fase 7: Módulo Financial (Dashboard Financiero) (8-10 horas) 🟡 MEDIA
 
-**Objetivo:** Migrar dashboard financiero, stats y motor financiero
+**Objetivo:** Migrar dashboard financiero, stats y motor financiero CON TESTS
 
 **Tareas:**
 - [ ] Crear financialStore
@@ -556,22 +777,27 @@ PostgreSQL + RLS
   - [ ] StatsPanel.tsx
   - [ ] TrendChart.tsx
   - [ ] EnginePanel.tsx
-- [ ] Integrar gráficos avanzados
+- [ ] Integrar gráficos avanzados (✅ recharts)
 - [ ] Crear financial-types.ts
+- [ ] **Tests para cálculos financieros**
+- [ ] **Tests para estadísticas**
+- [ ] **Tests de componentes de dashboard**
+- [ ] **Coverage > 75%**
 
 **Entregables:**
 - Dashboard financiero completo
 - Gráficos de tendencias
 - Estadísticas visuales
 - Recomendaciones del motor IA
+- Tests de financial module
 
-**Estimado:** 6-8 horas
+**Estimado:** 8-10 horas
 
 ---
 
-### ⏱️ Fase 8: Módulo Wishlist (5-7 horas) 🟡 MEDIA
+### ⏱️ Fase 8: Módulo Wishlist (7-9 horas) 🟡 MEDIA
 
-**Objetivo:** Migrar gestor de lista de deseos
+**Objetivo:** Migrar gestor de lista de deseos CON TESTS
 
 **Tareas:**
 - [ ] Crear wishlistStore
@@ -584,85 +810,147 @@ PostgreSQL + RLS
   - [ ] PriceHistory.tsx
 - [ ] Integrar price monitoring
 - [ ] Crear wishlist-types.ts
+- [ ] **Tests para wishlist CRUD**
+- [ ] **Tests de price tracking**
+- [ ] **Coverage > 70%**
 
 **Entregables:**
 - Gestión de productos wishlist
 - Gráfico de precios
 - Tracking de descuentos
 - Contador de días para compra
+- Tests de wishlist
 
-**Estimado:** 5-7 horas
+**Estimado:** 7-9 horas
 
 ---
 
-### ⏱️ Fase 9: Módulos Complementarios (Loans, Savings) (4-6 horas) 🟡 MEDIA
+### ⏱️ Fase 9: Módulos Complementarios (Loans, Savings) (5-7 horas) 🟡 MEDIA
 
-**Objetivo:** Migrar préstamos y ahorros
+**Objetivo:** Migrar préstamos y ahorros CON TESTS
 
 **Tareas:**
 - [ ] Crear loansStore y savingsStore
 - [ ] Crear loansService.ts y savingsService.ts
 - [ ] Crear LoansManager.tsx y SavingsManager.tsx
 - [ ] Crear loans-types.ts y savings-types.ts
+- [ ] **Tests para loans y savings stores**
+- [ ] **Coverage > 70%**
 
-**Estimado:** 4-6 horas
+**Estimado:** 5-7 horas
 
 ---
 
-### ⏱️ Fase 10: Testing y Optimización (6-8 horas) 🟠 IMPORTANTE
+### ⏱️ Fase 10: Testing Integral y Optimización (10-12 horas) 🟠 IMPORTANTE
 
-**Objetivo:** Crear suite de tests y optimizar performance
+**Objetivo:** Testing exhaustivo (ya que muchos tests se hicieron en fases anteriores, ahora enfocamos en integración, e2e, y performance)
 
 **Tareas:**
-- [ ] Crear tests unitarios para hooks (usePatterns, usePlanning, etc.)
-- [ ] Crear tests de componentes UI
-- [ ] Crear tests de integración (Supabase queries)
-- [ ] Tests e2e críticos (login, crear patrón, crear objetivo)
-- [ ] Optimizar componentes (React.memo, useMemo donde sea necesario)
-- [ ] Profiling de performance con DevTools
-- [ ] Lazy loading de features
-- [ ] Bundle analysis
+- [ ] **Crear tests e2e críticos (Playwright/Cypress):**
+  - [ ] Flujo completo: login → crear patrón → crear objetivo → ver calendar
+  - [ ] Crear envelope → asignar dinero → ver en dashboard
+  - [ ] Wishlist: agregar producto → ver price history → recibir alerta
+  - [ ] Financial: ver balance → ver tendencias → ver recomendaciones
+- [ ] **Tests de integración Supabase:**
+  - [ ] Auth flow completo
+  - [ ] CRUD operations para cada tabla
+  - [ ] RLS policies validation
+  - [ ] Concurrency handling
+- [ ] **Tests de regresión:** Validar que todo matchea versión vieja
+- [ ] **Optimizar componentes:**
+  - [ ] React.memo donde sea necesario
+  - [ ] useMemo/useCallback para cálculos costosos
+  - [ ] Code splitting y lazy loading
+  - [ ] Image optimization
+- [ ] **Performance profiling:**
+  - [ ] Chrome DevTools profiling
+  - [ ] Bundle analysis
+  - [ ] Lighthouse audit (target > 85)
+  - [ ] Render performance
+- [ ] **Accessibility testing:**
+  - [ ] WCAG 2.1 AA compliance
+  - [ ] Keyboard navigation
+  - [ ] Screen reader testing
 
 **Entregables:**
-- Cobertura mínima 70% de funciones críticas
-- Todos los tests pasando
+- Cobertura total > 80% de funciones críticas
+- Todos los tests pasando (unit + integration + e2e)
 - Bundle size < 200KB (gzip)
-- Lighthouse score > 80
+- Lighthouse score > 85
+- 0 critical accessibility issues
+- Performance regression report
 
-**Estimado:** 6-8 horas
+**Estimado:** 10-12 horas
 
 ---
 
-### ⏱️ Fase 11: Migración de Datos y Cleanup (2-4 horas) 🟡 MEDIA
+### ⏱️ Fase 11: Migración de Datos, User Communication y Cleanup (4-6 horas) 🟠 ALTA
 
-**Objetivo:** Asegurar transición limpia del proyecto viejo
+**Objetivo:** Transición limpia del proyecto viejo con plan comunicación usuarios
 
 **Tareas:**
 - [ ] Backup de index.html viejo
 - [ ] Backup de js/ folder completo
 - [ ] Migrar assets (imágenes, fuentes)
+- [ ] Validar que Supabase RLS policies siguen activas
+- [ ] **Data validation:** Verificar que todos los datos se ven correctamente en React
+- [ ] **User communication plan:** Mensajes de mantenimiento, downtime schedule
 - [ ] Configurar redirecciones si es necesario
 - [ ] Copiar favicon y manifest
-- [ ] Documentar cambios en README
+- [ ] **Test con usuarios reales (if possible):** 5-10 usuarios
+- [ ] Documentar cambios en README y CHANGELOG
+- [ ] Database schema versioning
 
-**Estimado:** 2-4 horas
+**Entregables:**
+- Backups seguros
+- User communication plan ejecutado
+- Data integrity validation report
+- Rollback test completed
+- Updated CHANGELOG
+- Migration runbook documented
+
+**Estimado:** 4-6 horas
 
 ---
 
-### ⏱️ Fase 12: Deployment y Documentación (3-5 horas) 🟠 IMPORTANTE
+### ⏱️ Fase 12: Deployment, Monitoreo y Documentación (5-7 horas) 🟠 IMPORTANTE
 
-**Objetivo:** Poner en producción y documentar
+**Objetivo:** Poner en producción CON MONITOREO Y DOCUMENTACIÓN COMPLETA
 
 **Tareas:**
 - [ ] Build production optimizado
-- [ ] Configurar CI/CD (GitHub Actions si es público)
-- [ ] Deploy a hosting (Vercel, Netlify, o servidor actual)
-- [ ] Testing en producción
-- [ ] Crear documentación para desarrolladores
-- [ ] Crear guía de contribución
-- [ ] Crear changelog de migración
+- [ ] Verificar que CI/CD pipeline está completo
+- [ ] Deploy a staging environment
+- [ ] Smoke testing en staging
+- [ ] **Deploy a producción:** Usar blue-green deployment si es posible
+- [ ] **Monitoreo en vivo:**
+  - [ ] Sentry errors tracking
+  - [ ] Performance monitoring
+  - [ ] User session monitoring (Supabase logs)
+  - [ ] Database query monitoring
+  - [ ] Error rate alerts configurados
+- [ ] **Rollback procedure test:** Verificar que rollback plan funciona
+- [ ] Documentación post-deployment:
+  - [ ] SETUP.md (development)
+  - [ ] DEPLOYMENT.md (release process)
+  - [ ] ARCHITECTURE.md (tech decisions)
+  - [ ] TROUBLESHOOTING.md (common issues)
+  - [ ] CONTRIBUTING.md (team guidelines)
+  - [ ] API.md (stores, hooks, services)
+  - [ ] CHANGELOG.md (migration notes)
+- [ ] Crear runbook de incidents
+- [ ] Training para equipo de support
 
-**Estimado:** 3-5 horas
+**Entregables:**
+- Production deployment exitoso
+- Sentry + monitoring fully operational
+- Comprehensive documentation
+- Rollback capability verified
+- Team training completed
+- Post-deployment metrics baseline
+- Incident response procedures documented
+
+**Estimado:** 5-7 horas
 
 ---
 
@@ -953,9 +1241,53 @@ calendar-app-react/
 └── .gitignore
 ```
 
+## 8. Plan de Rollback (NUEVO - CRÍTICO)
+
+### 🚨 Escenarios de Rollback
+
+**Trigger Points:** Cuándo regresar a versión vieja inmediatamente
+
+1. **Datos Corruptos:** Si se detecta pérdida de datos en producción
+2. **Auth Broken:** Si login/logout no funciona
+3. **Critical Bug:** Si aplicación no abre o crashes
+4. **Performance Degradation:** Si es > 50% más lenta que versión vieja
+5. **User Complaint Rate:** Si > 20% de usuarios reportan problemas en primeras 24h
+
+### Rollback Procedure
+
+**Tiempo estimado:** 15-30 minutos
+
+```
+1. Detectar problema (usuario report o monitoring alert)
+2. ↓
+3. Activar rollback decision (CTO/Lead approval)
+4. ↓
+5. Si Vercel: Revert to previous deployment
+   Si servidor: Switch DNS back a version vieja
+6. ↓
+7. Verify que users pueden acceder
+8. ↓
+9. Post-mortem: Documentar qué falló
+10. ↓
+11. Implementar fix
+12. ↓
+13. Deploy retry con testing más exhaustivo
+```
+
+### Pre-Deployment Checklist para Evitar Rollback
+
+- [ ] **Data Integrity:** Verificar datos en staging matchean producción vieja
+- [ ] **User Testing:** 5-10 usuarios reales testean antes de public release
+- [ ] **Load Testing:** Simular 2x traffic en staging
+- [ ] **Browser Compatibility:** Chrome, Firefox, Safari, Edge
+- [ ] **Mobile Testing:** iOS Safari, Android Chrome
+- [ ] **VPN Testing:** Verificar app funciona con VPN
+- [ ] **Offline Mode:** Verificar app graceful degradation sin internet
+- [ ] **Monitoring Alerts:** Todos los alertas activos en Sentry
+
 ---
 
-## 8. Detalles Técnicos
+## 9. Detalles Técnicos
 
 ### 8.1 Configuración de Zustand Store
 
@@ -1180,7 +1512,7 @@ export const PatternsManager: React.FC = () => {
 
 ---
 
-## 9. Consideraciones de Seguridad
+## 10. Consideraciones de Seguridad
 
 ### 9.1 Row Level Security (RLS)
 
@@ -1242,7 +1574,7 @@ API calls include JWT automatically
 
 ---
 
-## 10. Testing y QA
+## 11. Testing y QA (REVISADO)
 
 ### 10.1 Estrategia de Testing
 
@@ -1268,9 +1600,53 @@ API calls include JWT automatically
 - [ ] Performance Lighthouse > 80
 - [ ] No hay XSS vulnerabilities
 
+### 11.1 Estrategia de Testing (REVISADA - TESTS DESDE FASE 1)
+
+| Tipo | Herramienta | Cuándo | Cobertura |
+|------|-------------|--------|-----------|
+| **Unit Tests** | Vitest + RTL | En cada feature (Fase 1+) | 80%+ crítico |
+| **Integration Tests** | Vitest + Supabase | Fases 3-9 | 70%+ servicios |
+| **E2E Tests** | Playwright/Cypress | Fase 10 | Flows críticos |
+| **Visual/Snapshot** | Jest Snapshots | Con cada componente | Cambios visuales |
+| **Accessibility Tests** | axe-core | Fase 10 | WCAG 2.1 AA |
+| **Performance Tests** | Lighthouse CI | En cada PR (Fase 1+) | Target > 85 |
+| **Load Tests** | k6 o similar | Fase 11 (staging) | 2x traffic |
+
+### 11.2 Testing Best Practices
+
+- **Test behavior, not implementation** - Prueba que el usuario vea lo esperado, no cómo funciona internamente
+- **Test user flows** - Login → crear patrón → ver en dashboard
+- **Mock Supabase** - No hacer llamadas reales en unit tests
+- **Integration tests con DB** - Usar test database separada
+- **Snapshot tests** - Solo para componentes UI que no cambian frecuentemente
+- **Coverage metrics** - Apuntar a 80%+ para código crítico
+
+### 11.3 Checklist de QA Crítica Pre-Release
+
+**Antes de cualquier release a producción:**
+
+- [ ] Todos los tests pasando (unit + integration + e2e)
+- [ ] Coverage > 80% en módulos críticos (auth, patterns, planning)
+- [ ] Login/Logout funciona
+- [ ] Crear/editar/borrar patrones funciona
+- [ ] Crear/editar/borrar objetivos funciona
+- [ ] Calendario muestra movimientos correctos
+- [ ] Cálculos de balance son exactos vs versión vieja
+- [ ] Datos persisten entre sesiones (localStorage)
+- [ ] Datos sincronizados en Supabase
+- [ ] No hay errores en console
+- [ ] Mobile responsive (375px, 768px, 1024px, 1920px)
+- [ ] Performance Lighthouse > 85
+- [ ] No hay XSS vulnerabilities (OWASP Top 10)
+- [ ] RLS policies están activas y validadas
+- [ ] Sentry está capturando errores correctamente
+- [ ] Monitoreo alertas están configuradas
+- [ ] Rollback procedure ha sido testeado
+- [ ] User communication está lista
+
 ---
 
-## 11. Deployment
+## 12. Deployment
 
 ### 11.1 Opciones de Hosting
 
@@ -1322,56 +1698,72 @@ jobs:
 
 ---
 
-## 12. Timeline y Hitos
+## 13. Timeline y Hitos (REVISADO - 4-5 SEMANAS)
 
-### 📅 Cronograma Estimado (3-4 semanas)
+### 📅 Cronograma Estimado Revisado
 
 ```
-Semana 1: Preparación y Bases
-├── Lunes-Martes (8h): Setup Vite + React + TypeScript
-├── Miércoles (4h): Componentes Shared y Hooks
-├── Jueves-Viernes (8h): Auth module completo
-└── Hito 1: ✅ Login funcional
+SEMANA 1: Preparación y Fundación
+├── Lunes (2-3h): Fase 0 - Pre-Setup, backups, decisiones
+├── Martes-Miércoles (6-8h): Fase 1 - Setup Vite, CI/CD, testing
+├── Jueves-Viernes (8-10h): Fase 2 - Componentes shared y hooks
+└── Hito 1: ✅ CI/CD funcional, componentes base listos, tests running
 
-Semana 2: Módulos Críticos (I)
-├── Lunes-Martes (8h): Patterns module
-├── Miércoles-Jueves (10h): Planning module
-├── Viernes (6h): Testing básico
-└── Hito 2: ✅ Patrones y Planning funcionales
+SEMANA 2: Autenticación y Patrones
+├── Lunes-Martes (5-7h): Fase 3 - Auth module con tests
+├── Miércoles-Jueves (7-9h): Fase 4 - Patterns module con tests
+├── Viernes (4h): Bug fixes y testing
+└── Hito 2: ✅ Auth y Patterns funcionales con cobertura > 80%
 
-Semana 3: Módulos Críticos (II) + Complementarios
-├── Lunes-Martes (8h): Calendar module
-├── Miércoles (6h): Financial dashboard
-├── Jueves (6h): Wishlist + Loans/Savings
-└── Hito 3: ✅ Todos los módulos funcionales
+SEMANA 3: Planificación y Calendario
+├── Lunes-Miércoles (10-14h): Fase 5 - Planning module (exhaustivo)
+├── Jueves-Viernes (9-11h): Fase 6 - Calendar module
+└── Hito 3: ✅ Planning y Calendar funcionales, tests > 75%
 
-Semana 4: Polish, Testing y Deploy
-├── Lunes-Martes (8h): Tests + Bug fixes
-├── Miércoles (4h): Performance optimization
-├── Jueves (4h): Documentación
-├── Viernes (4h): Deploy a producción
-└── Hito 4: ✅ En vivo y documentado
+SEMANA 4: Módulos Complementarios
+├── Lunes (8-10h): Fase 7 - Financial Dashboard
+├── Martes-Miércoles (7-9h): Fase 8 - Wishlist
+├── Jueves (5-7h): Fase 9 - Loans & Savings
+└── Hito 4: ✅ Todos los módulos presentes y funcionales
+
+SEMANA 5: Testing Integral, Deploy
+├── Lunes-Martes (10-12h): Fase 10 - Testing integral + performance
+├── Miércoles (4-6h): Fase 11 - Data migration + user comm
+├── Jueves-Viernes (5-7h): Fase 12 - Deployment + monitoring
+└── Hito 5: ✅ EN VIVO, monitoreado, documentado, rollback testeado
 ```
+
+**Tiempo Total:** 86-113 horas
+**Duración:** 4-5 semanas (si es full-time developer)
 
 ### 🎯 Hitos Principales
 
-| Hito | Semana | Entregables | Validación |
+| Hito | Cuándo | Entregables | Validación |
 |------|--------|-------------|-----------|
-| **Setup Base** | 1 | Proyecto Vite, React 18, TS, Zustand | `npm run dev` funciona |
-| **Auth + UI** | 1 | Login, Register, Componentes Shared | Login exitoso |
-| **Patterns & Planning** | 2 | CRUD patrones, dashboard planning | Crear patrón y objetivo |
-| **Calendar & Financial** | 3 | Calendario, dashboard financiero | Ver movimientos |
-| **Wishlist & Loans** | 3 | Wishlist, préstamos, ahorros | Todos funcionales |
-| **Testing & Docs** | 4 | Tests, Docs completa, DevGuide | 70% coverage |
-| **Production Ready** | 4 | Deploy, Monitoring, Changelog | En vivo y estable |
+| **Setup Base** | Fin Sem 1 | Proyecto Vite, React 18, TS, CI/CD, Sentry | `npm run dev` + Tests passing |
+| **Auth + Componentes** | Fin Sem 1 | Login, Register, Shared components, tests | Login exitoso + 80% coverage |
+| **Auth + Patrones** | Fin Sem 2 | CRUD patrones, auth funcional | Crear/editar/borrar patrones |
+| **Planning + Calendar** | Fin Sem 3 | Planning dashboard, calendario, tests | Ver movimientos en calendario |
+| **Todos los módulos** | Fin Sem 4 | Wishlist, Financial, Loans, Savings | Todas features presentes |
+| **Testing + Optim** | Fin Sem 5 | Tests integral, performance, docs | > 80% coverage, Lighthouse > 85 |
+| **Production Ready** | Fin Sem 5 | Deploy, Monitoring, Rollback tested | ✅ En vivo y estable |
 
 ---
 
-## 13. Checklist de Ejecución
+## 14. Checklist de Ejecución (REVISADO)
+
+### Fase 0: Pre-Setup (CRÍTICA)
+
+- [ ] Crear rama `feat/react-migration`
+- [ ] Backup completo de código y base de datos
+- [ ] Documentar decisiones tecnológicas
+- [ ] Crear ROLLBACK PLAN document
+- [ ] Setup Sentry account
+- [ ] Crear GitHub issue tracker
 
 ### Fase 1: Setup
 
-- [ ] Crear nuevo repo (o rama feature)
+- [ ] Crear nuevo repo / rama
 - [ ] `npm create vite@latest -- --template react-ts`
 - [ ] Instalar dependencias core
 - [ ] Configurar TypeScript (tsconfig.json)
@@ -1380,6 +1772,10 @@ Semana 4: Polish, Testing y Deploy
 - [ ] Configurar ESLint y Prettier
 - [ ] Crear estructura de directorios
 - [ ] Configurar Zustand
+- [ ] **Setup Vitest + RTL**
+- [ ] **Configurar GitHub Actions**
+- [ ] **Configurar Sentry**
+- [ ] **Setup husky + lint-staged**
 - [ ] Primer commit
 
 ### Fase 2: Componentes Base
@@ -1388,6 +1784,7 @@ Semana 4: Polish, Testing y Deploy
 - [ ] Crear Header y Navigation
 - [ ] Crear AppLayout wrapper
 - [ ] Crear custom hooks (useSupabase, useCurrency, etc.)
+- [ ] **Tests para cada componente (80%+ coverage)**
 - [ ] Crear tipos TypeScript globales
 - [ ] Crear constants (currencies, frequencies)
 - [ ] Crear utilidades (formatting, validation, etc.)
@@ -1400,88 +1797,139 @@ Semana 4: Polish, Testing y Deploy
 - [ ] Migrar RegisterForm.tsx
 - [ ] Migrar RecoveryForm.tsx
 - [ ] Crear ProtectedRoute
-- [ ] Testing básico de auth
+- [ ] **Tests de auth (85%+ coverage)**
 - [ ] Persistencia de sesión
 
-### Fase 4-8: Módulos (repetir para cada uno)
+### Fases 4-9: Módulos (repetir para cada uno)
 
 - [ ] Crear store
 - [ ] Crear service
 - [ ] Crear custom hook
 - [ ] Crear UI components
 - [ ] Integrar TanStack Query
-- [ ] Testing
+- [ ] **Tests (70-80% coverage)**
 - [ ] Documentación inline
 
-### Fase 9-12: Finalización
+### Fase 10: Testing Integral
 
-- [ ] Testing suite completa
+- [ ] Tests e2e críticos
+- [ ] Tests de integración Supabase
+- [ ] Tests de regresión
 - [ ] Performance optimization
-- [ ] Documentación README, SETUP.md, etc.
-- [ ] Cleanup archivos viejos
-- [ ] CI/CD setup
+- [ ] Profiling y bundle analysis
+- [ ] Accessibility testing
+
+### Fase 11: Migration & User Comm
+
+- [ ] Backups seguros
+- [ ] **User communication plan**
+- [ ] Data integrity validation
+- [ ] Rollback test
+- [ ] Updated CHANGELOG
+
+### Fase 12: Deployment
+
+- [ ] Build production
 - [ ] Deploy a staging
-- [ ] Deploy a producción
-- [ ] Monitoreo
+- [ ] Smoke testing
+- [ ] **Deploy a producción**
+- [ ] **Monitoreo en vivo**
+- [ ] **Documentación completa**
+- [ ] **Training para team**
 
 ---
 
-## 📚 Documentación Adicional Requerida
+## 15. Documentación Requerida (REVISADA)
 
-Crear después de setup:
+Crear después de cada fase:
 
+### Fase 1
 - [ ] **SETUP.md** - Instrucciones de instalación y desarrollo local
+- [ ] **README.md actualizado** - Overview del proyecto
+
+### Fase 3-9
 - [ ] **ARCHITECTURE.md** - Explicación de Feature-Sliced Design
+- [ ] **API.md** - Documentación de stores, hooks, services
+- [ ] **CONTRIBUTING.md** - Guía de contribución (code style, PR process)
+
+### Fase 10-12
 - [ ] **DEVELOPMENT.md** - Guía para desarrolladores
 - [ ] **TESTING.md** - Cómo escribir tests
 - [ ] **DEPLOYMENT.md** - Cómo deployar
-- [ ] **CONTRIBUTING.md** - Guía de contribución
-- [ ] **API.md** - Documentación de store + hooks
-- [ ] **TROUBLESHOOTING.md** - Problemas comunes
+- [ ] **TROUBLESHOOTING.md** - Problemas comunes y soluciones
+- [ ] **CHANGELOG.md** - Migration notes y cambios importantes
+- [ ] **INCIDENT_RESPONSE.md** - Cómo manejar errores en producción
 
 ---
 
-## 🚨 Riesgos y Mitigación
+## 🚨 Riesgos y Mitigación (ACTUALIZADO)
 
 | Riesgo | Probabilidad | Impacto | Mitigación |
 |--------|-------------|--------|-----------|
-| Supabase API changes | Baja | Alta | Monitorear changelogs |
-| Performance degradation | Media | Media | Profiling desde día 1 |
-| Type errors en runtime | Baja | Media | Strict TypeScript |
-| Regresiones en funcionalidad | Alta | Alta | Testing exhaustivo |
-| Breaking changes en deps | Baja | Media | Lockfile.lock |
-| Scope creep | Media | Alta | Strict checklist |
+| **Supabase API changes** | Baja | Alta | Monitorear changelogs, pin versions |
+| **Performance degradation** | Media | Media | Profiling desde Fase 1, Lighthouse CI |
+| **Type errors en runtime** | Baja | Media | Strict TypeScript, tests |
+| **Regresiones en funcionalidad** | Media | Alta | Testing exhaustivo, regression tests |
+| **Breaking changes en deps** | Baja | Media | Lockfile.lock, automated updates con Renovate |
+| **Scope creep** | Media | Alta | Strict checklist, feature gates |
+| **Data corruption durante migration** | Baja | Crítica | **Backups automáticos, validation tests** |
+| **Users stuck in old version** | Baja | Media | **User communication, gradual rollout** |
+| **Rollback failure** | Baja | Crítica | **Test rollback procedure pre-deploy** |
+| **Performance regression** | Media | Media | **Bundle analysis, Lighthouse CI target** |
 
 ---
 
-## 💡 Tips para Éxito
+## 💡 Tips para Éxito (REVISADO)
 
-1. **Migra módulo por módulo**, no todo a la vez
-2. **Mantén el código viejo** hasta que todo funcione
-3. **Escribe tests mientras migras**
-4. **No optimices prematuramente** - primero funciona, luego optimiza
-5. **Documenta mientras avanzas** - no dejes para el final
-6. **Usa React DevTools y TypeScript** - son tus mejores amigos
-7. **Commits pequeños y frecuentes** - facilita debugging
-8. **Haz code reviews** - aunque sea contigo mismo
-9. **Monitorea en producción** - Sentry es tu amigo
-10. **Comunica progreso** - mantén stakeholders informados
-
----
-
-## 📞 Próximos Pasos
-
-1. **Revisar este documento** - asegúrate que alineamos en visión
-2. **Confirmar stack tecnológico** - ¿Zustand o Redux? ¿Shadcn o MUI?
-3. **Crear repositorio** - nueva rama o nuevo repo
-4. **Setup inicial** - seguir Fase 1 del plan
-5. **Asignar recursos** - cuánta gente, cuánto tiempo
-6. **Monitorear progreso** - reviews semanales
+1. **Migra módulo por módulo**, no todo a la vez ✅
+2. **Mantén el código viejo** hasta que todo funcione ✅
+3. **Escribe tests mientras migras** (no después) ✅
+4. **No optimices prematuramente** - primero funciona, luego optimiza ✅
+5. **Documenta mientras avanzas** - no dejes para el final ✅
+6. **Usa React DevTools y TypeScript** - son tus mejores amigos ✅
+7. **Commits pequeños y frecuentes** - facilita debugging ✅
+8. **Haz code reviews** - aunque sea contigo mismo ✅
+9. **Monitorea en producción** - Sentry es tu amigo ✅
+10. **Comunica progreso** - mantén stakeholders informados ✅
+11. **Test rollback procedure antes de deploy** - vital ✅
+12. **Mide performance desde el inicio** - Lighthouse CI ✅
+13. **User testing antes de release** - 5-10 usuarios reales ✅
+14. **Database backups en cada fase** - mejor prevenir que lamentar ✅
+15. **Plan comunicación con usuarios** - downtime, cambios UX ✅
 
 ---
 
-**Documento Creado:** 4 de enero de 2026  
-**Estimado Total:** 40-60 horas  
-**Timeline Recomendado:** 3-4 semanas  
-**Status:** 🟡 En Preparación - Esperando confirmación
+## 📞 Próximos Pasos INMEDIATOS
+
+### Ahora (5 enero 2026):
+1. ✅ **Revisar y aprobar este documento actualizado**
+2. ✅ **Confirmar stack tecnológico** (decisiones en sección 5)
+3. ✅ **Asignar responsables** para cada fase
+4. ✅ **Crear GitHub project board** para tracking
+5. ✅ **Crear Sentry + Vercel accounts** si no existen
+6. ✅ **Documentar ROLLBACK PLAN** específico para tu setup
+
+### Día 2 (6 enero 2026):
+1. **Crear rama git** `feat/react-migration`
+2. **Hacer backups** de código y base de datos
+3. **Comenzar Fase 0** - Pre-setup y decisiones
+
+### Semana 1:
+1. **Completar Fase 0** - Pre-setup
+2. **Completar Fase 1** - Setup Vite + CI/CD
+3. **Empezar Fase 2** - Componentes shared
+
+---
+
+**Documento Actualizado:** 5 de enero de 2026  
+**Estimado Total Revisado:** 86-113 horas (aumentado 115% desde original)  
+**Timeline Revisado:** 4-5 semanas (full-time developer)  
+**Status:** 🟢 Listo para Ejecución - Esperando aprobación de stack  
+**Cambios Principales:**
+- ✅ Estimaciones aumentadas (testing integrado desde inicio)
+- ✅ CI/CD y monitoring desde Fase 1
+- ✅ Rollback plan documentado
+- ✅ User communication plan incluido
+- ✅ Pre-deployment checklist exhaustivo
+- ✅ Decisiones tecnológicas clarificadas pre-inicio
 

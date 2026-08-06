@@ -5,8 +5,9 @@ import com.calendarfinance.app.data.model.BalanceSummary
 import com.calendarfinance.app.data.model.MonthlyBalance
 import com.calendarfinance.app.data.model.CreateMovementRequest
 import com.calendarfinance.app.data.remote.SupabaseClientProvider
-import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.Columns
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -14,25 +15,21 @@ class MovementRepository {
 
     private val db get() = SupabaseClientProvider.client
 
-    suspend fun getMovementsByMonth(userId: String, yearMonth: String): List<Movement> = withContext(Dispatchers.IO) {
+    suspend fun getMonthMovements(userId: String, yearMonth: String): List<Movement> = withContext(Dispatchers.IO) {
         val startDate = "$yearMonth-01"
-        val endDate = if (yearMonth.endsWith("12")) {
-            "${yearMonth.substring(0, 4).toInt() + 1}-01-01"
-        } else {
-            val month = yearMonth.substring(5).toInt()
-            "${yearMonth.substring(0, 5)}${(month + 1).toString().padStart(2, '0')}-01"
-        }
-        db.postgrest["movements"].select {
+        val (year, month) = yearMonth.split("-").map { it.toInt() }
+        val nextMonth = if (month == 12) "${year + 1}-01-01" else "${year}-${(month + 1).toString().padStart(2, '0')}-01"
+        db.from("movements").select {
             filter { eq("user_id", userId) }
             filter { gte("date", startDate) }
-            filter { lt("date", endDate) }
+            filter { lt("date", nextMonth) }
             filter { eq("archived", false) }
             order("date", Order.ASCENDING)
         }.decodeList<Movement>()
     }
 
     suspend fun createMovement(userId: String, request: CreateMovementRequest): Movement = withContext(Dispatchers.IO) {
-        db.postgrest["movements"].insert(mapOf(
+        db.from("movements").insert(mapOf(
             "user_id" to userId,
             "type" to request.type,
             "title" to request.title,
@@ -50,7 +47,7 @@ class MovementRepository {
     }
 
     suspend fun updateMovement(movement: Movement): Movement = withContext(Dispatchers.IO) {
-        db.postgrest["movements"].update({
+        db.from("movements").update({
             set("title", movement.title)
             set("description", movement.description)
             set("category", movement.category)
@@ -63,35 +60,22 @@ class MovementRepository {
     }
 
     suspend fun deleteMovement(id: String) = withContext(Dispatchers.IO) {
-        db.postgrest["movements"].update({ set("archived", true) }) {
+        db.from("movements").update({ set("archived", true) }) {
             filter { eq("id", id) }
         }
     }
 
     suspend fun getBalance(userId: String): BalanceSummary = withContext(Dispatchers.IO) {
-        db.postgrest["confirmed_balance_summary"].select {
+        db.from("confirmed_balance_summary").select {
             filter { eq("user_id", userId) }
         }.decodeSingle<BalanceSummary>()
     }
 
     suspend fun getMonthlyBalances(userId: String, limit: Int = 6): List<MonthlyBalance> = withContext(Dispatchers.IO) {
-        db.postgrest["monthly_confirmed_balance"].select {
+        db.from("monthly_confirmed_balance").select {
             filter { eq("user_id", userId) }
             order("month", Order.DESCENDING)
             limit(limit.toLong())
         }.decodeList<MonthlyBalance>()
-    }
-
-    suspend fun getMonthMovements(userId: String, yearMonth: String): List<Movement> = withContext(Dispatchers.IO) {
-        val startDate = "$yearMonth-01"
-        val (year, month) = yearMonth.split("-").map { it.toInt() }
-        val nextMonth = if (month == 12) "${year + 1}-01-01" else "${year}-${(month + 1).toString().padStart(2, '0')}-01"
-        db.postgrest["movements"].select {
-            filter { eq("user_id", userId) }
-            filter { gte("date", startDate) }
-            filter { lt("date", nextMonth) }
-            filter { eq("archived", false) }
-            order("date", Order.ASCENDING)
-        }.decodeList<Movement>()
     }
 }

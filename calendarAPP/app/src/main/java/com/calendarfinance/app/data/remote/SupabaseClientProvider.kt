@@ -2,7 +2,7 @@ package com.calendarfinance.app.data.remote
 
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.gotrue.GoTrue
+import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.postgrest.Postgrest
 
 object SupabaseClientProvider {
@@ -12,7 +12,7 @@ object SupabaseClientProvider {
 
     val client: SupabaseClient by lazy {
         createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY) {
-            install(GoTrue)
+            install(Auth)
             install(Postgrest)
         }
     }

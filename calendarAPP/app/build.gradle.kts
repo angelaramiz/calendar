@@ -12,8 +12,8 @@ android {
         applicationId = "com.calendarfinance.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 8
+        versionName = "1.0.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -35,14 +35,14 @@ android {
 
     buildFeatures { compose = true }
 
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.8" }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
 
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
 dependencies {
     // Compose BOM
-    val composeBom = platform("androidx.compose:compose-bom:2024.01.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
 
     // Compose UI
@@ -53,22 +53,22 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
 
     // Activity & Lifecycle
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
 
     // Navigation
-    implementation("androidx.navigation:navigation-compose:2.7.6")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // Supabase
-    implementation("io.github.jan-tennert.supabase:postgrest-kt:2.2.1")
-    implementation("io.github.jan-tennert.supabase:gotrue-kt:2.2.1")
-    implementation("io.github.jan-tennert.supabase:realtime-kt:2.2.1")
+    // Supabase (v3.x con auth-kt)
+    implementation(platform("io.github.jan-tennert.supabase:bom:3.7.0"))
+    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:postgrest-kt")
 
-    // Ktor (Supabase dependency)
-    implementation("io.ktor:ktor-client-android:2.3.7")
-    implementation("io.ktor:ktor-client-content-negotiation:2.3.7")
-    implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.7")
+    // Ktor 3.x (requerido por Supabase v3)
+    implementation("io.ktor:ktor-client-android:3.0.3")
+    implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
 
     // OkHttp (OTA download)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

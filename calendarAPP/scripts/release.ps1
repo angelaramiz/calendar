@@ -1,4 +1,4 @@
-# release.ps1 — Release simplificado: actualizar version en Supabase
+# release.ps1 — Release completo: version + git push
 # Uso: .\release.ps1
 # Con build: .\release.ps1 -Build
 
@@ -9,6 +9,7 @@ param(
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RootDir = Split-Path -Parent $ScriptDir
 $AppDir = Join-Path $ScriptDir ".."
 $DbKey = "app_version_calendarfinance"
 $SupabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
@@ -24,7 +25,6 @@ function Get-CurrentVersion {
 }
 
 $current = Get-CurrentVersion
-
 if ($VersionCode -eq 0) { $VersionCode = $current.versionCode + 1 }
 if ($VersionName -eq "") {
     $parts = $current.versionName -split '\.'
@@ -34,6 +34,7 @@ if ($VersionName -eq "") {
 
 Write-Host ""
 Write-Host "RELEASE v$VersionName (code=$VersionCode)" -ForegroundColor Magenta
+Write-Host ""
 
 # Build (solo con -Build)
 if ($Build) {
@@ -48,22 +49,32 @@ if ($Build) {
 }
 
 # Actualizar Supabase
-Write-Host "ACTUALIZANDO SUPABASE..." -ForegroundColor Cyan
+Write-Host "SUPABASE..." -ForegroundColor Cyan
 
 $apkUrl = "https://calendar-04yk.onrender.com/calendarfinance.apk"
 $valor = @{ versionCode = $VersionCode; versionName = $VersionName; apkUrl = $apkUrl } | ConvertTo-Json -Compress
 $body = @{ valor = $valor } | ConvertTo-Json
-
-$headers = @{
-    "apikey" = $AnonKey
-    "Authorization" = "Bearer $AnonKey"
-    "Content-Type" = "application/json"
-    "Prefer" = "return=minimal"
-}
+$headers = @{ "apikey"=$AnonKey; "Authorization"="Bearer $AnonKey"; "Content-Type"="application/json"; "Prefer"="return=minimal" }
 
 try {
     Invoke-RestMethod -Uri "$SupabaseUrl/rest/v1/app_versions?clave=eq.$DbKey" -Method PATCH -Headers $headers -Body $body | Out-Null
-    Write-Host "OK: v$VersionName (code=$VersionCode)" -ForegroundColor Green
+    Write-Host "OK: v$VersionName" -ForegroundColor Green
 } catch {
     Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
 }
+
+# Git push
+Write-Host "GIT PUSH..." -ForegroundColor Cyan
+Push-Location $RootDir
+try {
+    git add -A 2>&1 | Out-Null
+    $commitMsg = "release: v$VersionName (code=$VersionCode)"
+    git commit -m $commitMsg 2>&1 | Out-Null
+    git push 2>&1 | Out-Null
+    Write-Host "OK" -ForegroundColor Green
+} catch {
+    Write-Host "SIN CAMBIOS O ERROR" -ForegroundColor Yellow
+} finally { Pop-Location }
+
+Write-Host ""
+Write-Host "LISTO v$VersionName" -ForegroundColor Green

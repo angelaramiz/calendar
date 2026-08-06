@@ -4,6 +4,7 @@ import com.calendarfinance.app.data.model.IncomePattern
 import com.calendarfinance.app.data.model.ExpensePattern
 import com.calendarfinance.app.data.model.CreatePatternRequest
 import com.calendarfinance.app.data.remote.SupabaseClientProvider
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -13,7 +14,7 @@ class PatternRepository {
     private val db get() = SupabaseClientProvider.client
 
     suspend fun getIncomePatterns(userId: String): List<IncomePattern> = withContext(Dispatchers.IO) {
-        db.from("income_patterns").select {
+        db.postgrest["income_patterns"].select {
             filter { eq("user_id", userId) }
             filter { eq("active", true) }
             order("created_at", Order.ASCENDING)
@@ -21,7 +22,7 @@ class PatternRepository {
     }
 
     suspend fun getExpensePatterns(userId: String): List<ExpensePattern> = withContext(Dispatchers.IO) {
-        db.from("expense_patterns").select {
+        db.postgrest["expense_patterns"].select {
             filter { eq("user_id", userId) }
             filter { eq("active", true) }
             order("created_at", Order.ASCENDING)
@@ -29,7 +30,7 @@ class PatternRepository {
     }
 
     suspend fun createIncomePattern(userId: String, request: CreatePatternRequest): IncomePattern = withContext(Dispatchers.IO) {
-        db.from("income_patterns").insert(mapOf(
+        db.postgrest["income_patterns"].insert(mapOf(
             "user_id" to userId,
             "name" to request.name,
             "description" to request.description,
@@ -46,7 +47,7 @@ class PatternRepository {
     }
 
     suspend fun createExpensePattern(userId: String, request: CreatePatternRequest): ExpensePattern = withContext(Dispatchers.IO) {
-        db.from("expense_patterns").insert(mapOf(
+        db.postgrest["expense_patterns"].insert(mapOf(
             "user_id" to userId,
             "name" to request.name,
             "description" to request.description,
@@ -64,7 +65,7 @@ class PatternRepository {
     }
 
     suspend fun updateIncomePattern(pattern: IncomePattern): IncomePattern = withContext(Dispatchers.IO) {
-        db.from("income_patterns").update({
+        db.postgrest["income_patterns"].update({
             set("name", pattern.name)
             set("description", pattern.description)
             set("category", pattern.category)
@@ -80,7 +81,7 @@ class PatternRepository {
     }
 
     suspend fun updateExpensePattern(pattern: ExpensePattern): ExpensePattern = withContext(Dispatchers.IO) {
-        db.from("expense_patterns").update({
+        db.postgrest["expense_patterns"].update({
             set("name", pattern.name)
             set("description", pattern.description)
             set("category", pattern.category)
@@ -97,7 +98,7 @@ class PatternRepository {
     }
 
     suspend fun deactivatePattern(table: String, id: String) = withContext(Dispatchers.IO) {
-        db.from(table).update({ set("active", false) }) {
+        db.postgrest[table].update({ set("active", false) }) {
             filter { eq("id", id) }
         }
     }

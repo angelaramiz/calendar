@@ -8,6 +8,7 @@ import android.os.Environment
 import androidx.core.content.FileProvider
 import com.calendarfinance.app.data.model.AppVersionInfo
 import com.calendarfinance.app.data.remote.SupabaseClientProvider
+import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -41,7 +42,7 @@ class OtaUpdateRepository {
         try {
             val currentVersion = getCurrentVersionCode(context)
 
-            val result = db.from("app_versions").select {
+            val result = db.postgrest["app_versions"].select {
                 filter { eq("clave", "app_version_calendarfinance") }
                 limit(1L)
             }.decodeSingle<Map<String, Any>>()

@@ -1,134 +1,89 @@
-# release.ps1 — Pipeline unificado: build release + actualizar DB Supabase
-# Uso: .\release.ps1 -VersionCode 2 -VersionName "1.0.1" -SupabaseKey "eyJ..."
+# release.ps1 — Release simplificado: build + actualizar Supabase
+# Uso simple: .\release.ps1
+# Uso con args: .\release.ps1 -VersionCode 2 -VersionName "1.0.1"
 
 param(
-    [Parameter(Mandatory=$true)]
-    [int]$VersionCode,
-
-    [Parameter(Mandatory=$true)]
-    [string]$VersionName,
-
-    [string]$BuildType = "release",
+    [int]$VersionCode = 0,
+    [string]$VersionName = "",
     [switch]$SkipBuild,
-
-    [string]$KeystorePath = "",
-    [string]$KeystorePassword = "",
-    [string]$KeyAlias = "",
-    [string]$KeyPassword = "",
-
-    [string]$ApkUrl = "",
-    [string]$SupabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co",
     [string]$SupabaseKey = ""
 )
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = Join-Path $ScriptDir ".."
 $DbKey = "app_version_calendarfinance"
-$ApkName = "calendarfinance.apk"
-$failed = $false
+$SupabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
+
+# ═══ AUTO-LEER VERSION ACTUAL DE SUPABASE ═══
+function Get-CurrentVersion {
+    try {
+        $resp = Invoke-RestMethod -Uri "$SupabaseUrl/rest/v1/app_versions?clave=eq.$DbKey&select=valor" -Headers @{"apikey"="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVndGx4bnJ3Zmlwb2N0Y2t1dmZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4Mzk4MDQsImV4cCI6MjA1MTQxNTgwNH0.A5W4rRxYDxyPqFh7a4FX_ejniQl1nBNf1hMQuf7vjm4"} -Method GET
+        if ($resp -and $resp.Count -gt 0) {
+            return $resp[0].valor
+        }
+    } catch {}
+    return @{ versionCode = 0; versionName = "0.0.0" }
+}
+
+# ═══ CONFIGURAR VERSION ═══
+$current = Get-CurrentVersion
+
+if ($VersionCode -eq 0) {
+    $VersionCode = $current.versionCode + 1
+}
+if ($VersionName -eq "") {
+    $parts = $current.versionName -split '\.'
+    if ($parts.Count -ge 3) {
+        $parts[2] = [int]$parts[2] + 1
+        $VersionName = $parts -join '.'
+    } else {
+        $VersionName = "1.0.$VersionCode"
+    }
+}
 
 Write-Host ""
-Write-Host "═══════════════════════════════════════════════" -ForegroundColor Magenta
+Write-Host "═══════════════════════════════════════" -ForegroundColor Magenta
 Write-Host "  CALENDARFINANCE RELEASE" -ForegroundColor Magenta
 Write-Host "  v$VersionName (code=$VersionCode)" -ForegroundColor Magenta
-Write-Host "═══════════════════════════════════════════════" -ForegroundColor Magenta
+Write-Host "═══════════════════════════════════════" -ForegroundColor Magenta
 
-# ═══ STEP 1: BUILD ═══
+# ═══ BUILD ═══
 if (-not $SkipBuild) {
     Write-Host ""
-    Write-Host "═══ BUILD ═══" -ForegroundColor Cyan
-
-    if (-not (Test-Path $AppDir)) {
-        Write-Host "  ERROR: Directorio no encontrado: $AppDir" -ForegroundColor Red
-        exit 1
-    }
-
+    Write-Host "BUILD..." -ForegroundColor Cyan
     Push-Location $AppDir
     try {
-        Write-Host "  Limpiando builds anteriores..." -ForegroundColor Gray
         & ./gradlew clean 2>&1 | Out-Null
-
-        $task = if ($BuildType -eq "debug") { "assembleDebug" } else { "assembleRelease" }
-        Write-Host "  Compilando $task..." -ForegroundColor Yellow
-
-        $gradleArgs = @($task)
-        if ($BuildType -eq "release" -and $KeystorePath) {
-            Write-Host "  Firmando con keystore: $KeystorePath" -ForegroundColor Gray
-            $gradleArgs += "-Pandroid.injected.signing.store.file=$KeystorePath"
-            $gradleArgs += "-Pandroid.injected.signing.store.password=$KeystorePassword"
-            $gradleArgs += "-Pandroid.injected.signing.key.alias=$KeyAlias"
-            $gradleArgs += "-Pandroid.injected.signing.key.password=$KeyPassword"
-        }
-
-        & ./gradlew @gradleArgs
-
+        & ./gradlew assembleRelease
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  BUILD FALLO" -ForegroundColor Red
-            $failed = $true
-        } else {
-            $apkDir = "app/build/outputs/apk/$BuildType"
-            $apk = Get-ChildItem -Path "$apkDir/*.apk" | Select-Object -First 1
-            if ($apk) {
-                $sizeMB = [math]::Round($apk.Length / 1MB, 2)
-                Write-Host "  APK generado: $($apk.Name) ($sizeMB MB)" -ForegroundColor Green
-            } else {
-                Write-Host "  APK no encontrado en $apkDir" -ForegroundColor Red
-                $failed = $true
-            }
+            Write-Host "BUILD FALLO" -ForegroundColor Red
+            exit 1
         }
-    } finally {
-        Pop-Location
-    }
+        Write-Host "BUILD OK" -ForegroundColor Green
+    } finally { Pop-Location }
 }
 
-# ═══ STEP 2: UPDATE DB ═══
-if (-not $failed) {
-    Write-Host ""
-    Write-Host "═══ UPDATE DB ═══" -ForegroundColor Cyan
-
-    if (-not $SupabaseKey) {
-        Write-Host "  Sin SupabaseKey. Saltando actualizacion DB." -ForegroundColor Yellow
-        Write-Host "  Ejecuta manualmente en Supabase SQL Editor:" -ForegroundColor Gray
-        Write-Host "  UPDATE app_versions SET valor = '{\"versionCode\": $VersionCode, \"versionName\": \"$VersionName\", \"apkUrl\": \"$ApkUrl\"}'::jsonb WHERE clave = '$DbKey';" -ForegroundColor Gray
-    } else {
-        $dbUrl = if ($ApkUrl) { $ApkUrl } else { "/public/$ApkName" }
-        $valor = @{
-            versionCode = $VersionCode
-            versionName = $VersionName
-            apkUrl = $dbUrl
-        } | ConvertTo-Json -Compress
-
-        try {
-            $patchUrl = "$SupabaseUrl/rest/v1/app_versions?clave=eq.$DbKey"
-            Invoke-RestMethod -Uri $patchUrl `
-                -Method PATCH `
-                -Headers @{
-                    "apikey" = $SupabaseKey
-                    "Authorization" = "Bearer $SupabaseKey"
-                    "Content-Type" = "application/json"
-                    "Prefer" = "return=minimal"
-                } `
-                -Body (@{ valor = $valor } | ConvertTo-Json) | Out-Null
-
-            Write-Host "  DB actualizada: $DbKey = v$VersionName (code=$VersionCode)" -ForegroundColor Green
-        } catch {
-            Write-Host "  ERROR DB: $($_.Exception.Message)" -ForegroundColor Red
-            $failed = $true
-        }
-    }
-}
-
-# ═══ RESUMEN ═══
+# ═══ ACTUALIZAR SUPABASE ═══
 Write-Host ""
-Write-Host "═══════════════════════════════════════════════" -ForegroundColor $(if ($failed) { "Red" } else { "Green" })
-Write-Host "  RESULTADO: $(if ($failed) { 'FALLIDO' } else { 'COMPLETADO' })" -ForegroundColor $(if ($failed) { "Red" } else { "Green" })
-if (-not $failed) {
-    Write-Host "  Version: $VersionName (code=$VersionCode)" -ForegroundColor Gray
-    $apkPath = Join-Path $AppDir "app\build\outputs\apk\$BuildType\$ApkName"
-    Write-Host "  APK: $apkPath" -ForegroundColor Gray
-    Write-Host "  DB key: $DbKey" -ForegroundColor Gray
-}
-Write-Host "═══════════════════════════════════════════════" -ForegroundColor $(if ($failed) { "Red" } else { "Green" })
-Write-Host ""
+Write-Host "ACTUALIZANDO SUPABASE..." -ForegroundColor Cyan
 
-exit $(if ($failed) { 1 } else { 0 })
+$apkUrl = "https://calendar-04yk.onrender.com/calendarfinance.apk"
+$valor = @{ versionCode = $VersionCode; versionName = $VersionName; apkUrl = $apkUrl } | ConvertTo-Json -Compress
+$body = @{ valor = $valor } | ConvertTo-Json
+
+$headers = @{
+    "apikey" = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVndGx4bnJ3Zmlwb2N0Y2t1dmZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4Mzk4MDQsImV4cCI6MjA1MTQxNTgwNH0.A5W4rRxYDxyPqFh7a4FX_ejniQl1nBNf1hMQuf7vjm4"
+    "Authorization" = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVndGx4bnJ3Zmlwb2N0Y2t1dmZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4Mzk4MDQsImV4cCI6MjA1MTQxNTgwNH0.A5W4rRxYDxyPqFh7a4FX_ejniQl1nBNf1hMQuf7vjm4"
+    "Content-Type" = "application/json"
+    "Prefer" = "return=minimal"
+}
+
+try {
+    Invoke-RestMethod -Uri "$SupabaseUrl/rest/v1/app_versions?clave=eq.$DbKey" -Method PATCH -Headers $headers -Body $body | Out-Null
+    Write-Host "SUPABASE OK: v$VersionName (code=$VersionCode)" -ForegroundColor Green
+} catch {
+    Write-Host "SUPABASE ERROR: $($_.Exception.Message)" -ForegroundColor Red
+}
+
+Write-Host ""
+Write-Host "LISTO v$VersionName" -ForegroundColor Green

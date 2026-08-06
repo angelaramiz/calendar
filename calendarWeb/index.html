@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 
 <head>
@@ -94,12 +94,15 @@
                     .select('valor')
                     .eq('clave', 'app_version_calendarfinance')
                     .single();
-                if (data?.valor?.apkUrl) {
-                    const apkUrl = data.valor.apkUrl;
-                    const vName = data.valor.versionName || '';
-                    document.getElementById('download-apk-btn').href = apkUrl;
-                    document.getElementById('download-version').textContent = vName ? `v${vName}` : '';
-                    document.getElementById('app-download').style.display = 'block';
+                if (data?.valor) {
+                    const valObj = typeof data.valor === 'string' ? JSON.parse(data.valor) : data.valor;
+                    if (valObj?.apkUrl) {
+                        const apkUrl = valObj.apkUrl;
+                        const vName = valObj.versionName || '';
+                        document.getElementById('download-apk-btn').href = apkUrl;
+                        document.getElementById('download-version').textContent = vName ? `v${vName}` : '';
+                        document.getElementById('app-download').style.display = 'block';
+                    }
                 }
             } catch (e) { /* sin APK disponible */ }
         }

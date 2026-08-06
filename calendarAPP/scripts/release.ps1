@@ -24,11 +24,12 @@ $ScriptDir = $PSScriptRoot
 $ProjectDir = Split-Path -Parent $ScriptDir
 $RepoDir = Split-Path -Parent $ProjectDir
 $gradlePath = Join-Path $ProjectDir "app\build.gradle.kts"
-$publicApkPath = "public\calendarfinance.apk"
+$publicApkPath = "calendarWeb\calendarfinance.apk"
 $supabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
 $supabaseKey = "sb_publishable_KcdYZchjzzpizgM4nhTw8w_Bd6w6-d1"
 $dbKey = "app_version_calendarfinance"
 $renderUrl = "https://calendar-04yk.onrender.com"
+$renderDeployHook = "https://api.render.com/deploy/srv-d9q487vqj5pc738dai7g?key=HfocboWhh1E"
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "   CALENDARFINANCE: PUBLICADOR DE ACTUALIZACIONES OTA" -ForegroundColor Cyan
@@ -66,8 +67,8 @@ if ($versionParts.Length -eq 3) {
 $targetVersion = $Version
 if ([string]::IsNullOrWhiteSpace($targetVersion)) {
     Write-Host "Nueva version [Sugerida: $suggestedVersion] (Enter para usar): " -NoNewline -ForegroundColor Cyan
-    $input = Read-Host
-    $targetVersion = if ([string]::IsNullOrWhiteSpace($input)) { $suggestedVersion } else { $input.Trim() }
+    $userInput = Read-Host
+    $targetVersion = if ([string]::IsNullOrWhiteSpace($userInput)) { $suggestedVersion } else { $userInput.Trim() }
 }
 
 Write-Host "Estableciendo v$targetVersion (code=$newCode)..." -ForegroundColor Cyan
@@ -112,7 +113,7 @@ if (-not $SkipBuild) {
 
     # Copiar APK
     $apkBuildPath = Join-Path $ProjectDir "app\build\outputs\apk\release\app-release.apk"
-    if (-not (Test-Path "public")) { New-Item -ItemType Directory -Force -Path "public" | Out-Null }
+    if (-not (Test-Path "calendarWeb")) { New-Item -ItemType Directory -Force -Path "calendarWeb" | Out-Null }
 
     if (Test-Path $apkBuildPath) {
         Copy-Item $apkBuildPath $publicApkPath -Force
@@ -125,40 +126,35 @@ if (-not $SkipBuild) {
     Write-Host "`nBuild omitido" -ForegroundColor Yellow
 }
 
+# 5.5 Generar version.json (antes del push para que se incluya en el commit)
+$versionJsonPath = "calendarWeb\version.json"
+$versionJson = @{ versionCode = $newCode; versionName = $targetVersion } | ConvertTo-Json -Compress
+Set-Content -Path $versionJsonPath -Value $versionJson -Encoding ASCII -Force
+Write-Host "version.json generado: $versionJsonPath" -ForegroundColor Green
+
 # 5. Git Push
 Write-Host "`nGIT PUSH..." -ForegroundColor Cyan
 Push-Location $RepoDir
 git add -f $gradlePath
-if (Test-Path $publicApkPath) { git add $publicApkPath }
-git add "public\version.json" 2>$null
+if (Test-Path $publicApkPath) { git add -f $publicApkPath }
+git add -f $versionJsonPath
 git commit -m "release: v$targetVersion (code=$newCode)" 2>&1 | Out-Null
 git push
 Pop-Location
 Write-Host "Git OK" -ForegroundColor Green
 
-# 6. Generar version.json
-$versionJsonPath = "public\version.json"
-$versionJson = @{ versionCode = $newCode; versionName = $targetVersion } | ConvertTo-Json
-Set-Content -Path $versionJsonPath -Value $versionJson -Force
-
-# 7. Actualizar Supabase
-Write-Host "`nSUPABASE..." -ForegroundColor Cyan
-
-$apkUrl = "$renderUrl/calendarfinance.apk"
-$valor = @{ versionCode = $newCode; versionName = $targetVersion; apkUrl = $apkUrl } | ConvertTo-Json -Compress
-$body = @{ valor = $valor } | ConvertTo-Json
-$headers = @{ "apikey"=$supabaseKey; "Authorization"="Bearer $supabaseKey"; "Content-Type"="application/json"; "Prefer"="return=minimal" }
-
+# 6b. Disparar deploy en Render
+Write-Host "`nRENDER DEPLOY..." -ForegroundColor Cyan
 try {
-    Invoke-RestMethod -Uri "$supabaseUrl/rest/v1/app_versions?clave=eq.$dbKey" -Method PATCH -Headers $headers -Body $body | Out-Null
-    Write-Host "OK: v$targetVersion (code=$newCode)" -ForegroundColor Green
+    $deployResp = Invoke-RestMethod -Uri $renderDeployHook -Method POST -TimeoutSec 15
+    Write-Host "Deploy disparado: $($deployResp.id)" -ForegroundColor Green
 } catch {
-    Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "WARN: No se pudo disparar el deploy hook: $($_.Exception.Message)" -ForegroundColor Yellow
 }
 
-# 8. Esperar Render (verificar version.json)
+# 7. Esperar Render (verificar version.json)
 Write-Host "`nESPERANDO RENDER..." -ForegroundColor Cyan
-$targetCheckUrl = "$renderUrl/public/version.json"
+$targetCheckUrl = "$renderUrl/version.json"
 $maxWait = 300
 $elapsed = 0
 $isLive = $false
@@ -169,14 +165,19 @@ while ($elapsed -lt $maxWait) {
     try {
         $resp = Invoke-WebRequest -Uri $targetCheckUrl -Method Get -TimeoutSec 8 -UseBasicParsing
         if ($resp.StatusCode -eq 200) {
-            $data = $resp.Content | ConvertFrom-Json
-            if ([int]$data.versionCode -eq $newCode) {
+            $content = $resp.Content -replace '^\xEF\xBB\xBF', '' -replace '^\?', ''
+            $data = $content | ConvertFrom-Json
+            $liveCode = [int]$data.versionCode
+            Write-Host "  Render versionCode=$liveCode (esperando $newCode)" -ForegroundColor Gray
+            if ($liveCode -eq $newCode) {
                 $isLive = $true
                 Write-Host "RENDER LIVE: v$targetVersion (code=$newCode)" -ForegroundColor Green
                 break
             }
         }
-    } catch {}
+    } catch {
+        Write-Host "  Sin respuesta: $($_.Exception.Message)" -ForegroundColor DarkGray
+    }
 
     $elapsed += 10
     Write-Host "Esperando... ($elapsed/${maxWait}s)" -ForegroundColor Gray
@@ -187,6 +188,25 @@ if (-not $isLive) {
     Write-Host "Render no confirmo, pero el deploy puede ser exitoso" -ForegroundColor Yellow
 }
 
+# 8. Actualizar Supabase (solo si Render esta live)
+if ($isLive) {
+    Write-Host "`nSUPABASE..." -ForegroundColor Cyan
+    $apkUrl = "$renderUrl/calendarfinance.apk"
+    $valor = @{ versionCode = $newCode; versionName = $targetVersion; apkUrl = $apkUrl } | ConvertTo-Json -Compress
+    $body = @{ valor = $valor } | ConvertTo-Json
+    $headers = @{ "apikey"=$supabaseKey; "Authorization"="Bearer $supabaseKey"; "Content-Type"="application/json"; "Prefer"="return=minimal" }
+    try {
+        Invoke-RestMethod -Uri "$supabaseUrl/rest/v1/app_versions?clave=eq.$dbKey" -Method PATCH -Headers $headers -Body $body | Out-Null
+        Write-Host "OK: v$targetVersion (code=$newCode)" -ForegroundColor Green
+    } catch {
+        Write-Host "ERROR Supabase: $($_.Exception.Message)" -ForegroundColor Red
+    }
+} else {
+    Write-Host "`nSUPABASE omitido (Render no confirmo el deploy)" -ForegroundColor Yellow
+}
+
 Write-Host "`n==========================================================" -ForegroundColor Green
 Write-Host " LISTO: v$targetVersion (code=$newCode)" -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
+
+

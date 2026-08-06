@@ -16,6 +16,7 @@ import {
 import { openPlanningModal, setUserId } from './planning-modals.js';
 import { getConfirmedBalanceSummary, formatCurrency } from './balance.js';
 import { initPriceMonitor } from './product-price-monitor.js';
+import { supabase } from './supabase-client.js';
 
 // Current user session
 let currentUser = null;
@@ -24,10 +25,36 @@ let calendarInstance = null;
 // Exportar currentUser para acceso global
 window.getCurrentUser = () => currentUser;
 
+async function loadAppDownloadLink() {
+    try {
+        const { data } = await supabase
+            .from('app_versions')
+            .select('valor')
+            .eq('clave', 'app_version_calendarfinance')
+            .single();
+        if (data?.valor) {
+            const valObj = typeof data.valor === 'string' ? JSON.parse(data.valor) : data.valor;
+            if (valObj?.apkUrl) {
+                const btn = document.getElementById('download-apk-btn');
+                if (btn) {
+                    btn.href = valObj.apkUrl;
+                    btn.title = `Descargar App Android ${valObj.versionName ? 'v' + valObj.versionName : ''}`;
+                    btn.style.display = 'inline-flex';
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('No se pudo cargar el enlace de descarga de la app:', e);
+    }
+}
+
 // Inicializar cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize user session
     initUserSession();
+    
+    // Cargar botón de descarga de la App Android
+    loadAppDownloadLink();
     
     const calendar = new Calendar('calendar-body');
     calendar.init();

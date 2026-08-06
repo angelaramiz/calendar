@@ -76,7 +76,7 @@ class AuthRepository {
                 }.decodeSingle<User>()
                 userRow.email
             }
-            client.auth.sendRecoveryEmail(email)
+            client.auth.resetPasswordForEmail(email)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)

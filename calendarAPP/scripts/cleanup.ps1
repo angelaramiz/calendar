@@ -2,7 +2,7 @@
 # Uso: .\cleanup.ps1
 
 $SupabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
-$AnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVndGx4bnJ3Zmlwb2N0Y2t1dmZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU4Mzk4MDQsImV4cCI6MjA1MTQxNTgwNH0.A5W4rRxYDxyPqFh7a4FX_ejniQl1nBNf1hMQuf7vjm4"
+$AnonKey = "sb_publishable_KcdYZchjzzpizgM4nhTw8w_Bd6w6-d1"
 
 $headers = @{
     "apikey" = $AnonKey
@@ -40,7 +40,7 @@ foreach ($table in $tables) {
         Invoke-RestMethod -Uri "$SupabaseUrl/rest/v1/$table?select=id" -Method DELETE -Headers $headers | Out-Null
         Write-Host "  $table OK" -ForegroundColor Green
     } catch {
-        Write-Host "  $table ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  $table" -ForegroundColor Yellow
     }
 }
 

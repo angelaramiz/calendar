@@ -31,15 +31,14 @@ jobs:
         shell: bash
         run: |
           if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "::error::Missing required secrets. Define SUPABASE_URL and SUPABASE_ANON_KEY in Settings > Secrets and variables > Actions. Use only letters, numbers, and underscores.";
+            echo "::error::Missing required secrets. Define SUPABASE_URL and SUPABASE_ANON_KEY in Settings > Secrets and variables > Actions.";
             exit 1;
           fi
 
       - name: Build static site
         run: |
           mkdir -p dist
-          rsync -av --exclude='.git' --exclude='dist' ./ dist/
-          # Generar config.js desde secretos (necesario para producción en Pages)
+          rsync -av --exclude='.git' --exclude='dist' calendarWeb/ dist/
           mkdir -p dist/js
           cat > dist/js/config.js << EOF
           window.__ENV__ = {

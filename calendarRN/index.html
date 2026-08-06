@@ -1,0 +1,84 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Iniciar Sesión - Calendario Financiero</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="apple-touch-icon" href="logo.svg" />
+    <link rel="stylesheet" href="styles/auth.css" />
+</head>
+
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>📅 Calendario Financiero</h1>
+                <p class="auth-subtitle">Inicia sesión para acceder a tu calendario</p>
+            </div>
+
+            <form id="login-form" class="auth-form">
+                <div class="form-group">
+                    <label for="username">
+                        <span class="label-icon">👤</span>
+                        Usuario o correo
+                    </label>
+                    <input type="text" id="username" name="username" placeholder="Tu usuario o tu correo" required
+                        autocomplete="username" autofocus />
+                </div>
+
+                <div class="form-group">
+                    <label for="password">
+                        <span class="label-icon">🔒</span>
+                        Contraseña
+                    </label>
+                    <div class="password-input-wrapper">
+                        <input type="password" id="password" name="password" placeholder="Tu contraseña" required
+                            autocomplete="current-password" />
+                        <button type="button" class="toggle-password" id="toggle-password"
+                            aria-label="Mostrar/ocultar contraseña">👁️</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="remember-me" name="remember" />
+                        <span>Recordar usuario</span>
+                    </label>
+                </div>
+
+                <button type="submit" class="btn-primary btn-full" id="login-btn">
+                    <span class="btn-text">Iniciar Sesión</span>
+                    <span class="btn-loader" style="display: none;">⏳</span>
+                </button>
+
+                <div class="form-divider"><span>o</span></div>
+
+                <div class="auth-links">
+                    <a href="routes/recob_pass.html" class="link-secondary">¿Olvidaste tu contraseña?</a>
+                    <p style="margin-top: 1rem;">¿No tienes una cuenta?</p>
+                    <a href="routes/register.html" class="btn-secondary btn-full">Crear cuenta nueva</a>
+                </div>
+            </form>
+        </div>
+
+        <div class="info-card">
+            <h3>✨ Características</h3>
+            <ul class="features-list">
+                <li><strong>📊 Gestión completa</strong><br />Administra eventos, préstamos y alertas</li>
+                <li><strong>🔄 Recurrentes</strong><br />Pagos y cobros automáticos</li>
+                <li><strong>🔔 Notificaciones</strong><br />Alertas de vencimientos</li>
+                <li><strong>☁️ Sincronización</strong><br />Datos seguros en la nube</li>
+                <li><strong>📱 Responsive</strong><br />Funciona en cualquier dispositivo</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Config de entorno (opcional, crea js/config.js desde js/config.example.js) -->
+    <script src="js/config.js"></script>
+    <script src="js/lib/sweetalert2@11.js"></script>
+    <script type="module" src="js/auth/login.js"></script>
+</body>
+
+</html>

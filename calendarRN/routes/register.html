@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crear Cuenta - Calendario Financiero</title>
+    <link rel="stylesheet" href="../styles/styles.css">
+    <link rel="stylesheet" href="../styles/auth.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h1>📅 Crear Cuenta</h1>
+                <p class="auth-subtitle">Regístrate para comenzar a usar el calendario</p>
+            </div>
+
+            <form id="register-form" class="auth-form">
+                <div class="form-group">
+                    <label for="email">
+                        <span class="label-icon">📧</span>
+                        Email (opcional)
+                    </label>
+                    <input 
+                        type="email" 
+                        id="email" 
+                        name="email" 
+                        placeholder="tu@correo.com (puedes dejarlo vacío)"
+                        autocomplete="email"
+                    >
+                    <small class="form-help">Si lo dejas vacío usaremos uno técnico basado en tu usuario. Para recuperar contraseña necesitas un email real.</small>
+                </div>
+                <div class="form-group">
+                    <label for="username">
+                        <span class="label-icon">👤</span>
+                        Usuario
+                    </label>
+                    <input 
+                        type="text" 
+                        id="username" 
+                        name="username" 
+                        placeholder="Elige un nombre de usuario"
+                        required
+                        autocomplete="username"
+                        autofocus
+                        minlength="3"
+                        maxlength="30"
+                        pattern="[a-zA-Z0-9_]+"
+                        title="Solo letras, números y guión bajo"
+                    >
+                    <small class="form-help">Mínimo 3 caracteres, solo letras, números y _</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="name">
+                        <span class="label-icon">✏️</span>
+                        Nombre completo (opcional)
+                    </label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        placeholder="Tu nombre completo"
+                        autocomplete="name"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="password">
+                        <span class="label-icon">🔒</span>
+                        Contraseña
+                    </label>
+                    <div class="password-input-wrapper">
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            placeholder="Mínimo 6 caracteres"
+                            required
+                            autocomplete="new-password"
+                            minlength="6"
+                        >
+                        <button type="button" class="toggle-password" id="toggle-password">
+                            👁️
+                        </button>
+                    </div>
+                    <div class="password-strength" id="password-strength" style="display: none;">
+                        <div class="strength-bar">
+                            <div class="strength-fill" id="strength-fill"></div>
+                        </div>
+                        <small id="strength-text">Seguridad: débil</small>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="confirm-password">
+                        <span class="label-icon">🔒</span>
+                        Confirmar contraseña
+                    </label>
+                    <div class="password-input-wrapper">
+                        <input 
+                            type="password" 
+                            id="confirm-password" 
+                            name="confirm-password" 
+                            placeholder="Repite tu contraseña"
+                            required
+                            autocomplete="new-password"
+                            minlength="6"
+                        >
+                        <button type="button" class="toggle-password" id="toggle-confirm">
+                            👁️
+                        </button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="accept-terms" name="terms" required>
+                        <span>
+                            Acepto los 
+                            <a href="#" class="link-primary">Términos de Servicio</a> y la 
+                            <a href="#" class="link-primary">Política de Privacidad</a>
+                        </span>
+                    </label>
+                </div>
+
+                <!-- Consejos integrados (visible en móvil dentro del formulario) -->
+                <details class="form-tips" open="false">
+                    <summary>💡 Consejos de seguridad</summary>
+                    <ul class="features-list">
+                        <li>✅ Usa al menos 6 caracteres</li>
+                        <li>✅ Combina letras y números</li>
+                        <li>✅ Incluye mayúsculas y minúsculas</li>
+                        <li>✅ Agrega caracteres especiales (!@#$)</li>
+                        <li>❌ No uses información personal</li>
+                    </ul>
+                </details>
+
+                <button type="submit" class="btn-primary btn-full" id="register-btn">
+                    <span class="btn-text">Crear Cuenta</span>
+                    <span class="btn-loader" style="display: none;">⏳</span>
+                </button>
+
+                <div class="form-divider">
+                    <span>o</span>
+                </div>
+
+                <div class="auth-links">
+                    <p>¿Ya tienes una cuenta?</p>
+                    <a href="../index.html" class="btn-secondary btn-full">
+                        Iniciar sesión
+                    </a>
+                </div>
+            </form>
+        </div>
+
+        <!-- Tips card -->
+        <div class="info-card">
+            <h3>💡 Consejos de seguridad</h3>
+            <ul class="features-list">
+                <li>✅ Usa al menos 6 caracteres</li>
+                <li>✅ Combina letras y números</li>
+                <li>✅ Incluye mayúsculas y minúsculas</li>
+                <li>✅ Agrega caracteres especiales (!@#$)</li>
+                <li>❌ No uses información personal</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Config de entorno (opcional) -->
+    <script src="../js/config.js"></script>
+    <!-- SweetAlert2 -->
+    <script src="../js/lib/sweetalert2@11.js"></script>
+    
+    <!-- Register module -->
+    <script type="module" src="../js/auth/register.js"></script>
+</body>
+</html>

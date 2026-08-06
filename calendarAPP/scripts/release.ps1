@@ -79,6 +79,14 @@ Write-Host "build.gradle.kts actualizado" -ForegroundColor Green
 # 4. Build APK
 if (-not $SkipBuild) {
     Write-Host "`nCompilando APK..." -ForegroundColor Cyan
+
+    # Usar Java 17 de Android Studio (compatible con Gradle 8.x)
+    $androidJbr = "C:\Program Files\Android\Android Studio\jbr"
+    if (Test-Path $androidJbr) {
+        $env:JAVA_HOME = $androidJbr
+        Write-Host "JAVA_HOME: $androidJbr" -ForegroundColor Gray
+    }
+
     Push-Location "calendarAPP"
     try {
         .\gradlew.bat clean assembleRelease

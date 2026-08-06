@@ -12,8 +12,8 @@ android {
         applicationId = "com.calendarfinance.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "1.0.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -62,7 +62,9 @@ dependencies {
 
     // Supabase (v3.x con auth-kt)
     implementation(platform("io.github.jan-tennert.supabase:bom:3.7.0"))
-    implementation("io.github.jan-tennert.supabase:auth-kt")
+    implementation("io.github.jan-tennert.supabase:auth-kt") {
+        exclude(group = "androidx.browser", module = "browser")
+    }
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
 
     // Ktor 3.x (requerido por Supabase v3)

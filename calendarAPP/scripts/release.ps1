@@ -87,6 +87,13 @@ if (-not $SkipBuild) {
         Write-Host "JAVA_HOME: $androidJbr" -ForegroundColor Gray
     }
 
+    # Configurar ANDROID_HOME si no existe
+    $androidSdk = "$env:LOCALAPPDATA\Android\Sdk"
+    if (-not $env:ANDROID_HOME -and (Test-Path $androidSdk)) {
+        $env:ANDROID_HOME = $androidSdk
+        Write-Host "ANDROID_HOME: $androidSdk" -ForegroundColor Gray
+    }
+
     Push-Location "calendarAPP"
     try {
         .\gradlew.bat clean assembleRelease

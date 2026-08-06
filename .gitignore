@@ -11,6 +11,9 @@ local.properties
 *.swp
 *.swo
 
+# Docs (ya existen en calendarWeb/docs/)
+docs/
+
 # OS
 .DS_Store
 Thumbs.db

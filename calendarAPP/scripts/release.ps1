@@ -19,14 +19,16 @@ if ($env:NVM_SYMLINK -and -not ($env:PATH -split ';' -contains $env:NVM_SYMLINK)
     $env:PATH = "$env:NVM_SYMLINK;$env:PATH"
 }
 
-# Config
-$gradlePath = "calendarAPP\app\build.gradle.kts"
+# Config — rutas absolutas desde el script
+$ScriptDir = $PSScriptRoot
+$ProjectDir = Split-Path -Parent $ScriptDir
+$RepoDir = Split-Path -Parent $ProjectDir
+$gradlePath = Join-Path $ProjectDir "app\build.gradle.kts"
 $publicApkPath = "public\calendarfinance.apk"
 $supabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
 $supabaseKey = "sb_publishable_KcdYZchjzzpizgM4nhTw8w_Bd6w6-d1"
 $dbKey = "app_version_calendarfinance"
 $renderUrl = "https://calendar-04yk.onrender.com"
-$rootDir = $PSScriptRoot
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "   CALENDARFINANCE: PUBLICADOR DE ACTUALIZACIONES OTA" -ForegroundColor Cyan
@@ -94,7 +96,7 @@ if (-not $SkipBuild) {
         Write-Host "ANDROID_HOME: $androidSdk" -ForegroundColor Gray
     }
 
-    Push-Location "calendarAPP"
+    Push-Location $ProjectDir
     try {
         .\gradlew.bat clean assembleRelease
 
@@ -109,7 +111,7 @@ if (-not $SkipBuild) {
     } finally { Pop-Location }
 
     # Copiar APK
-    $apkBuildPath = "calendarAPP\app\build\outputs\apk\release\app-release.apk"
+    $apkBuildPath = Join-Path $ProjectDir "app\build\outputs\apk\release\app-release.apk"
     if (-not (Test-Path "public")) { New-Item -ItemType Directory -Force -Path "public" | Out-Null }
 
     if (Test-Path $apkBuildPath) {
@@ -125,11 +127,13 @@ if (-not $SkipBuild) {
 
 # 5. Git Push
 Write-Host "`nGIT PUSH..." -ForegroundColor Cyan
+Push-Location $RepoDir
 git add -f $gradlePath
 if (Test-Path $publicApkPath) { git add $publicApkPath }
 git add "public\version.json" 2>$null
 git commit -m "release: v$targetVersion (code=$newCode)" 2>&1 | Out-Null
 git push
+Pop-Location
 Write-Host "Git OK" -ForegroundColor Green
 
 # 6. Generar version.json

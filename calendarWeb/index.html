@@ -72,6 +72,12 @@
                 <li><strong>☁️ Sincronización</strong><br />Datos seguros en la nube</li>
                 <li><strong>📱 Responsive</strong><br />Funciona en cualquier dispositivo</li>
             </ul>
+            <div id="app-download" style="margin-top:1.2rem; display:none;">
+                <a id="download-apk-btn" href="#" target="_blank" class="btn-primary btn-full" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#4caf50; text-decoration:none; color:#fff; padding:12px; border-radius:8px; font-weight:600;">
+                    📲 Descargar App Android
+                </a>
+                <p id="download-version" style="text-align:center; font-size:0.8rem; color:#888; margin-top:6px;"></p>
+            </div>
         </div>
     </div>
 
@@ -79,6 +85,26 @@
     <script src="js/config.js"></script>
     <script src="js/lib/sweetalert2@11.js"></script>
     <script type="module" src="js/auth/login.js"></script>
+    <script type="module">
+        import { supabase } from './js/supabase-client.js';
+        async function loadDownloadLink() {
+            try {
+                const { data } = await supabase
+                    .from('app_versions')
+                    .select('valor')
+                    .eq('clave', 'app_version_calendarfinance')
+                    .single();
+                if (data?.valor?.apkUrl) {
+                    const apkUrl = data.valor.apkUrl;
+                    const vName = data.valor.versionName || '';
+                    document.getElementById('download-apk-btn').href = apkUrl;
+                    document.getElementById('download-version').textContent = vName ? `v${vName}` : '';
+                    document.getElementById('app-download').style.display = 'block';
+                }
+            } catch (e) { /* sin APK disponible */ }
+        }
+        loadDownloadLink();
+    </script>
 </body>
 
 </html>

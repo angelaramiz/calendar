@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,6 +41,7 @@ import com.calendarfinance.app.ui.theme.Orange500
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
@@ -59,6 +61,7 @@ fun CalendarScreen(
     val uiState by viewModel.uiState.collectAsState()
     val otaState by otaViewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val userId = authRepository.currentUserId ?: ""
     var selectedDay by remember { mutableStateOf<CalendarDay?>(null) }
     var showMenu by remember { mutableStateOf(false) }
@@ -111,7 +114,7 @@ fun CalendarScreen(
                         DropdownMenuItem(
                             text = { Text("Cerrar sesion") },
                             leadingIcon = { Icon(Icons.Default.Logout, null) },
-                            onClick = { showMenu = false; authRepository.logout(); onLogout() }
+                            onClick = { showMenu = false; coroutineScope.launch { authRepository.logout(); onLogout() } }
                         )
                     }
                 }

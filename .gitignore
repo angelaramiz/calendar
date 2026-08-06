@@ -1,30 +1,49 @@
-# Gradle
+# Android & Gradle
 .gradle/
 build/
+**/build/
 local.properties
 *.hprof
+*.jks
+*.keystore
+*.pepk
+*.p12
+*.key
+gradle_error.txt
+*.apk
+*.aab
 
-# IDE
+# Python & Backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+venv/
+.venv/
+env/
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Web Secrets & Local Configs
+js/config.js
+calendarWeb/js/config.js
+calendarRN/js/config.js
+public/
+
+# IDE & OS
 .idea/
 *.iml
 .vscode/
 *.swp
 *.swo
-
-# Docs (ya existen en calendarWeb/docs/)
-docs/
-
-# OS
 .DS_Store
 Thumbs.db
 
-# Node
-node_modules/
-
-# Supabase secrets
-js/config.js
-.env
-
-# Temp
+# Temp & Logs
+docs/
 *.tmp
 *.log
+

@@ -112,7 +112,16 @@ function updatePasswordStrength() {
 
     // Update visual indicator
     strengthFill.className = 'strength-fill ' + strength.class;
-    strengthText.textContent = `Seguridad: ${strength.label}`;
+    strengthText.innerHTML = `Seguridad: <strong>${strength.label}</strong>`;
+
+    let checklist = '<div class="password-requirements" style="margin-top:6px;font-size:0.82rem;">';
+    checklist += `<span style="color:${strength.checks.length ? '#4caf50' : '#f44336'}">${strength.checks.length ? '✓' : '○'} 8+ caracteres</span> · `;
+    checklist += `<span style="color:${strength.checks.lower ? '#4caf50' : '#f44336'}">${strength.checks.lower ? '✓' : '○'} minuscula</span> · `;
+    checklist += `<span style="color:${strength.checks.upper ? '#4caf50' : '#f44336'}">${strength.checks.upper ? '✓' : '○'} mayuscula</span> · `;
+    checklist += `<span style="color:${strength.checks.number ? '#4caf50' : '#f44336'}">${strength.checks.number ? '✓' : '○'} numero</span> · `;
+    checklist += `<span style="color:${strength.checks.special ? '#4caf50' : '#f44336'}">${strength.checks.special ? '✓' : '○'} especial</span>`;
+    checklist += '</div>';
+    strengthText.innerHTML += checklist;
 }
 
 /**
@@ -120,31 +129,26 @@ function updatePasswordStrength() {
  */
 function calculatePasswordStrength(password) {
     let score = 0;
+    const checks = {
+        length: password.length >= 8,
+        lower: /[a-z]/.test(password),
+        upper: /[A-Z]/.test(password),
+        number: /\d/.test(password),
+        special: /[^a-zA-Z0-9]/.test(password)
+    };
 
-    // Length
-    if (password.length >= 6) score++;
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
+    if (checks.length) score++;
+    if (checks.lower) score++;
+    if (checks.upper) score++;
+    if (checks.number) score++;
+    if (checks.special) score++;
 
-    // Contains lowercase
-    if (/[a-z]/.test(password)) score++;
-
-    // Contains uppercase
-    if (/[A-Z]/.test(password)) score++;
-
-    // Contains number
-    if (/\d/.test(password)) score++;
-
-    // Contains special char
-    if (/[^a-zA-Z0-9]/.test(password)) score++;
-
-    // Determine strength
-    if (score <= 3) {
-        return { class: 'weak', label: 'débil' };
-    } else if (score <= 5) {
-        return { class: 'medium', label: 'media' };
+    if (score <= 2) {
+        return { class: 'weak', label: 'debil', checks };
+    } else if (score <= 4) {
+        return { class: 'medium', label: 'media', checks };
     } else {
-        return { class: 'strong', label: 'fuerte' };
+        return { class: 'strong', label: 'fuerte', checks };
     }
 }
 
@@ -201,8 +205,24 @@ async function handleRegister(e) {
         return;
     }
 
-    if (password.length < 6) {
-        showError('La contraseña debe tener al menos 6 caracteres');
+    if (password.length < 8) {
+        showError('La contraseña debe tener al menos 8 caracteres');
+        return;
+    }
+    if (!/[a-z]/.test(password)) {
+        showError('La contraseña debe contener al menos una letra minuscula');
+        return;
+    }
+    if (!/[A-Z]/.test(password)) {
+        showError('La contraseña debe contener al menos una letra mayuscula');
+        return;
+    }
+    if (!/\d/.test(password)) {
+        showError('La contraseña debe contener al menos un numero');
+        return;
+    }
+    if (!/[^a-zA-Z0-9]/.test(password)) {
+        showError('La contraseña debe contener al menos un caracter especial (!@#$%^&*...)');
         return;
     }
 

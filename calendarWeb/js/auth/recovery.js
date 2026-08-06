@@ -228,7 +228,7 @@ function showStepToast(step, customMsg) {
     const msg = customMsg || (
         step === 1 ? 'Paso 1: Ingresa tu usuario o correo. Si usas correo, te enviaremos un enlace.' :
         step === 2 ? 'Paso 2: Verificación de identidad.' :
-        'Paso 3: Establece tu nueva contraseña (mínimo 6 caracteres).'
+        'Paso 3: Establece tu nueva contraseña (8+ caracteres, mayuscula, minuscula, numero, especial).'
     );
     if (!__toastEl) {
         __toastEl = document.createElement('div');
@@ -264,8 +264,24 @@ async function handleStep3() {
     const newPassword = newPasswordInput.value.trim();
     const confirmPassword = confirmNewPasswordInput.value.trim();
 
-    if (!newPassword || newPassword.length < 6) {
-        showError('La contraseña debe tener al menos 6 caracteres.');
+    if (!newPassword || newPassword.length < 8) {
+        showError('La contraseña debe tener al menos 8 caracteres.');
+        return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+        showError('La contraseña debe contener al menos una letra minuscula (a-z).');
+        return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+        showError('La contraseña debe contener al menos una letra mayuscula (A-Z).');
+        return;
+    }
+    if (!/\d/.test(newPassword)) {
+        showError('La contraseña debe contener al menos un numero (0-9).');
+        return;
+    }
+    if (!/[^a-zA-Z0-9]/.test(newPassword)) {
+        showError('La contraseña debe contener al menos un caracter especial (!@#$%^&*...).');
         return;
     }
     if (newPassword !== confirmPassword) {
@@ -281,7 +297,12 @@ async function handleStep3() {
         try { await supabase.auth.signOut(); } catch (_) {}
     } catch (err) {
         console.error('Error updating password:', err);
-        showError('No se pudo actualizar la contraseña. Intenta nuevamente.');
+        const msg = err?.message || '';
+        if (msg.includes('password') || msg.includes('Password')) {
+            showError('La contraseña no cumple los requisitos. Debe tener: mayuscula, minuscula, numero y caracter especial.');
+        } else {
+            showError('No se pudo actualizar la contraseña. Intenta nuevamente.');
+        }
     } finally {
         setLoadingButton(resetBtn, false);
     }
@@ -324,9 +345,18 @@ function updatePasswordStrength() {
 
     const strength = calculatePasswordStrength(password);
 
-    // Update visual indicator
     strengthFill.className = 'strength-fill ' + strength.class;
-    strengthText.textContent = `Seguridad: ${strength.label}`;
+    strengthText.innerHTML = `Seguridad: <strong>${strength.label}</strong>`;
+
+    // Show requirement checklist
+    let checklist = '<div class="password-requirements" style="margin-top:6px;font-size:0.82rem;">';
+    checklist += `<span style="color:${strength.checks.length ? '#4caf50' : '#f44336'}">${strength.checks.length ? '✓' : '○'} 8+ caracteres</span> · `;
+    checklist += `<span style="color:${strength.checks.lower ? '#4caf50' : '#f44336'}">${strength.checks.lower ? '✓' : '○'} minuscula</span> · `;
+    checklist += `<span style="color:${strength.checks.upper ? '#4caf50' : '#f44336'}">${strength.checks.upper ? '✓' : '○'} mayuscula</span> · `;
+    checklist += `<span style="color:${strength.checks.number ? '#4caf50' : '#f44336'}">${strength.checks.number ? '✓' : '○'} numero</span> · `;
+    checklist += `<span style="color:${strength.checks.special ? '#4caf50' : '#f44336'}">${strength.checks.special ? '✓' : '○'} especial</span>`;
+    checklist += '</div>';
+    strengthText.innerHTML += checklist;
 }
 
 /**
@@ -334,31 +364,26 @@ function updatePasswordStrength() {
  */
 function calculatePasswordStrength(password) {
     let score = 0;
+    const checks = {
+        length: password.length >= 8,
+        lower: /[a-z]/.test(password),
+        upper: /[A-Z]/.test(password),
+        number: /\d/.test(password),
+        special: /[^a-zA-Z0-9]/.test(password)
+    };
 
-    // Length
-    if (password.length >= 6) score++;
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
+    if (checks.length) score++;
+    if (checks.lower) score++;
+    if (checks.upper) score++;
+    if (checks.number) score++;
+    if (checks.special) score++;
 
-    // Contains lowercase
-    if (/[a-z]/.test(password)) score++;
-
-    // Contains uppercase
-    if (/[A-Z]/.test(password)) score++;
-
-    // Contains number
-    if (/\d/.test(password)) score++;
-
-    // Contains special char
-    if (/[^a-zA-Z0-9]/.test(password)) score++;
-
-    // Determine strength
-    if (score <= 3) {
-        return { class: 'weak', label: 'débil' };
-    } else if (score <= 5) {
-        return { class: 'medium', label: 'media' };
+    if (score <= 2) {
+        return { class: 'weak', label: 'debil', checks };
+    } else if (score <= 4) {
+        return { class: 'medium', label: 'media', checks };
     } else {
-        return { class: 'strong', label: 'fuerte' };
+        return { class: 'strong', label: 'fuerte', checks };
     }
 }
 

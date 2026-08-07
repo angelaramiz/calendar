@@ -12,16 +12,38 @@ import com.calendarfinance.app.data.remote.SupabaseClientProvider
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+@Serializable
+data class AppVersionRow(
+    val clave: String = "",
+    val valor: String = ""
+)
+
+@Serializable
+data class AppVersionData(
+    val versionCode: Int = 0,
+    val versionName: String = "",
+    val apkUrl: String = ""
+)
 
 class OtaUpdateRepository {
 
     private val tag = "OtaUpdate"
     private val db get() = SupabaseClientProvider.client
     private val client = OkHttpClient()
-    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+    private val jsonParser = Json { ignoreUnknownKeys = true }
 
     private fun getCurrentVersionCode(context: Context): Int {
         return try {
@@ -41,48 +63,25 @@ class OtaUpdateRepository {
             val currentVersion = getCurrentVersionCode(context)
             Log.d(tag, "Version actual: $currentVersion")
 
-            val result = db.from("app_versions").select {
+            val row = db.from("app_versions").select {
                 filter { eq("clave", "app_version_calendarfinance") }
                 limit(1)
-            }.decodeSingle<Map<String, Any>>()
+            }.decodeSingle<AppVersionRow>()
 
-            Log.d(tag, "Supabase response: $result")
+            Log.d(tag, "Row: clave=${row.clave}, valor=${row.valor}")
 
-            val valorRaw = result["valor"]
-            val valor: Map<String, String> = when (valorRaw) {
-                is Map<*, *> -> valorRaw.mapKeys { it.key?.toString() ?: "" }.mapValues { it.value?.toString() ?: "" }
-                is String -> {
-                    Log.d(tag, "valor es String, parseando...")
-                    val cleaned = valorRaw.removeSurrounding("{", "}").trim()
-                    val pairs = mutableListOf<Pair<String, String>>()
-                    var i = 0
-                    while (i < cleaned.length) {
-                        val keyStart = cleaned.indexOf("\"", i) + 1
-                        val keyEnd = cleaned.indexOf("\"", keyStart)
-                        if (keyEnd == -1) break
-                        val key = cleaned.substring(keyStart, keyEnd)
-                        val colonIdx = cleaned.indexOf(":", keyEnd + 1)
-                        if (colonIdx == -1) break
-                        val valueStart = cleaned.indexOf("\"", colonIdx + 1) + 1
-                        val valueEnd = cleaned.indexOf("\"", valueStart)
-                        val value = if (valueEnd == -1) cleaned.substring(valueStart).trim()
-                                   else cleaned.substring(valueStart, valueEnd)
-                        pairs.add(key to value)
-                        i = if (valueEnd == -1) cleaned.length else valueEnd + 1
-                    }
-                    pairs.toMap()
-                }
-                else -> {
-                    Log.e(tag, "valor tipo desconocido: ${valorRaw?.javaClass}")
-                    return@withContext null
-                }
+            // valor viene como JSONB, Supabase lo decodifica como String
+            val valorElement = try {
+                jsonParser.parseToJsonElement(row.valor)
+            } catch (e: Exception) {
+                Log.e(tag, "Error parseando valor: ${e.message}")
+                return@withContext null
             }
 
-            Log.d(tag, "valor parseado: $valor")
-
-            val latestVersion = valor["versionCode"]?.toIntOrNull() ?: return@withContext null
-            val versionName = valor["versionName"] ?: "1.0.0"
-            val apkUrl = valor["apkUrl"] ?: return@withContext null
+            val valor = valorElement.jsonObject
+            val latestVersion = valor["versionCode"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@withContext null
+            val versionName = valor["versionName"]?.jsonPrimitive?.content ?: "1.0.0"
+            val apkUrl = valor["apkUrl"]?.jsonPrimitive?.content ?: return@withContext null
 
             Log.d(tag, "Latest: $latestVersion, name: $versionName, url: $apkUrl")
 

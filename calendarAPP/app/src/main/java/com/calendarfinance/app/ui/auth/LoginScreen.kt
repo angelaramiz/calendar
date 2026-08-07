@@ -52,12 +52,12 @@ fun LoginScreen(
 
     // Check biometric availability on start
     LaunchedEffect(Unit) {
-        biometricViewModel.checkBiometricAvailability(activity)
+        try { biometricViewModel.checkBiometricAvailability(activity) } catch (e: Exception) { e.printStackTrace() }
     }
 
     // Auto-check for OTA updates on start
     LaunchedEffect(Unit) {
-        otaViewModel.autoCheck(activity)
+        try { otaViewModel.autoCheck(activity) } catch (e: Exception) { e.printStackTrace() }
     }
 
     // Auto-login with biometric if available and session exists

@@ -1,6 +1,13 @@
 package com.calendarfinance.app.ui.navigation
 
-import androidx.compose.runtime.Composable
+import android.util.Log
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -35,13 +42,36 @@ object Routes {
 }
 
 @Composable
+fun SafeScreen(content: @Composable () -> Unit) {
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // Use a side effect to catch errors
+    LaunchedEffect(Unit) {
+        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
+            error = throwable.message ?: "Error"
+            Log.e("NavGraph", "Screen error: ${throwable.message}", throwable)
+        }
+    }
+
+    if (error != null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(text = "Error: $error", color = MaterialTheme.colorScheme.error)
+        }
+    } else {
+        content()
+    }
+}
+
+@Composable
 fun CalendarNavGraph(navController: NavHostController = rememberNavController()) {
     NavHost(navController = navController, startDestination = Routes.LOGIN) {
         composable(Routes.LOGIN) {
-            LoginScreen(
-                onLoginSuccess = { navController.navigate(Routes.CALENDAR) { popUpTo(Routes.LOGIN) { inclusive = true } } },
-                onNavigateToRegister = { navController.navigate(Routes.REGISTER) }
-            )
+            SafeScreen {
+                LoginScreen(
+                    onLoginSuccess = { navController.navigate(Routes.CALENDAR) { popUpTo(Routes.LOGIN) { inclusive = true } } },
+                    onNavigateToRegister = { navController.navigate(Routes.REGISTER) }
+                )
+            }
         }
         composable(Routes.REGISTER) {
             RegisterScreen(

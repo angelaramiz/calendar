@@ -115,17 +115,10 @@ class AuthRepository {
                 limit(1)
             }.decodeSingle<User>()
         } catch (e: Exception) {
-            Log.w(tag, "fetchUserProfile: perfil no existe, creando uno nuevo")
+            Log.w(tag, "fetchUserProfile: perfil no existe, usando datos de Auth")
             val userInfo = client.auth.retrieveUserForCurrentSession()
             val email = userInfo.email ?: "unknown@unknown.com"
-            val user = User(id = userId, email = email, username = email.substringBefore("@"), name = email.substringBefore("@"))
-            client.from("users").upsert(mapOf(
-                "id" to userId,
-                "email" to email,
-                "username" to user.username,
-                "name" to user.name
-            ))
-            user
+            User(id = userId, email = email, username = email.substringBefore("@"), name = email.substringBefore("@"))
         }
     }
 }

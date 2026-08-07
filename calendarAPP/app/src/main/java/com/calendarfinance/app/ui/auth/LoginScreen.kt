@@ -27,6 +27,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import com.calendarfinance.app.ui.ota.OtaUpdateDialog
+import com.calendarfinance.app.ui.ota.OtaUpdateViewModel
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
@@ -34,10 +36,12 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
     viewModel: AuthViewModel = koinViewModel(),
-    biometricViewModel: BiometricAuthViewModel = koinViewModel()
+    biometricViewModel: BiometricAuthViewModel = koinViewModel(),
+    otaViewModel: OtaUpdateViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val bioState by biometricViewModel.uiState.collectAsState()
+    val otaState by otaViewModel.uiState.collectAsState()
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -49,6 +53,11 @@ fun LoginScreen(
     // Check biometric availability on start
     LaunchedEffect(Unit) {
         biometricViewModel.checkBiometricAvailability(activity)
+    }
+
+    // Auto-check for OTA updates on start
+    LaunchedEffect(Unit) {
+        otaViewModel.autoCheck(activity)
     }
 
     // Auto-login with biometric if available and session exists
@@ -74,6 +83,11 @@ fun LoginScreen(
         )
     }
 
+    // OTA Update Dialog
+    if (otaState.updateInfo != null) {
+        OtaUpdateDialog(viewModel = otaViewModel, onDismiss = {})
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -94,6 +108,21 @@ fun LoginScreen(
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // OTA update indicator
+        if (otaState.updateInfo != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.small
+            ) {
+                Text(
+                    text = "Nueva version ${otaState.updateInfo!!.versionName} disponible",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(48.dp))
 
         OutlinedTextField(

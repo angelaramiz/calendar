@@ -6,7 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,17 +36,8 @@ class MainActivity : ComponentActivity() {
                 var error by remember { mutableStateOf<String?>(null) }
                 var errorDetails by remember { mutableStateOf<String?>(null) }
 
-                LaunchedEffect(Unit) {
-                    Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
-                        error = throwable.message ?: "Error desconocido"
-                        errorDetails = throwable.stackTraceToString()
-                        Log.e(TAG, "Uncaught: ${throwable.message}", throwable)
-                    }
-                }
-
                 CalendarFinanceTheme {
                     if (error != null) {
-                        // Error screen - no crash
                         Box(
                             modifier = Modifier.fillMaxSize().padding(24.dp),
                             contentAlignment = Alignment.Center
@@ -66,14 +60,6 @@ class MainActivity : ComponentActivity() {
                                     color = MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.padding(top = 8.dp)
                                 )
-                                if (errorDetails != null) {
-                                    Text(
-                                        text = errorDetails?.take(500) ?: "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(top = 8.dp)
-                                    )
-                                }
                             }
                         }
                     } else {

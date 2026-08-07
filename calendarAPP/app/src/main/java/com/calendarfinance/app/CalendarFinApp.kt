@@ -4,7 +4,6 @@ import android.app.Application
 import android.util.Log
 import com.calendarfinance.app.di.appModule
 import org.koin.android.ext.android.startKoin
-import java.lang.Thread
 
 class CalendarFinApp : Application() {
 
@@ -15,7 +14,6 @@ class CalendarFinApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Global exception handler
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             Log.e(TAG, "CRASH en hilo ${thread.name}: ${throwable.message}", throwable)

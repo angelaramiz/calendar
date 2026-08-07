@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
+import android.util.Log
 import androidx.core.content.FileProvider
 import com.calendarfinance.app.data.model.AppVersionInfo
 import com.calendarfinance.app.data.remote.SupabaseClientProvider
@@ -17,6 +18,7 @@ import java.io.File
 
 class OtaUpdateRepository {
 
+    private val tag = "OtaUpdate"
     private val db get() = SupabaseClientProvider.client
     private val client = OkHttpClient()
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -37,23 +39,62 @@ class OtaUpdateRepository {
     suspend fun checkForUpdate(context: Context): AppVersionInfo? = withContext(Dispatchers.IO) {
         try {
             val currentVersion = getCurrentVersionCode(context)
+            Log.d(tag, "Version actual: $currentVersion")
 
             val result = db.from("app_versions").select {
                 filter { eq("clave", "app_version_calendarfinance") }
                 limit(1)
             }.decodeSingle<Map<String, Any>>()
 
-            val valor = result["valor"] as? Map<String, Any> ?: return@withContext null
-            val latestVersion = (valor["versionCode"] as? Number)?.toInt() ?: return@withContext null
-            val versionName = valor["versionName"] as? String ?: "1.0.0"
-            val apkUrl = valor["apkUrl"] as? String ?: return@withContext null
+            Log.d(tag, "Supabase response: $result")
+
+            val valorRaw = result["valor"]
+            val valor: Map<String, String> = when (valorRaw) {
+                is Map<*, *> -> valorRaw.mapValues { it.value?.toString() ?: "" }
+                is String -> {
+                    Log.d(tag, "valor es String, parseando...")
+                    val cleaned = valorRaw.removeSurrounding("{", "}").trim()
+                    val pairs = mutableListOf<Pair<String, String>>()
+                    var i = 0
+                    while (i < cleaned.length) {
+                        val keyStart = cleaned.indexOf("\"", i) + 1
+                        val keyEnd = cleaned.indexOf("\"", keyStart)
+                        if (keyEnd == -1) break
+                        val key = cleaned.substring(keyStart, keyEnd)
+                        val colonIdx = cleaned.indexOf(":", keyEnd + 1)
+                        if (colonIdx == -1) break
+                        val valueStart = cleaned.indexOf("\"", colonIdx + 1) + 1
+                        val valueEnd = cleaned.indexOf("\"", valueStart)
+                        val value = if (valueEnd == -1) cleaned.substring(valueStart).trim()
+                                   else cleaned.substring(valueStart, valueEnd)
+                        pairs.add(key to value)
+                        i = if (valueEnd == -1) cleaned.length else valueEnd + 1
+                    }
+                    pairs.toMap()
+                }
+                else -> {
+                    Log.e(tag, "valor tipo desconocido: ${valorRaw?.javaClass}")
+                    return@withContext null
+                }
+            }
+
+            Log.d(tag, "valor parseado: $valor")
+
+            val latestVersion = valor["versionCode"]?.toIntOrNull() ?: return@withContext null
+            val versionName = valor["versionName"] ?: "1.0.0"
+            val apkUrl = valor["apkUrl"] ?: return@withContext null
+
+            Log.d(tag, "Latest: $latestVersion, name: $versionName, url: $apkUrl")
 
             if (latestVersion > currentVersion && apkUrl.isNotEmpty()) {
+                Log.d(tag, "Actualizacion disponible: v$versionName")
                 AppVersionInfo(latestVersion, versionName, apkUrl)
             } else {
+                Log.d(tag, "No hay actualizacion (latest=$latestVersion, current=$currentVersion)")
                 null
             }
         } catch (e: Exception) {
+            Log.e(tag, "checkForUpdate error: ${e.message}", e)
             null
         }
     }

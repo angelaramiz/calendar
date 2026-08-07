@@ -1,14 +1,13 @@
 # Tareas Activas
 
 ## En Progreso
-- [ ] Integrar mas modulos a calendarAPP (loans, savings, financial-engine, wishlist)
+- [ ] Integrar mas modulos a calendarAPP (loans, savings, financial-engine)
 
 ## Pendientes
-- [ ] Agregar soporte para modo oscuro en calendarAPP
-- [ ] Implementar notificaciones push en calendarAPP
-- [ ] Sincronizar cambios entre calendarWeb y calendarAPP
-- [ ] Agregar tests unitarios en calendarAPP
-- [ ] Migrar calendarRN a React Native (segun plan)
+- [ ] Agregar modo oscuro en calendarAPP
+- [ ] Notificaciones push FCM en calendarAPP
+- [ ] Tests unitarios calendarAPP
+- [ ] Migrar calendarRN a React Native
 
 ## Completadas
 - [x] Inicializar CodeGraph en el proyecto
@@ -20,3 +19,12 @@
 - [x] Implementar balance financiero
 - [x] Crear arquitectura .agents/
 - [x] Crear AGENTS.md
+- [x] Supabase SDK v3.7.0 + Kotlin 2.4.0 + AGP 8.7.3
+- [x] OTA updates (auto-check, download, install)
+- [x] Login biometrico (huella/facial) Android + WebAuthn
+- [x] Logging global + error handling sin crash
+- [x] Release pipeline (release.ps1 completo)
+- [x] Deploy en Render (web)
+- [x] Button download app desde web
+- [x] Cleanup script para datos
+- [x] Roadmap calendarAPP (10 fases)

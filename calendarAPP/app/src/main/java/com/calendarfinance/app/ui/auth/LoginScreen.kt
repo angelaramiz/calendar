@@ -2,11 +2,13 @@ package com.calendarfinance.app.ui.auth
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -15,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -23,22 +26,41 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun LoginScreen(
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
-    viewModel: AuthViewModel = koinViewModel()
+    viewModel: AuthViewModel = koinViewModel(),
+    biometricViewModel: BiometricAuthViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val bioState by biometricViewModel.uiState.collectAsState()
     var identifier by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
     var showRecovery by remember { mutableStateOf(false) }
     var recoveryIdentifier by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+    val activity = LocalContext.current as FragmentActivity
 
+    // Check biometric availability on start
+    LaunchedEffect(Unit) {
+        biometricViewModel.checkBiometricAvailability(activity)
+    }
+
+    // Auto-login with biometric if available and session exists
+    LaunchedEffect(bioState.isBiometricEnabled, bioState.hasStoredSession) {
+        if (bioState.isBiometricEnabled && bioState.hasStoredSession && bioState.isBiometricAvailable) {
+            biometricViewModel.authenticateWithBiometric(activity) { userId, email, username, name ->
+                viewModel.loginDirect(userId, email, username, name)
+            }
+        }
+    }
+
+    // Navigate on login success
     LaunchedEffect(uiState.isLoggedIn) {
         if (uiState.isLoggedIn) onLoginSuccess()
     }
@@ -126,6 +148,36 @@ fun LoginScreen(
                 Text("Iniciar Sesion")
             }
         }
+
+        // Biometric button
+        if (bioState.hasStoredSession && bioState.isBiometricAvailable && bioState.isBiometricEnabled) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("O", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = {
+                    biometricViewModel.authenticateWithBiometric(activity) { userId, email, username, name ->
+                        viewModel.loginDirect(userId, email, username, name)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(50.dp)
+            ) {
+                Icon(
+                    Icons.Default.Fingerprint,
+                    contentDescription = "Biometria",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Iniciar con huella")
+            }
+        }
+
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedButton(

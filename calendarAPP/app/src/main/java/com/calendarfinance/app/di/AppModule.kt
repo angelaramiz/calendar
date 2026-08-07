@@ -5,6 +5,7 @@ import com.calendarfinance.app.data.repository.MovementRepository
 import com.calendarfinance.app.data.repository.OtaUpdateRepository
 import com.calendarfinance.app.data.repository.PatternRepository
 import com.calendarfinance.app.ui.auth.AuthViewModel
+import com.calendarfinance.app.ui.auth.BiometricAuthViewModel
 import com.calendarfinance.app.ui.balance.BalanceViewModel
 import com.calendarfinance.app.ui.calendar.CalendarViewModel
 import com.calendarfinance.app.ui.movement.MovementViewModel
@@ -20,6 +21,7 @@ val appModule = module {
     single { OtaUpdateRepository() }
 
     viewModel { AuthViewModel(get()) }
+    viewModel { BiometricAuthViewModel(get()) }
     viewModel { CalendarViewModel(get(), get()) }
     viewModel { MovementViewModel(get(), get()) }
     viewModel { PatternViewModel(get()) }

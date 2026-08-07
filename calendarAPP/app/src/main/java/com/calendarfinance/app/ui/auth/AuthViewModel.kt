@@ -82,6 +82,10 @@ class AuthViewModel(
         }
     }
 
+    fun loginDirect(userId: String, email: String, username: String, name: String) {
+        _uiState.value = AuthUiState(isLoggedIn = true, userId = userId, username = username)
+    }
+
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
     }

@@ -88,9 +88,23 @@ class AuthRepository {
     }
 
     private suspend fun fetchUserProfile(userId: String): User {
-        return client.from("users").select {
-            filter { eq("id", userId) }
-            limit(1)
-        }.decodeSingle<User>()
+        return try {
+            client.from("users").select {
+                filter { eq("id", userId) }
+                limit(1)
+            }.decodeSingle<User>()
+        } catch (e: Exception) {
+            // Si no existe el perfil, lo crea automaticamente
+            val userInfo = client.auth.retrieveUserForCurrentSession()
+            val email = userInfo.email ?: "unknown@unknown.com"
+            val user = User(id = userId, email = email, username = email.substringBefore("@"), name = email.substringBefore("@"))
+            client.from("users").upsert(mapOf(
+                "id" to userId,
+                "email" to email,
+                "username" to user.username,
+                "name" to user.name
+            ))
+            user
+        }
     }
 }

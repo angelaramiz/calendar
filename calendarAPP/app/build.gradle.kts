@@ -20,8 +20,8 @@ android {
         applicationId = "com.calendarfinance.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "1.0.27"
+        versionCode = 29
+        versionName = "1.0.28"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
@@ -113,6 +113,9 @@ dependencies {
 
     // DataStore (local session)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // WorkManager (notifications scheduling)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 
     // Biometric
     implementation("androidx.biometric:biometric:1.2.0-alpha05")

@@ -50,7 +50,7 @@ class OtaUpdateRepository {
 
             val valorRaw = result["valor"]
             val valor: Map<String, String> = when (valorRaw) {
-                is Map<*, *> -> valorRaw.mapValues { it.value?.toString() ?: "" }
+                is Map<*, *> -> valorRaw.mapKeys { it.key?.toString() ?: "" }.mapValues { it.value?.toString() ?: "" }
                 is String -> {
                     Log.d(tag, "valor es String, parseando...")
                     val cleaned = valorRaw.removeSurrounding("{", "}").trim()

@@ -47,3 +47,13 @@ docs/
 *.tmp
 *.log
 
+# Legacy root duplicates (ver AGENTS.md: son legado, no editar ni commitear)
+/index.html
+/js/
+/routes/
+/styles/
+/favicon.svg
+/logo.svg
+/README.md
+/REACT-MIGRATION-PLAN.md
+

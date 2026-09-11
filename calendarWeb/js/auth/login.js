@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../supabase-client.js';
+import { isPlatformAuthenticatorAvailable, enableBiometricLogin, authenticateWithBiometrics } from './webauthn.js';
 
 // DOM Elements
 const loginForm = document.getElementById('login-form');
@@ -12,11 +13,12 @@ const passwordInput = document.getElementById('password');
 const rememberCheckbox = document.getElementById('remember-me');
 const togglePasswordBtn = document.getElementById('toggle-password');
 const loginBtn = document.getElementById('login-btn');
+const biometricLoginBtn = document.getElementById('biometric-login-btn');
 
 /**
  * Initialize login page
  */
-function initLogin() {
+async function initLogin() {
     // Check if already logged in
     checkExistingSession();
 
@@ -25,6 +27,18 @@ function initLogin() {
 
     // Setup event listeners
     setupEventListeners();
+
+    // Check biometric availability
+    try {
+        const available = await isPlatformAuthenticatorAvailable();
+        const hasBioSession = localStorage.getItem('calendar_biometric_session') !== null;
+        if (available && hasBioSession && biometricLoginBtn) {
+            biometricLoginBtn.style.display = 'block';
+            biometricLoginBtn.addEventListener('click', handleBiometricLogin);
+        }
+    } catch (e) {
+        console.warn('Biometric check failed:', e);
+    }
 }
 
 /**
@@ -267,6 +281,13 @@ async function handleSuccessfulLogin(user) {
         localStorage.removeItem('remembered_username');
     }
 
+    // Activar soporte biométrico rápido en la web
+    try {
+        await enableBiometricLogin(user.id, user.username, user.email);
+    } catch (e) {
+        console.warn('Biometric registration info:', e);
+    }
+
     // Show success message
     await Swal.fire({
         icon: 'success',
@@ -278,6 +299,40 @@ async function handleSuccessfulLogin(user) {
 
     // Redirect to main (V2 usa Supabase directamente, no necesita sincronización legacy)
     window.location.href = 'routes/main.html';
+}
+
+/**
+ * Iniciar sesión rápido usando la huella / biometría del navegador
+ */
+async function handleBiometricLogin() {
+    try {
+        const bioSession = await authenticateWithBiometrics();
+        if (bioSession && bioSession.userId) {
+            const session = {
+                userId: bioSession.userId,
+                username: bioSession.username || bioSession.email,
+                name: bioSession.username || bioSession.email,
+                loginTime: new Date().toISOString()
+            };
+            localStorage.setItem('calendar_session', JSON.stringify(session));
+
+            await Swal.fire({
+                icon: 'success',
+                title: '¡Autenticado con Biometría!',
+                text: `Bienvenido de nuevo, ${bioSession.username || bioSession.email}`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+
+            window.location.href = 'routes/main.html';
+        }
+    } catch (err) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Error de Autenticación Biométrica',
+            text: err.message || 'No se pudo verificar la huella dactilar.'
+        });
+    }
 }
 
 /**

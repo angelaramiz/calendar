@@ -1,189 +1,52 @@
 # AGENTS.md — CalendarFinace
 
-## Stack Tecnologico
+Multi-product repo. Production app is `calendarWeb`; Android is being rewritten as FinTrack. `calendarRN/` is a stale migration workspace — ignore it unless asked.
 
-| Capa | Tecnologia | Version |
-|------|-----------|---------|
-| **Web** | Vanilla JS + HTML/CSS + Supabase | - |
-| **Mobile** | Kotlin + Jetpack Compose | Kotlin 2.4.0 |
-| **Backend** | Supabase PostgreSQL + Flask (scraper) | - |
-| **Scraper** | Python Flask + Selenium (Fly.io) | - |
-| **CI/CD** | Render (web) + GitHub | - |
-| **AI Index** | CodeGraph (SQLite) | v1.1.3 |
+## Layout
 
-### Dependencias Criticas Android
+- `calendarWeb/` — production static web app (deployed to Render). Entry `calendarWeb/index.html`, logic `calendarWeb/js/`, deploy artifact `calendarWeb/calendarfinance.apk` + `calendarWeb/version.json`.
+- `calendarAPP/` — Android rewrite, package `com.fintrack.app` (Kotlin + Compose + Supabase + Koin). Entry `app/src/main/java/com/fintrack/app/MainActivity.kt`, DI `.../di/AppModule.kt`.
+- `calendar_backend/` — Flask scraper (Fly.io). Root `index.html`/`js/`/`routes/`/`styles/` are legacy — don't edit.
+- No SQL migrations in repo; no Android tests. `.codegraph/` index exists.
 
-| Dependencia | Version | Notas |
-|-------------|---------|-------|
-| AGP | 8.7.3 | Requiere compileSdk 35 |
-| Kotlin | 2.4.0 | Requerido por Supabase v3.7 |
-| Compose BOM | 2024.06 | |
-| Supabase BOM | 3.7.0 | auth-kt + postgrest-kt |
-| Ktor | 3.0.3 | Requerido por Supabase v3 |
-| Biometric | 1.2.0-alpha05 | Login con huella |
-| Koin | 3.5.3 | DI |
+## Android (`calendarAPP/`)
 
-### Dependencias Criticas Web
+Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `compileSdk`/`targetSdk` 35, `minSdk` 26, Java 17, Compose BOM 2024.06, Supabase BOM 3.7.0, Ktor 3.0.3, Koin 3.5.3.
 
-| Dependencia | Version | Notas |
-|-------------|---------|-------|
-| Supabase JS | CDN | via esm.sh |
-| SweetAlert2 | 11.x | Modales y alertas |
-| WebAuthn | Native API | Biometria web |
+- No KSP/Hilt/Room in this project. KSP has no artifact for Kotlin 2.4.0 — don't re-add it.
+- Supabase v3: `auth-kt` exposes `Auth` (not `GoTrue`); inserts must use `buildJsonObject { put(...) }`, never `Map<String, Any>`.
+- Wrapper exists (`gradlew.bat` + `gradle/wrapper/`). Run Gradle from `calendarAPP/`:
+  `.\gradlew.bat compileReleaseKotlin` (fast check) → `.\gradlew.bat assembleRelease`.
+  If Gradle can't find Java, set `JAVA_HOME` to Android Studio's `jbr` dir.
+- `lint { checkReleaseBuilds = false }` is intentional — don't "fix" it.
+- Release signing reads `calendarAPP/local.properties` (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`; default path `../fintrack.jks`). The only keystore in repo is the stale-named `calendarAPP/calendarfinance.jks`. Never commit `local.properties` or keystores.
+- Known bugs (verified Sep 2026, fix if touching these files):
+  - `ui/navigation/NavGraph.kt` creates two separate `koinViewModel()` instances — `QuickEntry` saves through a different VM than the dashboard lists. Share one VM per graph.
+  - `DashboardViewModel` silently returns when there's no session — dashboard shows empty with no login prompt. No auth screens exist yet.
+  - `data/service/TransactionNotificationListener.kt` only logs; never persists. Its `bankPackages` list contains invalid IDs (`"com.bancoamérica"`, `"com.hsbc Mexican"`).
+  - `QuickEntryScreen` category `Row` doesn't scroll (overflow); amount field lacks numeric `KeyboardOptions`; title says "Gasto Rapido" even for income.
+- DatePicker ↔ epoch conversions must use `ZoneId.of("UTC")` both ways (else off-by-one day).
 
-## Estructura del Proyecto
+## Web (`calendarWeb/`)
 
-```
-CalendarFinace/
-├── calendarWeb/        # App web (produccion)
-│   ├── js/             # 30+ modulos JS
-│   ├── styles/         # CSS
-│   ├── routes/         # HTML pages
-│   └── docs/           # Migraciones SQL
-├── calendarRN/         # Copia workspace (migracion planeada)
-├── calendarAPP/        # App Android nativa (Kotlin)
-│   ├── app/src/main/java/com/calendarfinance/app/
-│   │   ├── data/
-│   │   │   ├── model/          # Data classes
-│   │   │   ├── remote/         # Supabase, Biometric, Session
-│   │   │   └── repository/     # Auth, Movement, Pattern, OTA
-│   │   ├── di/                 # Koin modules
-│   │   └── ui/
-│   │       ├── auth/           # Login, Register, Biometric
-│   │       ├── calendar/       # Calendar grid
-│   │       ├── movement/       # Movement form
-│   │       ├── pattern/        # Pattern form
-│   │       ├── balance/        # Balance screen
-│   │       ├── ota/            # OTA update
-│   │       ├── navigation/     # NavGraph
-│   │       └── theme/          # Material 3
-│   └── scripts/        # PowerShell automation
-├── .codegraph/         # Indice semantico
-└── .agents/            # Memoria y contexto IA
-```
+- `build.sh` (run by Render) copies `calendarWeb/*` to `dist/` and generates `dist/js/config.js` from env vars `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SCRAPER_API_URL`. Never commit real keys; local dev: `cd calendarWeb && python -m http.server`.
+- `render.yaml` rewrites all routes to `/index.html`.
+- Backend table for the Android rewrite is `fintrack_transactions` (RLS on `user_id`); UI never sets `TransactionEntity.user_id` — repository must fill it.
+- Canonical Supabase project is `https://ugtlxnrwfipoctckuvfd.supabase.co` (same URL + key as `release.ps1`; verified working Sep 2026). OTA reads table `app_versions`, row `clave = app_version_calendarfinance`, whose `valor` is **double-encoded JSON** (parse twice).
+- OTA flow: `OtaUpdateRepository.checkForUpdate()` compares remote `versionCode` vs `BuildConfig.VERSION_CODE`; `DashboardViewModel` exposes `updateAvailable`; `DashboardScreen` shows dialog; `OtaInstaller` downloads via `DownloadManager` and installs via `FileProvider` (`res/xml/file_paths.xml`, authorities `${applicationId}.fileprovider`). Requires `REQUEST_INSTALL_PACKAGES` + user granting "install unknown apps".
+- Permissions UX: `MainActivity` requests `POST_NOTIFICATIONS` at launch (Android 13+); `ui/permissions/PermissionsScreen.kt` (route `permissions`, gear icon in dashboard TopAppBar) deep-links to notification settings and `ACTION_NOTIFICATION_LISTENER_SETTINGS`.
 
-## Convenciones
+## Release pipeline (`calendarAPP/scripts/release.ps1`)
 
-### Nombrado
-- **Archivos JS**: `kebab-case.js`
-- **Archivos SQL**: `NN-nombre-descripcion.sql`
-- **Clases Kotlin**: `PascalCase`
-- **Funciones JS**: `camelCase`
-- **Tablas DB**: `snake_case`
+- Run from repo root: `.\calendarAPP\scripts\release.ps1 [-Version x.y.z] [-SkipBuild]`. Without `-Version` it prompts.
+- It auto-bumps `versionCode`/`versionName` in `app/build.gradle.kts`, rebuilds, copies APK to `calendarWeb/calendarfinance.apk`, writes `calendarWeb/version.json`, commits + pushes, triggers Render deploy, then PATCHes Supabase `app_versions` once Render serves the new `versionCode`.
+- ALWAYS run `assembleRelease` clean first; the script's retry path is slow.
+- WARNING: the script embeds a Supabase key and Render deploy hook in plaintext. Don't print, copy, or rotate them without asking.
 
-### Base de Datos (Supabase)
-- Todas las tablas tienen RLS con `auth.uid() = user_id`
-- UUID como PK via `uuid_generate_v4()`
-- Soft-delete con flags `active`/`archived`
-- Triggers `updated_at` automaticos
+## Rules
 
-### Arquitectura de Datos
-```
-Pattern → Projection → Movement
-```
-1. **Patterns**: Templates recurrentes (income_patterns, expense_patterns)
-2. **Projections**: Ocurrencias generadas dinamicamente
-3. **Movements**: Transacciones confirmadas
-
-## Comandos
-
-| Comando | Descripcion |
-|---------|-------------|
-| `codegraph explore "<query>"` | Busqueda semantica en codigo |
-| `codegraph index` | Reindexar proyecto |
-| `.\calendarAPP\scripts\release.ps1` | Build + deploy + Supabase |
-| `.\calendarAPP\scripts\cleanup.ps1` | Limpiar datos de usuario |
-| `cd calendarWeb && python -m http.server` | Servir web local |
-
-## Rutas Importantes
-
-| Ruta | Descripcion |
-|------|-------------|
-| `calendarWeb/index.html` | Entry point web (login) |
-| `calendarWeb/js/main.js` | Orquestador principal |
-| `calendarWeb/js/config.js` | Config (Supabase keys) |
-| `calendarAPP/.../MainActivity.kt` | Entry point Android |
-| `calendarAPP/.../CalendarFinApp.kt` | Koin + global error handler |
-| `calendarAPP/scripts/release.ps1` | Pipeline release |
-| `calendarWeb/docs/migrations/` | Schema SQL |
-
-## Estado Actual
-
-| Item | Estado | Version |
-|------|--------|---------|
-| App Web | Produccion | v1.0.20 |
-| App Android | En desarrollo | v1.0.21 |
-| CodeGraph | Indexado | 1514 nodos, 4883 aristas |
-| DB | Supabase | Migrations 01-05 |
-
-## Reglas del Agente
-
-1. **CodeGraph primero** — ANTES de grep/find usar `codegraph explore`
-2. **No secretos** — No modificar `config.js` sin confirmacion
-3. **Consistencia** — Mantener mismos modelos entre Web y App
-4. **Documentar** — Decisiones en `.agents/meetings/decisions/`
-5. **Tasks** — Actualizar `tasks.md` al completar tareas
-6. **No inventar** — NO generar URLs ni endpoints, solo usar los definidos
-7. **Estilo** — Seguir el estilo de codigo existente
-8. **Compile check** — SIEMPRE ejecutar `assembleRelease` antes de `release.ps1`
-
-## Guia de Errores Comunes
-
-### Build Android
-
-| Error | Causa | Solucion |
-|-------|-------|---------|
-| `Unresolved reference: GoTrue` | Supabase SDK v2 vs v3 | Usar `auth-kt` v3.7+ con `Auth` |
-| `metadata version 2.4.0, expected 2.0.0` | Kotlin incompatible | Usar Kotlin 2.4.0 |
-| `compileSdk 35 required` | AGP incompatible | Usar AGP 8.7.3+ |
-| `lint checkReleaseBuilds FAILED` | Lint bloquea build | `lint { checkReleaseBuilds = false }` |
-| `List is empty` (login) | Perfil no existe en users | Auto-crear perfil en AuthRepository |
-| `HorizontalDivider unresolved` | Compose BOM viejo | BOM 2024.06+ |
-| Crash sin mensaje | Exception sin catch | Verificar Logcat con tag `CalendarFinApp` |
-
-### Supabase
-
-| Error | Causa | Solucion |
-|-------|-------|---------|
-| `401 Unauthorized` | API key incorrecta | Verificar `sb_publishable_...` en config |
-| `422 WeakPassword` | Password sin requisitos | 8+ chars, mayuscula, minuscula, numero, especial |
-| `table doesn't exist` | Tabla no creada | Ejecutar migracion en SQL Editor |
-
-### Gradle
-
-| Error | Causa | Solucion |
-|-------|-------|---------|
-| `gradlew not recognized` | No hay wrapper | Abrir proyecto en Android Studio |
-| `SDK location not found` | No hay local.properties | Crear con `sdk.dir` |
-| `JAVA_HOME not set` | Java no encontrado | Agregar a `gradle.properties` |
-
-### Release Pipeline
-
-| Error | Causa | Solucion |
-|-------|-------|---------|
-| `No se encontro build.gradle.kts` | Path relativo roto | Ejecutar desde raiz del proyecto |
-| `Build failed` pero APK existe | Error en copy | Verificar ruta `calendarWeb/calendarfinance.apk` |
-| `Supabase 401` | Key vieja | Usar key `sb_publishable_...` actualizada |
-| `Render deploy falla` | Billing issue | Verificar Render dashboard |
-
-## Flujo de Debug
-
-```
-1. Si la app crashea sin mensaje:
-   → adb logcat | grep -i "calendar\|FATAL\|AndroidRuntime"
-   
-2. Si el build falla:
-   → Verificar versiones en build.gradle.kts
-   → Limpiar: .\gradlew.bat clean
-   → Verificar JAVA_HOME y ANDROID_HOME
-
-3. Si el login falla:
-   → Verificar API key en SupabaseClientProvider.kt
-   → Verificar que la tabla users existe en Supabase
-   → Verificar RLS policies
-
-4. Si el deploy falla:
-   → Verificar Render dashboard (billing status)
-   → Verificar secrets en GitHub/Render
-   → Ejecutar .\calendarAPP\scripts\release.ps1 -SkipBuild
-```
+1. Responde SIEMPRE en español: toda la conversación, explicaciones y respuestas al usuario van en español.
+2. `codegraph explore "<query>"` before grep/find on indexed code.
+2. Don't invent URLs, endpoints, package names, or table names — only those defined in code/config.
+3. Keep Web and Android models consistent (`TransactionEntity` ↔ Supabase columns).
+4. Match existing style: Kotlin `PascalCase` classes / `camelCase` functions, JS `kebab-case.js`, DB `snake_case`.

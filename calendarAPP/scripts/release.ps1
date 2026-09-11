@@ -24,7 +24,8 @@ $ScriptDir = $PSScriptRoot
 $ProjectDir = Split-Path -Parent $ScriptDir
 $RepoDir = Split-Path -Parent $ProjectDir
 $gradlePath = Join-Path $ProjectDir "app\build.gradle.kts"
-$publicApkPath = "calendarWeb\calendarfinance.apk"
+$publicApkPath = Join-Path $RepoDir "calendarWeb\calendarfinance.apk"
+$versionJsonPath = Join-Path $RepoDir "calendarWeb\version.json"
 $supabaseUrl = "https://ugtlxnrwfipoctckuvfd.supabase.co"
 $supabaseKey = "sb_publishable_KcdYZchjzzpizgM4nhTw8w_Bd6w6-d1"
 $dbKey = "app_version_calendarfinance"
@@ -113,7 +114,8 @@ if (-not $SkipBuild) {
 
     # Copiar APK
     $apkBuildPath = Join-Path $ProjectDir "app\build\outputs\apk\release\app-release.apk"
-    if (-not (Test-Path "calendarWeb")) { New-Item -ItemType Directory -Force -Path "calendarWeb" | Out-Null }
+    $publicApkDir = Split-Path -Parent $publicApkPath
+    if (-not (Test-Path $publicApkDir)) { New-Item -ItemType Directory -Force -Path $publicApkDir | Out-Null }
 
     if (Test-Path $apkBuildPath) {
         Copy-Item $apkBuildPath $publicApkPath -Force
@@ -127,7 +129,6 @@ if (-not $SkipBuild) {
 }
 
 # 5.5 Generar version.json (antes del push para que se incluya en el commit)
-$versionJsonPath = "calendarWeb\version.json"
 $versionJson = @{ versionCode = $newCode; versionName = $targetVersion } | ConvertTo-Json -Compress
 Set-Content -Path $versionJsonPath -Value $versionJson -Encoding ASCII -Force
 Write-Host "version.json generado: $versionJsonPath" -ForegroundColor Green
@@ -138,8 +139,18 @@ Push-Location $RepoDir
 git add -f $gradlePath
 if (Test-Path $publicApkPath) { git add -f $publicApkPath }
 git add -f $versionJsonPath
-git commit -m "release: v$targetVersion (code=$newCode)" 2>&1 | Out-Null
+$commitOutput = git commit -m "release: v$targetVersion (code=$newCode)" 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "git commit fallo: $commitOutput"
+    Pop-Location
+    exit 1
+}
 git push
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "git push fallo"
+    Pop-Location
+    exit 1
+}
 Pop-Location
 Write-Host "Git OK" -ForegroundColor Green
 

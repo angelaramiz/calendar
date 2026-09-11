@@ -13,23 +13,21 @@ val localProps = Properties().apply {
 }
 
 android {
-    namespace = "com.calendarfinance.app"
+    namespace = "com.fintrack.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.calendarfinance.app"
+        applicationId = "com.fintrack.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 39
-        versionName = "1.0.38"
-
+        versionCode = 2
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables { useSupportLibrary = true }
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file(localProps.getProperty("KEYSTORE_PATH", "../calendarfinance.jks"))
+            storeFile = file(localProps.getProperty("KEYSTORE_PATH", "../fintrack.jks"))
             storePassword = localProps.getProperty("KEYSTORE_PASSWORD", "")
             keyAlias = localProps.getProperty("KEY_ALIAS", "")
             keyPassword = localProps.getProperty("KEY_PASSWORD", "")
@@ -70,57 +68,40 @@ dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
 
-    // Compose UI
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
-    // Activity & Lifecycle
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.0")
-
-    // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    // Supabase (v3.x con auth-kt)
+    // Supabase
     implementation(platform("io.github.jan-tennert.supabase:bom:3.7.0"))
     implementation("io.github.jan-tennert.supabase:auth-kt") {
         exclude(group = "androidx.browser", module = "browser")
     }
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
 
-    // Ktor 3.x (requerido por Supabase v3)
     implementation("io.ktor:ktor-client-android:3.0.3")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
 
-    // OkHttp (OTA download)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
-    // Koin DI
+    // Koin
     val koinVersion = "3.5.3"
     implementation("io.insert-koin:koin-android:$koinVersion")
     implementation("io.insert-koin:koin-androidx-compose:$koinVersion")
 
-    // Kotlinx Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
-
-    // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
-    // DataStore (local session)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
-
-    // WorkManager (notifications scheduling)
     implementation("androidx.work:work-runtime-ktx:2.9.0")
-
-    // Biometric
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
 
-    // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

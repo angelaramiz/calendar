@@ -1,6 +1,7 @@
 package com.fintrack.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -18,7 +19,15 @@ object Routes {
 }
 
 @Composable
-fun FinTrackNavGraph(navController: NavHostController) {
+fun FinTrackNavGraph(
+    navController: NavHostController,
+    openQuickEntryOnStart: Boolean = false
+) {
+    if (openQuickEntryOnStart) {
+        LaunchedEffect(Unit) {
+            navController.navigate(Routes.QUICK_ENTRY)
+        }
+    }
     NavHost(navController = navController, startDestination = Routes.DASHBOARD) {
         composable(Routes.DASHBOARD) {
             val parentEntry = remember(it) { navController.getBackStackEntry(Routes.DASHBOARD) }

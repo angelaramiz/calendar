@@ -1,4 +1,4 @@
-﻿package com.fintrack.app.ui.dashboard
+package com.fintrack.app.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*

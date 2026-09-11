@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_desc">Acceso rápido a FinTrack</string>
+    <string name="widget_add">＋ Gasto rápido</string>
+    <string name="widget_open">Abrir FinTrack</string>
+</resources>

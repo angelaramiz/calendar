@@ -1,4 +1,4 @@
-﻿package com.fintrack.app.data.service
+package com.fintrack.app.data.service
 
 import android.app.Notification
 import android.service.notification.NotificationListenerService

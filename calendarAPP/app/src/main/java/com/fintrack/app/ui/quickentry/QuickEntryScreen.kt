@@ -25,7 +25,7 @@ fun QuickEntryScreen(
     var category by remember { mutableStateOf("Comida") }
     var description by remember { mutableStateOf("") }
     val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
-    val title = if (type == "INCOME") "Ingreso Rápido" else "Gasto Rápido"
+    val title = if (type == "INCOME") "Ingreso RÃ¡pido" else "Gasto RÃ¡pido"
 
     Scaffold(
         topBar = {

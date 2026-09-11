@@ -1,4 +1,4 @@
-﻿package com.fintrack.app.data.remote
+package com.fintrack.app.data.remote
 
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient

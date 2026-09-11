@@ -1,4 +1,4 @@
-﻿package com.fintrack.app.ui.dashboard
+package com.fintrack.app.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope

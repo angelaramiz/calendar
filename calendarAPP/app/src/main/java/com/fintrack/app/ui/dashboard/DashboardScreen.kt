@@ -28,6 +28,14 @@ fun DashboardScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    uiState.updateMessage?.let { message ->
+        LaunchedEffect(message) {
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearUpdateMessage()
+        }
+    }
 
     uiState.updateAvailable?.let { update ->
         AlertDialog(
@@ -58,12 +66,16 @@ fun DashboardScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
                 actions = {
+                    IconButton(onClick = { viewModel.checkForUpdate(manual = true) }) {
+                        Icon(Icons.Default.SystemUpdate, "Buscar actualizaciones")
+                    }
                     IconButton(onClick = onNavigateToPermissions) {
                         Icon(Icons.Default.Settings, "Permisos")
                     }
                 }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = onNavigateToQuickEntry) {
                 Icon(Icons.Default.Add, "Agregar transaccion")

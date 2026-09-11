@@ -20,7 +20,8 @@ data class DashboardUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val needsLogin: Boolean = false,
-    val updateAvailable: OtaUpdateInfo? = null
+    val updateAvailable: OtaUpdateInfo? = null,
+    val updateMessage: String? = null
 )
 
 class DashboardViewModel(
@@ -39,13 +40,19 @@ class DashboardViewModel(
         checkForUpdate()
     }
 
-    fun checkForUpdate() {
+    fun checkForUpdate(manual: Boolean = false) {
         viewModelScope.launch {
             val update = otaUpdateRepository.checkForUpdate()
             if (update != null) {
-                _uiState.value = _uiState.value.copy(updateAvailable = update)
+                _uiState.value = _uiState.value.copy(updateAvailable = update, updateMessage = null)
+            } else if (manual) {
+                _uiState.value = _uiState.value.copy(updateMessage = "Ya tienes la última versión.")
             }
         }
+    }
+
+    fun clearUpdateMessage() {
+        _uiState.value = _uiState.value.copy(updateMessage = null)
     }
 
     fun dismissUpdate() {

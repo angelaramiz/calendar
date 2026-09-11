@@ -56,6 +56,18 @@ class AuthViewModel(
         _uiState.value = _uiState.value.copy(loggedIn = false)
     }
 
+    fun refreshSession() {
+        viewModelScope.launch {
+            if (authRepository.isLoggedIn) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = null, loggedIn = true)
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    error = "Sesión caducada. Ingresa tu correo y contraseña."
+                )
+            }
+        }
+    }
+
     private fun friendlyMessage(e: Throwable): String {
         val msg = e.message.orEmpty()
         return when {

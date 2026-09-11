@@ -24,6 +24,7 @@ import org.koin.androidx.compose.koinViewModel
 fun DashboardScreen(
     onNavigateToQuickEntry: () -> Unit,
     onNavigateToPermissions: () -> Unit,
+    onNavigateToAuth: () -> Unit,
     viewModel: DashboardViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -115,7 +116,8 @@ fun DashboardScreen(
                                 Text(if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Sin transacciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (uiState.needsLogin) {
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Button(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
+                                    Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                                    TextButton(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
                                 }
                             }
                         }

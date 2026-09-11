@@ -27,6 +27,19 @@ class AuthRepository {
         }
     }
 
+    suspend fun register(email: String, password: String): Result<String> {
+        return try {
+            client.auth.signUpWith(Email) {
+                this.email = email
+                this.password = password
+            }
+            val userId = client.auth.currentSessionOrNull()?.user?.id ?: throw Exception("No user")
+            Result.success(userId)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun logout() {
         try { client.auth.signOut() } catch (e: Exception) { }
     }

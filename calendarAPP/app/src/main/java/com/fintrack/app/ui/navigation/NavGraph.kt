@@ -6,6 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import com.fintrack.app.ui.auth.AuthScreen
 import com.fintrack.app.ui.dashboard.DashboardScreen
 import com.fintrack.app.ui.permissions.PermissionsScreen
 import com.fintrack.app.ui.quickentry.QuickEntryScreen
@@ -16,6 +17,7 @@ object Routes {
     const val DASHBOARD = "dashboard"
     const val QUICK_ENTRY = "quick_entry"
     const val PERMISSIONS = "permissions"
+    const val AUTH = "auth"
 }
 
 @Composable
@@ -35,7 +37,18 @@ fun FinTrackNavGraph(
             DashboardScreen(
                 onNavigateToQuickEntry = { navController.navigate(Routes.QUICK_ENTRY) },
                 onNavigateToPermissions = { navController.navigate(Routes.PERMISSIONS) },
+                onNavigateToAuth = { navController.navigate(Routes.AUTH) },
                 viewModel = dashboardViewModel
+            )
+        }
+        composable(Routes.AUTH) {
+            val parentEntry = remember { navController.getBackStackEntry(Routes.DASHBOARD) }
+            val dashboardViewModel: DashboardViewModel = koinViewModel(viewModelStoreOwner = parentEntry)
+            AuthScreen(
+                onLoggedIn = {
+                    dashboardViewModel.loadDashboard()
+                    navController.popBackStack()
+                }
             )
         }
         composable(Routes.PERMISSIONS) {

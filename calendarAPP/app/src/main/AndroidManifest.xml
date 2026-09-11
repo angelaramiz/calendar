@@ -44,6 +44,17 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <service
+            android:name=".ui.tile.QuickExpenseTileService"
+            android:icon="@drawable/ic_tile_add"
+            android:label="Gasto rápido"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

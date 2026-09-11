@@ -42,7 +42,10 @@ class TransactionNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
-        val text = extras.getString(Notification.EXTRA_TEXT) ?: return
+        // Algunas notificaciones (BigTextStyle) traen el texto en EXTRA_BIG_TEXT
+        val text = extras.getString(Notification.EXTRA_TEXT)
+            ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+            ?: return
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val packageName = sbn.packageName
 
@@ -72,31 +75,39 @@ class TransactionNotificationListener : NotificationListenerService() {
         return bankPackages.any { packageName.equals(it, ignoreCase = true) }
     }
 
+    private fun String.normalized(): String {
+        // Quita acentos para comparar ("debitamos" matchea "débito")
+        return java.text.Normalizer.normalize(this.lowercase(), java.text.Normalizer.Form.NFD)
+            .replace(Regex("\\p{Mn}+"), "")
+    }
+
     private fun isFinancialNotification(text: String): Boolean {
-        val lowerText = text.lowercase()
-        return expenseKeywords.any { lowerText.contains(it) } ||
-                incomeKeywords.any { lowerText.contains(it) }
+        val lowerText = text.normalized()
+        return expenseKeywords.any { lowerText.contains(it.normalized()) } ||
+                incomeKeywords.any { lowerText.contains(it.normalized()) }
     }
 
     private fun parseTransaction(text: String, title: String): TransactionEntity? {
-        val lowerText = text.lowercase()
+        val lowerText = text.normalized()
 
-        // Detect amount
-        val amountPattern = Regex("""\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)""")
+        // Detect amount (tolera "$ 40.00" con espacio)
+        val amountPattern = Regex("""\$?\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)""")
         val amountMatch = amountPattern.find(text) ?: return null
         val amountStr = amountMatch.groupValues[1].replace(",", "").toDoubleOrNull() ?: return null
+        if (amountStr <= 0) return null
 
         // Detect type
-        val isIncome = incomeKeywords.any { lowerText.contains(it) }
+        val isIncome = incomeKeywords.any { lowerText.contains(it.normalized()) }
         val type = if (isIncome) "INCOME" else "EXPENSE"
 
-        // Detect merchant
+        // Detect merchant: primero en el título ("Pagaste a Urbani"), luego en el texto
         val merchantPattern = Regex("""en\s+([A-Za-z0-9\s]+?)(?:\.|$)""")
-        val merchantMatch = merchantPattern.find(text)
-        val merchant = merchantMatch?.groupValues?.get(1)?.trim()
+        val titleMerchantPattern = Regex("""(?i)(?:pagaste a|pago a|compra en|pagó en)\s+([A-Za-z0-9\s]+)""")
+        val merchant = titleMerchantPattern.find(title)?.groupValues?.get(1)?.trim()
+            ?: merchantPattern.find(text)?.groupValues?.get(1)?.trim()
 
-        // Auto-categorize
-        val category = autoCategorize(merchant ?: text)
+        // Auto-categorize (título + texto para no perder "Urbani")
+        val category = autoCategorize("$title $merchant $text")
 
         return TransactionEntity(
             amount = amountStr,
@@ -110,7 +121,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     }
 
     private fun autoCategorize(text: String): String {
-        val lower = text.lowercase()
+        val lower = text.normalized()
         return when {
             lower.containsAny("restaurante", "café", "comida", "restaurant", "starbucks", "mcdonald") -> "Comida"
             lower.containsAny("uber", "taxi", "gasolina", "estacionamiento", "metro") -> "Transporte"
@@ -121,6 +132,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     }
 
     private fun String.containsAny(vararg keywords: String): Boolean {
-        return keywords.any { this.contains(it) }
+        val normalizedThis = this.normalized()
+        return keywords.any { normalizedThis.contains(it.normalized()) }
     }
 }

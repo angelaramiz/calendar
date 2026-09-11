@@ -114,6 +114,10 @@ fun DashboardScreen(
                                 Icon(Icons.Default.Receipt, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Sin transacciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                uiState.error?.let {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                }
                                 if (uiState.needsLogin) {
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }

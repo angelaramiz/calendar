@@ -28,10 +28,14 @@ async function initLogin() {
     // Setup event listeners
     setupEventListeners();
 
-    // Check biometric availability
+    // Check biometric availability (solo si hay un registro real con credId)
     try {
         const available = await isPlatformAuthenticatorAvailable();
-        const hasBioSession = localStorage.getItem('calendar_biometric_session') !== null;
+        let hasBioSession = false;
+        try {
+            const bioRaw = localStorage.getItem('calendar_biometric_session');
+            hasBioSession = !!(bioRaw && JSON.parse(bioRaw).credId);
+        } catch (_) { hasBioSession = false; }
         if (available && hasBioSession && biometricLoginBtn) {
             biometricLoginBtn.style.display = 'block';
             biometricLoginBtn.addEventListener('click', handleBiometricLogin);
@@ -307,11 +311,20 @@ async function handleSuccessfulLogin(user) {
 async function handleBiometricLogin() {
     try {
         const bioSession = await authenticateWithBiometrics();
+        if (!bioSession || !bioSession.userId) {
+            throw new Error('No se pudo verificar la huella dactilar.');
+        }
+        // La biometría solo desbloquea: la sesión real debe existir en Supabase.
+        // Si el registro se canceló alguna vez, no hay credId y se exige contraseña.
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user || (bioSession.userId !== user.id && bioSession.email !== user.email)) {
+            throw new Error('Sesión caducada. Ingresa tu correo y contraseña una vez para reactivar la huella.');
+        }
         if (bioSession && bioSession.userId) {
             const session = {
-                userId: bioSession.userId,
-                username: bioSession.username || bioSession.email,
-                name: bioSession.username || bioSession.email,
+                userId: user.id,
+                username: bioSession.username || user.email,
+                name: bioSession.username || user.email,
                 loginTime: new Date().toISOString()
             };
             localStorage.setItem('calendar_session', JSON.stringify(session));

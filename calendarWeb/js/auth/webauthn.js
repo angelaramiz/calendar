@@ -64,15 +64,9 @@ export async function enableBiometricLogin(userId, username, email) {
         }
     } catch (err) {
         console.warn('Biometric registration skipped or canceled:', err);
-        // Guardado de respaldo local seguro
-        const bioSession = {
-            userId,
-            username,
-            email,
-            enabledAt: new Date().toISOString()
-        };
-        localStorage.setItem('calendar_biometric_session', JSON.stringify(bioSession));
-        return { success: true };
+        // Sin credential real no se guarda nada: volver a intentar tras login con contraseña
+        localStorage.removeItem('calendar_biometric_session');
+        return { success: false, error: 'Registro biométrico cancelado o no disponible' };
     }
     return { success: false, error: 'No se pudo registrar la biometría' };
 }
@@ -107,12 +101,14 @@ export async function authenticateWithBiometrics() {
             if (assertion) {
                 return bioData;
             }
+            throw new Error('No se pudo verificar la huella dactilar.');
         } catch (e) {
-            console.warn('WebAuthn assertion failed, falling back to local session token:', e);
+            console.warn('WebAuthn assertion failed:', e);
+            throw new Error('No se pudo verificar la huella dactilar.');
         }
     }
 
-    return bioData;
+    throw new Error('Biometría no disponible en este dispositivo.');
 }
 
 function arrayBufferToBase64(buffer) {

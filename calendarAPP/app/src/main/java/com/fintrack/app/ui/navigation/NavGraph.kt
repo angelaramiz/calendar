@@ -1,6 +1,7 @@
 package com.fintrack.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -20,16 +21,20 @@ object Routes {
 fun FinTrackNavGraph(navController: NavHostController) {
     NavHost(navController = navController, startDestination = Routes.DASHBOARD) {
         composable(Routes.DASHBOARD) {
+            val parentEntry = remember(it) { navController.getBackStackEntry(Routes.DASHBOARD) }
+            val dashboardViewModel: DashboardViewModel = koinViewModel(viewModelStoreOwner = parentEntry)
             DashboardScreen(
                 onNavigateToQuickEntry = { navController.navigate(Routes.QUICK_ENTRY) },
-                onNavigateToPermissions = { navController.navigate(Routes.PERMISSIONS) }
+                onNavigateToPermissions = { navController.navigate(Routes.PERMISSIONS) },
+                viewModel = dashboardViewModel
             )
         }
         composable(Routes.PERMISSIONS) {
             PermissionsScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.QUICK_ENTRY) {
-            val dashboardViewModel: DashboardViewModel = koinViewModel()
+            val parentEntry = remember { navController.getBackStackEntry(Routes.DASHBOARD) }
+            val dashboardViewModel: DashboardViewModel = koinViewModel(viewModelStoreOwner = parentEntry)
             QuickEntryScreen(
                 onSave = { transaction ->
                     dashboardViewModel.addTransaction(transaction)

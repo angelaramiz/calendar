@@ -20,11 +20,11 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
   If Gradle can't find Java, set `JAVA_HOME` to Android Studio's `jbr` dir.
 - `lint { checkReleaseBuilds = false }` is intentional — don't "fix" it.
 - Release signing reads `calendarAPP/local.properties` (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`; default path `../fintrack.jks`). The only keystore in repo is the stale-named `calendarAPP/calendarfinance.jks`. Never commit `local.properties` or keystores.
-- Known bugs (verified Sep 2026, fix if touching these files):
-  - `ui/navigation/NavGraph.kt` creates two separate `koinViewModel()` instances — `QuickEntry` saves through a different VM than the dashboard lists. Share one VM per graph.
-  - `DashboardViewModel` silently returns when there's no session — dashboard shows empty with no login prompt. No auth screens exist yet.
-  - `data/service/TransactionNotificationListener.kt` only logs; never persists. Its `bankPackages` list contains invalid IDs (`"com.bancoamérica"`, `"com.hsbc Mexican"`).
-  - `QuickEntryScreen` category `Row` doesn't scroll (overflow); amount field lacks numeric `KeyboardOptions`; title says "Gasto Rapido" even for income.
+- Known issues (updated Sep 2026):
+  - `ui/navigation/NavGraph.kt` shares one `DashboardViewModel` per graph via the `DASHBOARD` back-stack entry as `viewModelStoreOwner`. Don't revert to per-screen `koinViewModel()`.
+  - No auth screens exist yet: `DashboardViewModel` publishes `needsLogin=true` + message instead of returning silently; UI shows it with a retry button.
+  - `data/service/TransactionNotificationListener.kt` now persists via `TransactionRepository` using the Supabase session (skips silently without session). Its `bankPackages` IDs are plausible but **unverified against real bank apps** — confirm on a real device before trusting auto-detection. Matching is exact (`equals`), not `contains`.
+  - Kotlin sources must stay **UTF-8 sin BOM**; PowerShell `Set-Content -Encoding UTF8` writes BOM and mangles accents on rewrite. Prefer the `edit` tool; if using PowerShell, write bytes via `[System.IO.File]`.
 - DatePicker ↔ epoch conversions must use `ZoneId.of("UTC")` both ways (else off-by-one day).
 
 ## Web (`calendarWeb/`)

@@ -27,6 +27,7 @@ class TransactionRepository {
             put("type", transaction.type)
             put("category", transaction.category)
             put("description", transaction.description)
+            transaction.merchant?.let { put("merchant", it) }
             put("timestamp", transaction.timestamp)
             put("source", transaction.source)
         }

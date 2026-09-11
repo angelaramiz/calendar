@@ -1,13 +1,16 @@
 package com.fintrack.app.ui.quickentry
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.model.TransactionEntity
 
@@ -22,11 +25,12 @@ fun QuickEntryScreen(
     var category by remember { mutableStateOf("Comida") }
     var description by remember { mutableStateOf("") }
     val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
+    val title = if (type == "INCOME") "Ingreso Rápido" else "Gasto Rápido"
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gasto Rapido") },
+                title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.Default.ArrowBack, "Cancelar")
@@ -45,12 +49,20 @@ fun QuickEntryScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(value = amount, onValueChange = { amount = it }, label = { Text("Monto") }, leadingIcon = { Text("$") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Monto") },
+                leadingIcon = { Text("$") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Categoria", style = MaterialTheme.typography.labelLarge)
             Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 categories.forEach { cat ->
                     FilterChip(selected = category == cat, onClick = { category = cat }, label = { Text(cat) }, modifier = Modifier.padding(end = 4.dp))
                 }

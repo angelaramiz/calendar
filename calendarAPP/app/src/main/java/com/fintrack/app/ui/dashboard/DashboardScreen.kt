@@ -1,4 +1,4 @@
-package com.fintrack.app.ui.dashboard
+﻿package com.fintrack.app.ui.dashboard
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -100,7 +100,11 @@ fun DashboardScreen(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Icon(Icons.Default.Receipt, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("Sin transacciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Sin transacciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (uiState.needsLogin) {
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Button(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
+                                }
                             }
                         }
                     }

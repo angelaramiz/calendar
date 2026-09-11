@@ -1,4 +1,4 @@
-package com.fintrack.app.ui.dashboard
+﻿package com.fintrack.app.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +19,7 @@ data class DashboardUiState(
     val recentTransactions: List<TransactionEntity> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    val needsLogin: Boolean = false,
     val updateAvailable: OtaUpdateInfo? = null
 )
 
@@ -51,10 +52,21 @@ class DashboardViewModel(
         _uiState.value = _uiState.value.copy(updateAvailable = null)
     }
 
+    fun clearError() {
+        _uiState.value = _uiState.value.copy(error = null)
+    }
+
     fun loadDashboard() {
-        if (userId.isEmpty()) return
+        if (userId.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                isLoading = false,
+                needsLogin = true,
+                error = "Inicia sesión para ver tus transacciones."
+            )
+            return
+        }
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true)
+            _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
             try {
                 val transactions = transactionRepository.getTransactions(userId)
                 val income = transactions.filter { it.type == "INCOME" }.sumOf { it.amount }
@@ -74,7 +86,13 @@ class DashboardViewModel(
     }
 
     fun addTransaction(transaction: TransactionEntity) {
-        if (userId.isEmpty()) return
+        if (userId.isEmpty()) {
+            _uiState.value = _uiState.value.copy(
+                needsLogin = true,
+                error = "Inicia sesión para guardar transacciones."
+            )
+            return
+        }
         viewModelScope.launch {
             try {
                 transactionRepository.insertTransaction(userId, transaction)

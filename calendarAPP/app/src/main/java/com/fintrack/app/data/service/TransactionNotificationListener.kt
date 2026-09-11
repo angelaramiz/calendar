@@ -1,11 +1,13 @@
-package com.fintrack.app.data.service
+﻿package com.fintrack.app.data.service
 
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.data.remote.SupabaseClientProvider
 import com.fintrack.app.data.repository.TransactionRepository
+import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,14 +16,18 @@ class TransactionNotificationListener : NotificationListenerService() {
 
     private val tag = "NotificationListener"
     private val scope = CoroutineScope(Dispatchers.IO)
+    private val transactionRepository = TransactionRepository()
 
     private val bankPackages = listOf(
-        "com.bancoamérica", "com.bbva.bbvacontigo",
-        "com.bancanet", "com.santander.move",
-        "com.scotiabank", "com.banorte.gobcams",
-        "com.hsbc Mexican", "com.inbursa.bancamovil",
-        "com.liverpool.superapp", "com.paypal.android.p2pmobile",
-        "com.mercadopago.wallet"
+        "com.bbva.bbvacontigo",
+        "com.bancomer.mbanking",
+        "com.santander.santandermexico",
+        "com.banorte.movil",
+        "com.hsbc.hsbcmexico",
+        "com.scotiabank.mobile",
+        "com.inbursa.bancamovil",
+        "com.mercadopago.wallet",
+        "com.paypal.android.p2pmobile"
     )
 
     private val expenseKeywords = listOf(
@@ -48,9 +54,14 @@ class TransactionNotificationListener : NotificationListenerService() {
 
         scope.launch {
             try {
-                // Here we would save to database
-                // For now, just log it
-                Log.d(tag, "Transaction detected: ${transaction.type} $${transaction.amount} ${transaction.category}")
+                val userId = try {
+                    SupabaseClientProvider.client.auth.currentSessionOrNull()?.user?.id
+                } catch (e: Exception) {
+                    Log.w(tag, "Sin sesión, no se puede guardar: ${e.message}")
+                    null
+                } ?: return@launch
+                val saved = transactionRepository.insertTransaction(userId, transaction)
+                Log.d(tag, "Transaction guardada: ${saved.id} ${saved.type} $${saved.amount} ${saved.category}")
             } catch (e: Exception) {
                 Log.e(tag, "Error saving transaction: ${e.message}")
             }
@@ -58,7 +69,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     }
 
     private fun isBankApp(packageName: String): Boolean {
-        return bankPackages.any { packageName.contains(it, ignoreCase = true) }
+        return bankPackages.any { packageName.equals(it, ignoreCase = true) }
     }
 
     private fun isFinancialNotification(text: String): Boolean {

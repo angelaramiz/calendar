@@ -43,7 +43,6 @@ public/
 Thumbs.db
 
 # Temp & Logs
-docs/
 *.tmp
 *.log
 

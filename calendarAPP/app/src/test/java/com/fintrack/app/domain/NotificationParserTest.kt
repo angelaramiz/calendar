@@ -128,6 +128,45 @@ class NotificationParserTest {
     }
 
     @Test
+    fun promoTerminalMini_esRechazada() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "¡Solo por tiempo limitado!",
+            text = "Llévate tu Terminal MINI por solo $ 99 y obtén los beneficios.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("promocion", (result as ParseResult.Rejected).reason)
+    }
+
+    @Test
+    fun promoPaqueteTelcel_esRechazada() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "¡Tu paquete Telcel vence esta noche!",
+            text = "Recarga con tu saldo en cuenta y mantente conectado.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("promocion", (result as ParseResult.Rejected).reason)
+    }
+
+    @Test
+    fun ofertaPorSoloPrecio_esRechazada() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Oferta exclusiva",
+            text = "Aprovecha, llévalo por solo $ 1,299 este fin de semana.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("promocion", (result as ParseResult.Rejected).reason)
+    }
+
+    @Test
     fun comercioSeExtraeDelTexto_siTituloNoLoTrae() {
         val result = NotificationParser.parse(
             packageName = "com.mercadopago.wallet",

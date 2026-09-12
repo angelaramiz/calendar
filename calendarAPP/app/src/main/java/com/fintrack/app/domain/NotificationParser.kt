@@ -44,11 +44,15 @@ object NotificationParser {
         "abon", "deposit", "nomin", "ingres", "reembols", "recibid"
     )
 
-    // Promociones y avisos que NUNCA son movimientos (ej: "gana 12% anual")
+    // Promociones y avisos que NUNCA son movimientos.
+    // Corren ANTES de buscar montos: "Terminal MINI por solo $99" no es un gasto.
     private val promoExclusions = listOf(
         "%", "anual", "invert", "promoc", "referid", "publicidad",
         "felicidades", "ganaste", "ganar", "descuento", "cupon",
-        "conoce", "descubre", "nuevo beneficio", "te regalamos"
+        "conoce", "descubre", "nuevo beneficio", "te regalamos",
+        "tiempo limitado", "solo por", "por solo", "oferta", "aprovecha",
+        "llevate", "obten", "vence", "paquete", "terminal",
+        "ultimos dias", "ultimas horas", "fin de semana"
     )
 
     fun parse(

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -41,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -258,7 +260,21 @@ fun FlowsScreen(
             if (uiState.allocations.isNotEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Resultado", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Resultado", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                "${uiState.allocations.size} sobres",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                 }
                 itemsIndexed(uiState.allocations) { _, allocation ->
@@ -267,7 +283,7 @@ fun FlowsScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer
                         ),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(16.dp)
                     ) {
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -291,11 +307,32 @@ fun FlowsScreen(
                 }
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Total asignado: $${String.format("%.2f", uiState.totalAssigned)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Total asignado",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                "$${String.format("%.2f", uiState.totalAssigned)}",
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(80.dp))
                 }
             } else {
@@ -307,9 +344,22 @@ fun FlowsScreen(
 
 @Composable
 private fun ConnectorLine() {
-    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier.width(2.dp).height(20.dp)
+            modifier = Modifier.width(2.dp).height(10.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+        ) {
+            Box(
+                modifier = Modifier.padding(5.dp).size(6.dp)
+                    .background(MaterialTheme.colorScheme.primary, CircleShape)
+            )
+        }
+        Box(
+            modifier = Modifier.width(2.dp).height(10.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant)
         )
     }
@@ -325,10 +375,23 @@ private fun NodeCard(step: Int, node: FlowNode, viewModel: FlowsViewModel) {
     }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        step.toString(),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
                 Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -19,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -41,6 +43,8 @@ import com.fintrack.app.domain.MonthProjection
 import com.fintrack.app.domain.SavingsGoal
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
+import com.fintrack.app.ui.theme.expenseColor
+import com.fintrack.app.ui.theme.incomeColor
 import org.koin.androidx.compose.koinViewModel
 import java.time.format.TextStyle
 import java.util.Locale
@@ -145,7 +149,7 @@ fun BudgetScreen(
             }
 
             item {
-                Text("Corto plazo: este mes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                SectionHeader(title = "Corto plazo", subtitle = "Este mes")
             }
             item {
                 val report = uiState.shortTerm
@@ -167,11 +171,7 @@ fun BudgetScreen(
             }
 
             item {
-                Text(
-                    "Mediano plazo: próximos 3 meses",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                SectionHeader(title = "Mediano plazo", subtitle = "Próximos 3 meses")
             }
             if (uiState.mediumTerm.isEmpty()) {
                 item {
@@ -188,7 +188,7 @@ fun BudgetScreen(
             }
 
             item {
-                Text("Largo plazo: meta de ahorro", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                SectionHeader(title = "Largo plazo", subtitle = "Meta de ahorro")
             }
             item {
                 var amountText by remember(uiState.goalAmount) { mutableStateOf(formatMoney(uiState.goalAmount)) }
@@ -231,7 +231,7 @@ fun BudgetScreen(
                                 "Ahorro mensual requerido: ${formatMoney(evaluation.requiredMonthly)}",
                                 fontWeight = FontWeight.Bold
                             )
-                            Text("Veredicto: ${evaluation.verdict.label()}", fontWeight = FontWeight.Bold)
+                            VerdictBadge(verdict = evaluation.verdict)
                             Text(evaluation.explanation)
                         }
                     }
@@ -239,7 +239,7 @@ fun BudgetScreen(
             }
 
             item {
-                Text("Objetivos: contado o credito", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                SectionHeader(title = "Objetivos", subtitle = "Contado o crédito")
             }
             item {
                 var goalName by remember { mutableStateOf("") }
@@ -345,6 +345,46 @@ fun BudgetScreen(
 }
 
 @Composable
+private fun SectionHeader(title: String, subtitle: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            subtitle.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+@Composable
+private fun VerdictBadge(verdict: GoalVerdict) {
+    val container = when (verdict) {
+        GoalVerdict.FACTIBLE -> MaterialTheme.colorScheme.primaryContainer
+        GoalVerdict.AJUSTADO -> MaterialTheme.colorScheme.tertiaryContainer
+        GoalVerdict.INVIABLE -> MaterialTheme.colorScheme.errorContainer
+    }
+    val content = when (verdict) {
+        GoalVerdict.FACTIBLE -> MaterialTheme.colorScheme.onPrimaryContainer
+        GoalVerdict.AJUSTADO -> MaterialTheme.colorScheme.onTertiaryContainer
+        GoalVerdict.INVIABLE -> MaterialTheme.colorScheme.onErrorContainer
+    }
+    Surface(shape = RoundedCornerShape(8.dp), color = container) {
+        Text(
+            "Veredicto: ${verdict.label()}",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
+            color = content,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        )
+    }
+}
+
+@Composable
 private fun CategoryBudgetRow(item: CategoryBudget) {
     val progress = item.usageRatio.toFloat().coerceIn(0f, 1f)
     val barColor = when {
@@ -360,7 +400,8 @@ private fun CategoryBudgetRow(item: CategoryBudget) {
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxWidth(),
-            color = barColor
+            color = barColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
         when {
             item.overCap -> Text(
@@ -457,10 +498,10 @@ private fun GoalDetailCard(
             )
             Text("Opcion contado", fontWeight = FontWeight.Bold)
             if (cashMonths.monthsNeeded == null) {
-                Text("Veredicto: ${GoalVerdict.INVIABLE.label()}", fontWeight = FontWeight.Bold)
+                VerdictBadge(verdict = GoalVerdict.INVIABLE)
             } else {
                 Text("Meses para lograrlo: ${cashMonths.monthsNeeded}", fontWeight = FontWeight.Bold)
-                Text("Veredicto: ${cashMonths.verdict.label()}", fontWeight = FontWeight.Bold)
+                VerdictBadge(verdict = cashMonths.verdict)
             }
             Text(cashMonths.explanation)
             Text("Opcion credito", fontWeight = FontWeight.Bold)
@@ -469,7 +510,7 @@ private fun GoalDetailCard(
             Text("Mensualidad: ${formatMoney(credit.monthlyPayment)}", fontWeight = FontWeight.Bold)
             Text("Intereses totales: ${formatMoney(credit.totalInterest)}")
             Text("Costo total con credito: ${formatMoney(credit.totalCost)}")
-            Text("Veredicto: ${credit.verdict.label()}", fontWeight = FontWeight.Bold)
+            VerdictBadge(verdict = credit.verdict)
             Text(credit.explanation)
             Text(
                 "Comparador: de contado pagas ${formatMoney(goal.price)} y con credito " +
@@ -482,16 +523,20 @@ private fun GoalDetailCard(
 
 @Composable
 private fun MonthProjectionCard(projection: MonthProjection) {
-    val surplusColor = if (projection.surplus >= 0) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.error
-    }
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val surplusColor = if (projection.surplus >= 0) incomeColor() else expenseColor()
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(projection.monthLabel(), fontWeight = FontWeight.SemiBold)
-            Text("Ingresos estimados: ${formatMoney(projection.projectedIncome)}")
-            Text("Gastos estimados: ${formatMoney(projection.projectedExpense)}")
+            Text(
+                "Ingresos estimados: ${formatMoney(projection.projectedIncome)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Gastos estimados: ${formatMoney(projection.projectedExpense)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Text(
                 "Balance estimado: ${formatMoney(projection.surplus)}",
                 color = surplusColor,

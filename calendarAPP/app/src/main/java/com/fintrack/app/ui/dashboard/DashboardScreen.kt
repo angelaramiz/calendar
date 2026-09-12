@@ -16,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -25,6 +24,8 @@ import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
+import com.fintrack.app.ui.theme.expenseColor
+import com.fintrack.app.ui.theme.incomeColor
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -137,12 +138,31 @@ fun DashboardScreen(
 
             if (uiState.recentTransactions.isEmpty()) {
                 item {
-                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                         Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.Receipt, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.outline)
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Sin transacciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Surface(
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Icon(
+                                        Icons.Default.Receipt, null,
+                                        modifier = Modifier.padding(16.dp).size(32.dp),
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    if (uiState.needsLogin) "Bienvenido a FinTrack" else "Aún no hay movimientos",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Agrega tu primera transacción con el botón +",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                                 uiState.error?.let {
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -173,28 +193,96 @@ fun DashboardScreen(
 
 @Composable
 private fun BalanceCard(balance: Double, income: Double, expenses: Double) {
+    val amountColor = if (balance >= 0) incomeColor() else expenseColor()
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(20.dp)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Text("Balance Actual", style = MaterialTheme.typography.bodyMedium)
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                "Balance Actual",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "$${String.format("%.2f", balance)}",
-                style = MaterialTheme.typography.headlineLarge,
-                color = if (balance >= 0) Color(0xFF4CAF50) else Color(0xFFF44336),
+                style = MaterialTheme.typography.displaySmall,
+                color = amountColor,
                 fontWeight = FontWeight.Bold
             )
+            Text(
+                if (balance >= 0) "Tus finanzas van en positivo" else "Tus gastos superan tus ingresos",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
+            )
             Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Ingresos", style = MaterialTheme.typography.bodySmall)
-                    Text("+$${String.format("%.2f", income)}", color = Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowDownward, null,
+                            tint = incomeColor(),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                "Ingresos",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "+$${String.format("%.2f", income)}",
+                                color = incomeColor(),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
                 }
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Gastos", style = MaterialTheme.typography.bodySmall)
-                    Text("-$${String.format("%.2f", expenses)}", color = Color(0xFFF44336), fontWeight = FontWeight.Bold)
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 0.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowUpward, null,
+                            tint = expenseColor(),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                "Gastos",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "-$${String.format("%.2f", expenses)}",
+                                color = expenseColor(),
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -266,28 +354,30 @@ private fun TransactionItem(
 
     Card(
         modifier = Modifier.fillMaxWidth().clickable { showOptions = true },
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 icon, null,
                 modifier = Modifier.size(40.dp).background(
-                    if (isIncome) Color(0xFF4CAF50).copy(alpha = 0.1f) else Color(0xFFF44336).copy(alpha = 0.1f),
-                    RoundedCornerShape(8.dp)
+                    if (isIncome) incomeColor().copy(alpha = 0.12f) else expenseColor().copy(alpha = 0.12f),
+                    RoundedCornerShape(12.dp)
                 ).padding(8.dp),
-                tint = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336)
+                tint = if (isIncome) incomeColor() else expenseColor()
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(transaction.description.ifEmpty { transaction.category }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(transaction.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
                 "${if (isIncome) "+" else "-"}$${String.format("%.2f", transaction.amount)}",
-                color = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336),
+                style = MaterialTheme.typography.titleSmall,
+                color = if (isIncome) incomeColor() else expenseColor(),
                 fontWeight = FontWeight.Bold
             )
         }

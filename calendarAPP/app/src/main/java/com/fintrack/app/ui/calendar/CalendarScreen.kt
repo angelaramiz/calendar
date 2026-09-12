@@ -27,6 +27,8 @@ import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
+import com.fintrack.app.ui.theme.expenseColor
+import com.fintrack.app.ui.theme.incomeColor
 import org.koin.androidx.compose.koinViewModel
 import java.time.LocalDate
 import java.time.YearMonth
@@ -210,21 +212,25 @@ private fun MonthGrid(
                     val allConfirmed = dayData != null &&
                         dayData.projected.isEmpty() && dayData.confirmed.isNotEmpty()
 
+                    val isSelected = date == selectedDate
+                    val incomeDot = incomeColor()
+                    val expenseDot = expenseColor()
                     Box(
                         modifier = Modifier
                             .weight(1f)
                             .aspectRatio(1f)
-                            .padding(2.dp)
+                            .padding(3.dp)
                             .background(
-                                if (date == selectedDate) MaterialTheme.colorScheme.primaryContainer
+                                if (isSelected) MaterialTheme.colorScheme.primary
+                                else if (allConfirmed) MaterialTheme.colorScheme.secondaryContainer
                                 else Color.Transparent,
-                                RoundedCornerShape(8.dp)
+                                RoundedCornerShape(12.dp)
                             )
                             .then(
-                                if (isToday && date != selectedDate) Modifier.border(
-                                    1.dp,
-                                    MaterialTheme.colorScheme.primary,
-                                    RoundedCornerShape(8.dp)
+                                if (isToday && !isSelected) Modifier.border(
+                                    1.5.dp,
+                                    MaterialTheme.colorScheme.tertiary,
+                                    RoundedCornerShape(12.dp)
                                 ) else Modifier
                             )
                             .clickable(onClickLabel = "Ver día ${date.dayOfMonth}") { onSelect(date) },
@@ -233,14 +239,20 @@ private fun MonthGrid(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 date.dayOfMonth.toString(),
-                                color = if (inMonth) MaterialTheme.colorScheme.onSurface
-                                else MaterialTheme.colorScheme.outline
+                                style = if (isToday || isSelected) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isToday || isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = when {
+                                    isSelected -> MaterialTheme.colorScheme.onPrimary
+                                    inMonth -> MaterialTheme.colorScheme.onSurface
+                                    else -> MaterialTheme.colorScheme.outline
+                                }
                             )
+                            Spacer(modifier = Modifier.height(3.dp))
                             Row {
-                                if (hasIncome) Dot(if (allConfirmed) Color(0xFF4CAF50) else Color(0xFF4CAF50).copy(alpha = 0.5f))
+                                if (hasIncome) Dot(if (allConfirmed) incomeDot else incomeDot.copy(alpha = 0.45f))
                                 if (hasExpense) {
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Dot(if (allConfirmed) Color(0xFFF44336) else Color(0xFFF44336).copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Dot(if (allConfirmed) expenseDot else expenseDot.copy(alpha = 0.45f))
                                 }
                             }
                         }
@@ -254,46 +266,54 @@ private fun MonthGrid(
 @Composable
 private fun Dot(color: Color) {
     Box(
-        modifier = Modifier.size(6.dp).background(color, CircleShape)
+        modifier = Modifier.size(8.dp).background(color, CircleShape)
     )
 }
 
 @Composable
 private fun LegendRow() {
+    val incomeDot = incomeColor()
+    val expenseDot = expenseColor()
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Dot(Color(0xFF4CAF50))
+        Dot(incomeDot)
         Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            "Confirmado",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("Ingreso", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.width(4.dp))
+        Dot(expenseDot)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("Gasto", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.width(12.dp))
-        Dot(Color(0xFF4CAF50).copy(alpha = 0.5f))
+        Dot(incomeDot.copy(alpha = 0.45f))
         Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            "Proyectado",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("Proyectado", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.width(12.dp))
+        Box(modifier = Modifier.size(10.dp).border(1.5.dp, MaterialTheme.colorScheme.tertiary, RoundedCornerShape(3.dp)))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("Hoy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
 private fun MonthSummaryCard(summary: MonthSummary) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
                 "Resumen del mes",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSecondaryContainer
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             SummaryLine("Proyectado", summary.projectedIncome, summary.projectedExpense)
+            Spacer(modifier = Modifier.height(4.dp))
             SummaryLine("Confirmado", summary.confirmedIncome, summary.confirmedExpense)
         }
     }
@@ -301,6 +321,8 @@ private fun MonthSummaryCard(summary: MonthSummary) {
 
 @Composable
 private fun SummaryLine(label: String, income: Double, expense: Double) {
+    val incomeTint = incomeColor()
+    val expenseTint = expenseColor()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -309,21 +331,21 @@ private fun SummaryLine(label: String, income: Double, expense: Double) {
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
         )
         Row {
             Text(
                 "+$${String.format("%.2f", income)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFF4CAF50),
-                fontWeight = FontWeight.Medium
+                color = incomeTint,
+                fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             Text(
                 "-$${String.format("%.2f", expense)}",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color(0xFFF44336),
-                fontWeight = FontWeight.Medium
+                color = expenseTint,
+                fontWeight = FontWeight.SemiBold
             )
         }
     }
@@ -349,18 +371,33 @@ private fun DayDetail(
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(dayData.projected, key = { "p_${it.pattern.id}" }) { occ ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(occ.pattern.name, fontWeight = FontWeight.Medium)
-                        Text(
-                            "Proyectado · $${String.format("%.2f", occ.amount)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.tertiaryContainer
+                            ) {
+                                Text(
+                                    "Proyectado",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "$${String.format("%.2f", occ.amount)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     TextButton(onClick = { onConfirm(occ) }) { Text("Confirmar") }
                 }
@@ -375,11 +412,16 @@ private fun DayDetail(
 @Composable
 private fun ConfirmedRow(mov: MovementRow) {
     val isIncome = mov.type == "ingreso"
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+    val amountTint = if (isIncome) incomeColor() else expenseColor()
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier.size(10.dp).background(amountTint, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(mov.title.ifEmpty { mov.category }, fontWeight = FontWeight.Medium)
                 Text(
@@ -390,7 +432,8 @@ private fun ConfirmedRow(mov: MovementRow) {
             }
             Text(
                 "${if (isIncome) "+" else "-"}$${String.format("%.2f", mov.confirmed_amount)}",
-                color = if (isIncome) Color(0xFF4CAF50) else Color(0xFFF44336),
+                style = MaterialTheme.typography.titleSmall,
+                color = amountTint,
                 fontWeight = FontWeight.Bold
             )
         }

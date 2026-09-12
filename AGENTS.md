@@ -7,7 +7,7 @@ Multi-product repo. Production app is `calendarWeb`; Android is being rewritten 
 - `calendarWeb/` — production static web app (deployed to Render). Entry `calendarWeb/index.html`, logic `calendarWeb/js/`, deploy artifact `calendarWeb/calendarfinance.apk` + `calendarWeb/version.json`.
 - `calendarAPP/` — Android rewrite, package `com.fintrack.app` (Kotlin + Compose + Supabase + Koin). Entry `app/src/main/java/com/fintrack/app/MainActivity.kt`, DI `.../di/AppModule.kt`.
 - `calendar_backend/` — Flask scraper (Fly.io). Root `index.html`/`js/`/`routes/`/`styles/` are legacy — don't edit.
-- No SQL migrations in repo; no Android tests. `.codegraph/` index exists.
+- SQL migrations: `calendarWeb/docs/migrations/` (`00`–`05`, `03-*`); consolidated backup + live index in `docs/` (`DATABASE-SCHEMA.md`, `schema.sql`, `MIGRATION-GUIDE.md`). Update all three on any DB change. No Android tests. `.codegraph/` index exists.
 
 ## Android (`calendarAPP/`)
 

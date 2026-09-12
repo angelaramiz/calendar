@@ -4,6 +4,8 @@ import android.content.Intent
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
@@ -16,6 +18,9 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.fintrack.app.data.AppFilterStore
+import com.fintrack.app.domain.NotificationParser
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,7 +65,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
         }
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             PermissionRow(
@@ -125,6 +130,99 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+
+            AppFilterSection()
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppFilterSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { AppFilterStore(context.applicationContext) }
+    val allowed by store.allowedPackages.collectAsState(initial = NotificationParser.DEFAULT_PACKAGES)
+    val seen by store.seenPackages.collectAsState(initial = emptyList())
+    var customPkg by remember { mutableStateOf("") }
+
+    fun shortName(pkg: String): String {
+        val parts = pkg.split(".")
+        return if (parts.size >= 2) parts.takeLast(2).joinToString(".") else pkg
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Apps escuchadas", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Solo se procesan notificaciones de estas apps. Si tu banco no aparece, agrégalo con su ID de paquete.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            NotificationParser.DEFAULT_PACKAGES.forEach { pkg ->
+                val on = allowed.contains(pkg)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(shortName(pkg), style = MaterialTheme.typography.bodyMedium)
+                        Text(pkg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = on,
+                        onCheckedChange = { scope.launch { store.setAllowed(pkg, it) } }
+                    )
+                }
+            }
+
+            // Paquetes extra agregados por el usuario (no están en defaults)
+            (allowed - NotificationParser.DEFAULT_PACKAGES).forEach { pkg ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(pkg, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { scope.launch { store.setAllowed(pkg, false) } }) {
+                        Text("Quitar")
+                    }
+                }
+            }
+
+            // Detectadas recientemente: atajo para agregar sin saber el ID
+            val candidates = seen.filter { it !in allowed && it != context.packageName }
+            if (candidates.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Detectadas recientemente", style = MaterialTheme.typography.labelLarge)
+                candidates.forEach { pkg ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(pkg, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { scope.launch { store.setAllowed(pkg, true) } }) {
+                            Text("Agregar")
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = customPkg,
+                    onValueChange = { customPkg = it },
+                    label = { Text("ID de paquete") },
+                    placeholder = { Text("com.ejemplo.banco") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = {
+                    scope.launch { store.addCustom(customPkg); customPkg = "" }
+                }) { Text("Añadir") }
+            }
         }
     }
 }

@@ -39,4 +39,17 @@ class TransactionRepository {
             filter { eq("id", id) }
         }
     }
+
+    suspend fun updateTransaction(id: String, transaction: TransactionEntity) = withContext(Dispatchers.IO) {
+        val data = buildJsonObject {
+            put("amount", transaction.amount)
+            put("type", transaction.type)
+            put("category", transaction.category)
+            put("description", transaction.description)
+            transaction.merchant?.let { put("merchant", it) }
+        }
+        db.from("fintrack_transactions").update(data) {
+            filter { eq("id", id) }
+        }
+    }
 }

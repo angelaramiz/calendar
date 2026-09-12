@@ -67,6 +67,14 @@
                 android:resource="@xml/quick_add_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".data.service.DeleteDetectionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.fintrack.app.DELETE_DETECTION" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

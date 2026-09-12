@@ -76,8 +76,8 @@ class DashboardViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
             try {
                 val transactions = transactionRepository.getTransactions(userId)
-                val income = transactions.filter { it.type == "INCOME" }.sumOf { it.amount }
-                val expenses = transactions.filter { it.type == "EXPENSE" }.sumOf { it.amount }
+                val income = transactions.filter { it.isIncomeType() }.sumOf { it.amount }
+                val expenses = transactions.filter { !it.isIncomeType() }.sumOf { it.amount }
 
                 _uiState.value = _uiState.value.copy(
                     currentBalance = income - expenses,
@@ -101,12 +101,49 @@ class DashboardViewModel(
             return
         }
         viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 transactionRepository.insertTransaction(userId, transaction)
                 loadDashboard()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(error = e.message)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No se pudo guardar: ${e.message?.take(150)}"
+                )
+            }
+        }
+    }
+
+    fun deleteTransaction(id: String) {
+        if (userId.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                transactionRepository.deleteTransaction(id)
+                loadDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    error = "No se pudo eliminar: ${e.message?.take(150)}"
+                )
+            }
+        }
+    }
+
+    fun updateTransaction(id: String, transaction: TransactionEntity) {
+        if (userId.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                transactionRepository.updateTransaction(id, transaction)
+                loadDashboard()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "No se pudo modificar: ${e.message?.take(150)}"
+                )
             }
         }
     }
 }
+
+fun TransactionEntity.isIncomeType(): Boolean =
+    type.equals("INCOME", ignoreCase = true) || type.equals("ingreso", ignoreCase = true)

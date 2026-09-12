@@ -1,10 +1,15 @@
 package com.fintrack.app.ui.dashboard
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
@@ -38,6 +44,15 @@ fun DashboardScreen(
         LaunchedEffect(message) {
             snackbarHostState.showSnackbar(message)
             viewModel.clearUpdateMessage()
+        }
+    }
+
+    if (!uiState.needsLogin) {
+        uiState.error?.let { err ->
+            LaunchedEffect(err) {
+                snackbarHostState.showSnackbar(err.take(200))
+                viewModel.clearError()
+            }
         }
     }
 
@@ -139,7 +154,11 @@ fun DashboardScreen(
                 }
             } else {
                 items(uiState.recentTransactions) { transaction ->
-                    TransactionItem(transaction)
+                    TransactionItem(
+                        transaction = transaction,
+                        onDelete = { viewModel.deleteTransaction(transaction.id) },
+                        onUpdate = { updated -> viewModel.updateTransaction(transaction.id, updated) }
+                    )
                 }
             }
 
@@ -179,8 +198,15 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double) {
 }
 
 @Composable
-private fun TransactionItem(transaction: TransactionEntity) {
-    val isIncome = transaction.type == "INCOME"
+private fun TransactionItem(
+    transaction: TransactionEntity,
+    onDelete: () -> Unit,
+    onUpdate: (TransactionEntity) -> Unit
+) {
+    var showOptions by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    val isIncome = transaction.isIncomeType()
     val icon = when (transaction.category) {
         "Comida" -> Icons.Default.Restaurant
         "Transporte" -> Icons.Default.DirectionsCar
@@ -189,7 +215,55 @@ private fun TransactionItem(transaction: TransactionEntity) {
         else -> Icons.Default.ShoppingCart
     }
 
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+    if (showOptions) {
+        AlertDialog(
+            onDismissRequest = { showOptions = false },
+            title = { Text(transaction.description.ifEmpty { transaction.category }) },
+            text = {
+                Text(
+                    "${if (isIncome) "Ingreso" else "Gasto"} · $${String.format("%.2f", transaction.amount)} · ${transaction.category}" +
+                        (transaction.merchant?.let { "\nComercio: $it" } ?: "") +
+                        "\nOrigen: ${if (transaction.source == "AUTO") "Detectado" else "Manual"}"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showOptions = false; showEdit = true }) { Text("Editar") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showOptions = false; showDelete = true }) { Text("Eliminar") }
+                    TextButton(onClick = { showOptions = false }) { Text("Cerrar") }
+                }
+            }
+        )
+    }
+
+    if (showEdit) {
+        EditTransactionDialog(
+            transaction = transaction,
+            onDismiss = { showEdit = false },
+            onSave = { updated -> showEdit = false; onUpdate(updated) }
+        )
+    }
+
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Eliminar transacción") },
+            text = { Text("¿Eliminar \"${transaction.description.ifEmpty { transaction.category }}\" por $${String.format("%.2f", transaction.amount)}?") },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; onDelete() }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { showOptions = true },
+        shape = RoundedCornerShape(12.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -214,4 +288,92 @@ private fun TransactionItem(transaction: TransactionEntity) {
             )
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditTransactionDialog(
+    transaction: TransactionEntity,
+    onDismiss: () -> Unit,
+    onSave: (TransactionEntity) -> Unit
+) {
+    var amount by remember(transaction) { mutableStateOf(String.format("%.2f", transaction.amount)) }
+    var type by remember(transaction) { mutableStateOf(if (transaction.isIncomeType()) "INCOME" else "EXPENSE") }
+    var category by remember(transaction) { mutableStateOf(transaction.category) }
+    var description by remember(transaction) { mutableStateOf(transaction.description) }
+    var merchant by remember(transaction) { mutableStateOf(transaction.merchant.orEmpty()) }
+    val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar transacción") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Row {
+                    listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
+                        FilterChip(
+                            selected = type == t,
+                            onClick = { type = t },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Monto") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = { Text(cat) },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = merchant,
+                    onValueChange = { merchant = it },
+                    label = { Text("Comercio (opcional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Nota") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val value = amount.toDoubleOrNull() ?: return@TextButton
+                if (value <= 0) return@TextButton
+                onSave(
+                    transaction.copy(
+                        amount = value,
+                        type = type,
+                        category = category,
+                        description = description,
+                        merchant = merchant.ifBlank { null }
+                    )
+                )
+            }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }

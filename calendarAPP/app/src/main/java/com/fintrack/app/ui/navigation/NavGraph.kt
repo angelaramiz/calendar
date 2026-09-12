@@ -8,8 +8,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.fintrack.app.ui.auth.AuthScreen
+import com.fintrack.app.ui.budget.BudgetScreen
 import com.fintrack.app.ui.calendar.CalendarScreen
 import com.fintrack.app.ui.dashboard.DashboardScreen
+import com.fintrack.app.ui.flows.FlowsScreen
 import com.fintrack.app.ui.permissions.PermissionsScreen
 import com.fintrack.app.ui.quickentry.QuickEntryScreen
 import org.koin.androidx.compose.koinViewModel
@@ -21,6 +23,15 @@ object Routes {
     const val PERMISSIONS = "permissions"
     const val AUTH = "auth"
     const val CALENDAR = "calendar"
+    const val FLOWS = "flows"
+    const val BUDGET = "budget"
+}
+
+private fun androidx.navigation.NavHostController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(Routes.DASHBOARD)
+        launchSingleTop = true
+    }
 }
 
 @Composable
@@ -45,24 +56,34 @@ fun FinTrackNavGraph(
                 onNavigateToQuickEntry = { navController.navigate(Routes.QUICK_ENTRY) },
                 onNavigateToPermissions = { navController.navigate(Routes.PERMISSIONS) },
                 onNavigateToAuth = { navController.navigate(Routes.AUTH) },
-                onNavigateToCalendar = {
-                    navController.navigate(Routes.CALENDAR) {
-                        popUpTo(Routes.DASHBOARD)
-                        launchSingleTop = true
-                    }
-                },
+                onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
+                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) },
                 viewModel = dashboardViewModel
             )
         }
         composable(Routes.CALENDAR) {
             CalendarScreen(
-                onNavigateToDashboard = {
-                    navController.navigate(Routes.DASHBOARD) {
-                        popUpTo(Routes.DASHBOARD)
-                        launchSingleTop = true
-                    }
-                },
-                onNavigateToAuth = { navController.navigate(Routes.AUTH) }
+                onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
+                onNavigateToAuth = { navController.navigate(Routes.AUTH) },
+                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) }
+            )
+        }
+        composable(Routes.FLOWS) {
+            FlowsScreen(
+                onNavigateToAuth = { navController.navigate(Routes.AUTH) },
+                onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
+                onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) }
+            )
+        }
+        composable(Routes.BUDGET) {
+            BudgetScreen(
+                onNavigateToAuth = { navController.navigate(Routes.AUTH) },
+                onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
+                onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
+                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) }
             )
         }
         composable(Routes.PERMISSIONS) {

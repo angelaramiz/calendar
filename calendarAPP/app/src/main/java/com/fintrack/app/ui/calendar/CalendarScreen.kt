@@ -1,6 +1,7 @@
 package com.fintrack.app.ui.calendar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,8 +20,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.repository.MovementRow
+import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
@@ -36,6 +40,8 @@ private val ES = Locale("es")
 fun CalendarScreen(
     onNavigateToDashboard: () -> Unit,
     onNavigateToAuth: () -> Unit,
+    onNavigateToFlows: () -> Unit,
+    onNavigateToBudget: () -> Unit,
     viewModel: CalendarViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -56,7 +62,9 @@ fun CalendarScreen(
             FinTrackBottomBar(
                 selected = Routes.CALENDAR,
                 onDashboard = onNavigateToDashboard,
-                onCalendar = { }
+                onCalendar = { },
+                onFlows = onNavigateToFlows,
+                onBudget = onNavigateToBudget
             )
         }
     ) { padding ->
@@ -77,7 +85,8 @@ fun CalendarScreen(
             MonthHeader(
                 yearMonth = uiState.yearMonth,
                 onPrev = { viewModel.prevMonth() },
-                onNext = { viewModel.nextMonth() }
+                onNext = { viewModel.nextMonth() },
+                onRefresh = { viewModel.retry() }
             )
 
             WeekdayRow()
@@ -89,16 +98,42 @@ fun CalendarScreen(
                 onSelect = { viewModel.selectDate(it) }
             )
 
+            LegendRow()
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            MonthSummaryCard(summary = uiState.monthSummary)
+
             Spacer(modifier = Modifier.height(12.dp))
 
             uiState.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { viewModel.retry() }) { Text("Reintentar") }
+                }
             }
 
             if (uiState.isLoading) {
                 Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
+            }
+
+            if (!uiState.isLoading && uiState.error == null && uiState.days.isEmpty()) {
+                Text(
+                    "Sin movimientos este mes",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             DayDetail(
@@ -111,7 +146,12 @@ fun CalendarScreen(
 }
 
 @Composable
-private fun MonthHeader(yearMonth: YearMonth, onPrev: () -> Unit, onNext: () -> Unit) {
+private fun MonthHeader(
+    yearMonth: YearMonth,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onRefresh: () -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -122,8 +162,11 @@ private fun MonthHeader(yearMonth: YearMonth, onPrev: () -> Unit, onNext: () -> 
             yearMonth.month.getDisplayName(TextStyle.FULL, ES).replaceFirstChar { it.uppercase() } +
                 " ${yearMonth.year}",
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f)
         )
+        IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, "Recargar") }
         IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.ArrowForward, "Mes siguiente") }
     }
 }
@@ -158,6 +201,7 @@ private fun MonthGrid(
             Row(modifier = Modifier.fillMaxWidth()) {
                 week.forEach { date ->
                     val inMonth = date.month == yearMonth.month
+                    val isToday = date == LocalDate.now()
                     val dayData = days[date]
                     val hasIncome = dayData?.projected?.any { it.pattern.type == "INCOME" } == true ||
                         dayData?.confirmed?.any { it.type == "ingreso" } == true
@@ -176,7 +220,14 @@ private fun MonthGrid(
                                 else Color.Transparent,
                                 RoundedCornerShape(8.dp)
                             )
-                            .clickable { onSelect(date) },
+                            .then(
+                                if (isToday && date != selectedDate) Modifier.border(
+                                    1.dp,
+                                    MaterialTheme.colorScheme.primary,
+                                    RoundedCornerShape(8.dp)
+                                ) else Modifier
+                            )
+                            .clickable(onClickLabel = "Ver día ${date.dayOfMonth}") { onSelect(date) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -205,6 +256,77 @@ private fun Dot(color: Color) {
     Box(
         modifier = Modifier.size(6.dp).background(color, CircleShape)
     )
+}
+
+@Composable
+private fun LegendRow() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Dot(Color(0xFF4CAF50))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            "Confirmado",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Dot(Color(0xFF4CAF50).copy(alpha = 0.5f))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            "Proyectado",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun MonthSummaryCard(summary: MonthSummary) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(
+                "Resumen del mes",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            SummaryLine("Proyectado", summary.projectedIncome, summary.projectedExpense)
+            SummaryLine("Confirmado", summary.confirmedIncome, summary.confirmedExpense)
+        }
+    }
+}
+
+@Composable
+private fun SummaryLine(label: String, income: Double, expense: Double) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row {
+            Text(
+                "+$${String.format("%.2f", income)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF4CAF50),
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "-$${String.format("%.2f", expense)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFF44336),
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
 }
 
 @Composable

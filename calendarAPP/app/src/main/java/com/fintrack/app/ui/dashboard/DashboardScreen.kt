@@ -34,6 +34,8 @@ fun DashboardScreen(
     onNavigateToPermissions: () -> Unit,
     onNavigateToAuth: () -> Unit,
     onNavigateToCalendar: () -> Unit,
+    onNavigateToFlows: () -> Unit,
+    onNavigateToBudget: () -> Unit,
     viewModel: DashboardViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -104,7 +106,9 @@ fun DashboardScreen(
             FinTrackBottomBar(
                 selected = Routes.DASHBOARD,
                 onDashboard = { },
-                onCalendar = onNavigateToCalendar
+                onCalendar = onNavigateToCalendar,
+                onFlows = onNavigateToFlows,
+                onBudget = onNavigateToBudget
             )
         }
     ) { padding ->

@@ -6,8 +6,10 @@ import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.MovementRow
 import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.toDomain
+import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
 import com.fintrack.app.domain.PatternExpander
+import com.fintrack.app.domain.computeMonthSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,6 +26,7 @@ data class DayData(
 data class CalendarUiState(
     val yearMonth: YearMonth = YearMonth.now(),
     val days: Map<LocalDate, DayData> = emptyMap(),
+    val monthSummary: MonthSummary = MonthSummary(),
     val selectedDate: LocalDate = LocalDate.now(),
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -70,13 +73,13 @@ class CalendarViewModel(
                         "${it.income_pattern_id ?: it.expense_pattern_id}_${it.date}"
                     }.toSet()
 
-                val projectedByDate = (income + expense)
+                val projected = (income + expense)
                     .flatMap { PatternExpander.expand(it, from, to) }
                     .filter { occ ->
                         val key = "${occ.pattern.id}_${occ.date}"
                         !confirmedKeys.contains(key)
                     }
-                    .groupBy { it.date }
+                val projectedByDate = projected.groupBy { it.date }
 
                 val confirmedByDate = movements.groupBy {
                     runCatching { LocalDate.parse(it.date) }.getOrNull()
@@ -92,6 +95,10 @@ class CalendarViewModel(
 
                 _uiState.value = _uiState.value.copy(
                     days = allDates,
+                    monthSummary = computeMonthSummary(
+                        projected,
+                        confirmedByDate.values.flatten()
+                    ),
                     isLoading = false,
                     needsLogin = false
                 )
@@ -103,6 +110,8 @@ class CalendarViewModel(
 
     fun prevMonth() = loadMonth(_uiState.value.yearMonth.minusMonths(1))
     fun nextMonth() = loadMonth(_uiState.value.yearMonth.plusMonths(1))
+
+    fun retry() = loadMonth(_uiState.value.yearMonth)
 
     fun selectDate(date: LocalDate) {
         _uiState.value = _uiState.value.copy(selectedDate = date)

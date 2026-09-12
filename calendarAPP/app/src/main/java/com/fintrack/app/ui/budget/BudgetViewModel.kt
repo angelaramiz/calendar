@@ -7,7 +7,12 @@ import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
 import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.BudgetPlanner
+import com.fintrack.app.domain.CashPlan
+import com.fintrack.app.domain.CreditPlan
+import com.fintrack.app.domain.GoalComparison
 import com.fintrack.app.domain.GoalEvaluation
+import com.fintrack.app.domain.GoalPlanner
+import com.fintrack.app.domain.SavingsGoal
 import com.fintrack.app.domain.MonthProjection
 import com.fintrack.app.domain.ShortTermReport
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +28,8 @@ data class BudgetUiState(
     val goalAmount: Double = 20_000.0,
     val goalMonths: Int = 12,
     val goalEvaluation: GoalEvaluation? = null,
+    val goals: List<SavingsGoal> = emptyList(),
+    val selectedGoalId: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val needsLogin: Boolean = false
@@ -96,5 +103,66 @@ class BudgetViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    val selectedGoal: SavingsGoal?
+        get() = _uiState.value.goals.firstOrNull { it.id == _uiState.value.selectedGoalId }
+
+    private val avgSurplus: Double
+        get() = BudgetPlanner.averageSurplus(_uiState.value.mediumTerm)
+
+    private val monthIncome: Double
+        get() = _uiState.value.shortTerm?.monthIncome ?: 0.0
+
+    fun cashPlanFor(goal: SavingsGoal): CashPlan =
+        GoalPlanner.evaluateCash(goal.price, avgSurplus)
+
+    fun creditPlanFor(goal: SavingsGoal): CreditPlan =
+        GoalPlanner.evaluateCredit(
+            price = goal.price,
+            downPayment = GoalPlanner.resolveDownPayment(goal),
+            annualRatePercent = goal.annualRatePercent,
+            months = goal.termMonths,
+            monthlyIncome = monthIncome,
+            avgSurplus = avgSurplus
+        )
+
+    fun comparisonFor(goal: SavingsGoal): GoalComparison =
+        GoalPlanner.compareCashVsCredit(goal.price, creditPlanFor(goal).totalCost)
+
+    fun addGoal(name: String, price: Double) {
+        val cleanName = name.trim().ifBlank { "Mi objetivo" }
+        val safePrice = if (price < 0.0) 0.0 else price
+        val goal = SavingsGoal(
+            id = "goal-${System.currentTimeMillis()}-${_uiState.value.goals.size}",
+            name = cleanName,
+            price = safePrice
+        )
+        _uiState.value = _uiState.value.copy(
+            goals = _uiState.value.goals + goal,
+            selectedGoalId = goal.id
+        )
+    }
+
+    fun updateGoal(updated: SavingsGoal) {
+        _uiState.value = _uiState.value.copy(
+            goals = _uiState.value.goals.map { if (it.id == updated.id) updated else it }
+        )
+    }
+
+    fun removeGoal(id: String) {
+        val remaining = _uiState.value.goals.filterNot { it.id == id }
+        _uiState.value = _uiState.value.copy(
+            goals = remaining,
+            selectedGoalId = if (_uiState.value.selectedGoalId == id) {
+                remaining.firstOrNull()?.id
+            } else {
+                _uiState.value.selectedGoalId
+            }
+        )
+    }
+
+    fun selectGoal(id: String?) {
+        _uiState.value = _uiState.value.copy(selectedGoalId = id)
     }
 }

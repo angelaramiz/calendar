@@ -33,9 +33,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.domain.CashPlan
 import com.fintrack.app.domain.CategoryBudget
+import com.fintrack.app.domain.CreditPlan
 import com.fintrack.app.domain.GoalVerdict
 import com.fintrack.app.domain.MonthProjection
+import com.fintrack.app.domain.SavingsGoal
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import org.koin.androidx.compose.koinViewModel
@@ -235,6 +238,107 @@ fun BudgetScreen(
                 }
             }
 
+            item {
+                Text("Objetivos: contado o credito", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            item {
+                var goalName by remember { mutableStateOf("") }
+                var goalPriceText by remember { mutableStateOf("") }
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Agrega un objetivo, por ejemplo comprar un carro.")
+                        OutlinedTextField(
+                            value = goalName,
+                            onValueChange = { goalName = it },
+                            label = { Text("Nombre del objetivo") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = goalPriceText,
+                            onValueChange = { goalPriceText = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
+                            label = { Text("Precio objetivo") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Button(
+                            onClick = {
+                                val price = goalPriceText.replace(".", "").replace(",", "")
+                                    .toDoubleOrNull() ?: 0.0
+                                viewModel.addGoal(goalName, price)
+                                goalName = ""
+                                goalPriceText = ""
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Agregar objetivo")
+                        }
+                    }
+                }
+            }
+            if (uiState.goals.isEmpty()) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Aun no tienes objetivos. Agrega uno para comparar pagarlo de contado o con credito.",
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            } else {
+                uiState.goals.forEach { goal ->
+                    item {
+                        val cash = viewModel.cashPlanFor(goal)
+                        val credit = viewModel.creditPlanFor(goal)
+                        val selected = goal.id == uiState.selectedGoalId
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = if (selected) {
+                                CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            } else {
+                                CardDefaults.cardColors()
+                            }
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(goal.name, fontWeight = FontWeight.SemiBold)
+                                    Text(formatMoney(goal.price), fontWeight = FontWeight.Bold)
+                                }
+                                Text(
+                                    "Contado: " + if (cash.monthsNeeded == null) {
+                                        "inviable por ahora"
+                                    } else {
+                                        "${cash.monthsNeeded} meses"
+                                    } + " | Credito: ${formatMoney(credit.monthlyPayment)} al mes"
+                                )
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(onClick = { viewModel.selectGoal(goal.id) }) {
+                                        Text("Ver detalle")
+                                    }
+                                    Button(onClick = { viewModel.removeGoal(goal.id) }) {
+                                        Text("Eliminar")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                uiState.goals.firstOrNull { it.id == uiState.selectedGoalId }?.let { goal ->
+                    item {
+                        GoalDetailCard(
+                            goal = goal,
+                            cashMonths = viewModel.cashPlanFor(goal),
+                            credit = viewModel.creditPlanFor(goal),
+                            onUpdate = { viewModel.updateGoal(it) }
+                        )
+                    }
+                }
+            }
+
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }
     }
@@ -268,6 +372,109 @@ private fun CategoryBudgetRow(item: CategoryBudget) {
                 "Cerca del tope: superaste el 80%",
                 color = MaterialTheme.colorScheme.tertiary,
                 style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun GoalDetailCard(
+    goal: SavingsGoal,
+    cashMonths: CashPlan,
+    credit: CreditPlan,
+    onUpdate: (SavingsGoal) -> Unit
+) {
+    var nameText by remember(goal.id) { mutableStateOf(goal.name) }
+    var priceText by remember(goal.id) { mutableStateOf(formatMoney(goal.price)) }
+    var downText by remember(goal.id) { mutableStateOf(goal.downPercent.toString()) }
+    var rateText by remember(goal.id) { mutableStateOf(goal.annualRatePercent.toString()) }
+    var termText by remember(goal.id) { mutableStateOf(goal.termMonths.toString()) }
+    val extraCost = credit.totalCost - goal.price
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Detalle: ${goal.name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = nameText,
+                onValueChange = { raw ->
+                    nameText = raw
+                    onUpdate(goal.copy(name = raw.trim().ifBlank { goal.name }))
+                },
+                label = { Text("Nombre") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = priceText,
+                onValueChange = { raw ->
+                    priceText = raw
+                    raw.replace(".", "").replace(",", "").toDoubleOrNull()?.let {
+                        onUpdate(goal.copy(price = if (it < 0.0) 0.0 else it))
+                    }
+                },
+                label = { Text("Precio") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = downText,
+                onValueChange = { raw ->
+                    downText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                    downText.replace(",", ".").toDoubleOrNull()?.let {
+                        onUpdate(goal.copy(downPercent = it.coerceIn(0.0, 100.0), downAmount = null))
+                    }
+                },
+                label = { Text("Enganche (%)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = rateText,
+                onValueChange = { raw ->
+                    rateText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                    rateText.replace(",", ".").toDoubleOrNull()?.let {
+                        onUpdate(goal.copy(annualRatePercent = if (it < 0.0) 0.0 else it))
+                    }
+                },
+                label = { Text("Tasa anual (%)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            OutlinedTextField(
+                value = termText,
+                onValueChange = { raw ->
+                    termText = raw.filter { it.isDigit() }
+                    termText.toIntOrNull()?.let {
+                        if (it > 0) onUpdate(goal.copy(termMonths = it))
+                    }
+                },
+                label = { Text("Plazo (meses)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+            Text("Opcion contado", fontWeight = FontWeight.Bold)
+            if (cashMonths.monthsNeeded == null) {
+                Text("Veredicto: ${GoalVerdict.INVIABLE.label()}", fontWeight = FontWeight.Bold)
+            } else {
+                Text("Meses para lograrlo: ${cashMonths.monthsNeeded}", fontWeight = FontWeight.Bold)
+                Text("Veredicto: ${cashMonths.verdict.label()}", fontWeight = FontWeight.Bold)
+            }
+            Text(cashMonths.explanation)
+            Text("Opcion credito", fontWeight = FontWeight.Bold)
+            Text("Enganche: ${formatMoney(credit.downPayment)}")
+            Text("Monto a financiar: ${formatMoney(credit.financedAmount)}")
+            Text("Mensualidad: ${formatMoney(credit.monthlyPayment)}", fontWeight = FontWeight.Bold)
+            Text("Intereses totales: ${formatMoney(credit.totalInterest)}")
+            Text("Costo total con credito: ${formatMoney(credit.totalCost)}")
+            Text("Veredicto: ${credit.verdict.label()}", fontWeight = FontWeight.Bold)
+            Text(credit.explanation)
+            Text(
+                "Comparador: de contado pagas ${formatMoney(goal.price)} y con credito " +
+                    "${formatMoney(credit.totalCost)}. El credito te cuesta ${formatMoney(extraCost)} mas.",
+                fontWeight = FontWeight.Bold
             )
         }
     }

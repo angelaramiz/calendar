@@ -21,7 +21,10 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
 - `lint { checkReleaseBuilds = false }` is intentional — don't "fix" it.
 - Release signing reads `calendarAPP/local.properties` (`KEYSTORE_PATH`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`; default path `../fintrack.jks`). The only keystore in repo is the stale-named `calendarAPP/calendarfinance.jks`. Never commit `local.properties` or keystores.
 - Known issues (updated Sep 2026):
-  - `ui/navigation/NavGraph.kt` shares one `DashboardViewModel` per graph via the `DASHBOARD` back-stack entry as `viewModelStoreOwner`. Don't revert to per-screen `koinViewModel()`.
+  - `ui/navigation/NavGraph.kt` shares one `DashboardViewModel` per **activity** (`koinViewModel(viewModelStoreOwner = activity)`). Don't scope it to a back-stack entry — tabs/Tile pop entries and `getBackStackEntry()` crashes.
+  - Bottom tabs (`FinTrackBottomBar`: Inicio/Calendario) navigate with `popUpTo + launchSingleTop`.
+  - Calendar tab (`ui/calendar/`): patterns expand client-side via `domain/PatternExpander` (no `projections` table — same as web). Frequencies `weekly`/`biweekly`(=14 días)/`monthly`/`yearly`; monthly day-31 drifts like web (31 ene → 28 feb → 28 mar). Backend tables `income_patterns`, `expense_patterns`, `movements` (web-canonical names); confirm creates a `movements` row with the pattern FK (`income_pattern_id`/`expense_pattern_id`) and `confirmed=true`.
+  - JVM unit tests: `app/src/test/` (JUnit4); run `:app:testReleaseUnitTest --tests "<Clase>"`. `PatternExpanderTest` 9/9 must stay green.
   - No auth screens exist yet: `DashboardViewModel` publishes `needsLogin=true` + message instead of returning silently; UI shows it with a retry button.
   - `data/service/TransactionNotificationListener.kt` now persists via `TransactionRepository` using the Supabase session (skips silently without session). Its `bankPackages` IDs are plausible but **unverified against real bank apps** — confirm on a real device before trusting auto-detection. Matching is exact (`equals`), not `contains`.
   - Kotlin sources must stay **UTF-8 sin BOM**; PowerShell `Set-Content -Encoding UTF8` writes BOM and mangles accents on rewrite. Prefer the `edit` tool; if using PowerShell, write bytes via `[System.IO.File]`.

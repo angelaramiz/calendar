@@ -17,6 +17,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
+import com.fintrack.app.ui.navigation.FinTrackBottomBar
+import com.fintrack.app.ui.navigation.Routes
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -25,6 +27,7 @@ fun DashboardScreen(
     onNavigateToQuickEntry: () -> Unit,
     onNavigateToPermissions: () -> Unit,
     onNavigateToAuth: () -> Unit,
+    onNavigateToCalendar: () -> Unit,
     viewModel: DashboardViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -81,6 +84,13 @@ fun DashboardScreen(
             FloatingActionButton(onClick = onNavigateToQuickEntry) {
                 Icon(Icons.Default.Add, "Agregar transaccion")
             }
+        },
+        bottomBar = {
+            FinTrackBottomBar(
+                selected = Routes.DASHBOARD,
+                onDashboard = { },
+                onCalendar = onNavigateToCalendar
+            )
         }
     ) { padding ->
         LazyColumn(

@@ -13,6 +13,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,6 +51,7 @@ fun CalendarScreen(
     viewModel: CalendarViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var fabExpanded by remember { mutableStateOf(false) }
 
     uiState.confirmTarget?.let { target ->
         ConfirmOccurrenceDialog(
@@ -84,14 +88,38 @@ fun CalendarScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Calendario") },
-                actions = {
-                    IconButton(onClick = { viewModel.showPatternDialog() }) {
-                        Icon(Icons.Default.Add, "Nuevo recurrente")
-                    }
+            TopAppBar(title = { Text("Calendario") })
+        },
+        floatingActionButton = {
+            // Igual que Inicio: + flotante que abre Registrar y Recurrente.
+            Column(horizontalAlignment = Alignment.End) {
+                if (fabExpanded) {
+                    FabAction(
+                        label = "Registrar en este día",
+                        icon = Icons.Default.Create,
+                        onClick = {
+                            fabExpanded = false
+                            viewModel.showAddMovement(uiState.selectedDate)
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FabAction(
+                        label = "Nuevo recurrente",
+                        icon = Icons.Default.EventRepeat,
+                        onClick = {
+                            fabExpanded = false
+                            viewModel.showPatternDialog()
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
                 }
-            )
+                FloatingActionButton(onClick = { fabExpanded = !fabExpanded }) {
+                    Icon(
+                        if (fabExpanded) Icons.Default.Close else Icons.Default.Add,
+                        if (fabExpanded) "Cerrar" else "Agregar"
+                    )
+                }
+            }
         },
         bottomBar = {
             FinTrackBottomBar(
@@ -177,6 +205,32 @@ fun CalendarScreen(
                 onConfirm = { viewModel.askConfirm(it) },
                 onAdd = { viewModel.showAddMovement(uiState.selectedDate) }
             )
+        }
+    }
+}
+
+@Composable
+private fun FabAction(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            modifier = Modifier.clickable(onClick = onClick)
+        ) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        SmallFloatingActionButton(onClick = onClick) {
+            Icon(icon, label)
         }
     }
 }

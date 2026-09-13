@@ -134,87 +134,130 @@ fun CalendarScreen(
             )
         }
     ) { padding ->
-        Column(
+        // Un solo LazyColumn (como Inicio/Flujos/Presupuesto): antes era Column
+        // fija + LazyColumn anidada y el scroll fallaba.
+        LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
         ) {
             if (uiState.needsLogin) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Inicia sesión para ver tu calendario")
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                item {
+                    Box(
+                        modifier = Modifier.fillParentMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Inicia sesión para ver tu calendario")
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                        }
                     }
                 }
-                return@Column
-            }
+            } else {
+                item {
+                    MonthHeader(
+                        yearMonth = uiState.yearMonth,
+                        onPrev = { viewModel.prevMonth() },
+                        onNext = { viewModel.nextMonth() },
+                        onRefresh = { viewModel.retry() }
+                    )
+                }
 
-            MonthHeader(
-                yearMonth = uiState.yearMonth,
-                onPrev = { viewModel.prevMonth() },
-                onNext = { viewModel.nextMonth() },
-                onRefresh = { viewModel.retry() }
-            )
+                item { Spacer(modifier = Modifier.height(4.dp)) }
 
-            Spacer(modifier = Modifier.height(4.dp))
+                item { BalanceCard(balance = uiState.balance) }
 
-            BalanceCard(balance = uiState.balance)
+                item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                item { WeekdayRow() }
 
-            WeekdayRow()
+                item {
+                    MonthGrid(
+                        yearMonth = uiState.yearMonth,
+                        days = uiState.days,
+                        selectedDate = uiState.selectedDate,
+                        onSelect = { viewModel.selectDate(it) }
+                    )
+                }
 
-            MonthGrid(
-                yearMonth = uiState.yearMonth,
-                days = uiState.days,
-                selectedDate = uiState.selectedDate,
-                onSelect = { viewModel.selectDate(it) }
-            )
+                item { LegendRow() }
 
-            LegendRow()
+            item { Spacer(modifier = Modifier.height(4.dp)) }
 
-            Spacer(modifier = Modifier.height(4.dp))
+            item { MonthSummaryCard(summary = uiState.monthSummary) }
 
-            MonthSummaryCard(summary = uiState.monthSummary)
-
-            Spacer(modifier = Modifier.height(12.dp))
+            item { Spacer(modifier = Modifier.height(12.dp)) }
 
             uiState.error?.let {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = { viewModel.retry() }) { Text("Reintentar") }
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            it,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { viewModel.retry() }) { Text("Reintentar") }
+                    }
                 }
             }
 
             if (uiState.isLoading) {
-                Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
             }
 
             if (!uiState.isLoading && uiState.error == null && uiState.days.isEmpty()) {
-                Text(
-                    "Sin movimientos este mes",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(modifier = Modifier.height(8.dp))
+                item {
+                    Text(
+                        "Sin movimientos este mes",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item { Spacer(modifier = Modifier.height(8.dp)) }
             }
 
-            DayDetail(
-                date = uiState.selectedDate,
-                dayData = uiState.days[uiState.selectedDate],
-                onConfirm = { viewModel.askConfirm(it) },
-                onEditPattern = { viewModel.showPatternEdit(it) },
-                onAdd = { viewModel.showAddMovement(uiState.selectedDate) }
-            )
+            item {
+                DayDetailHeader(
+                    date = uiState.selectedDate,
+                    onAdd = { viewModel.showAddMovement(uiState.selectedDate) }
+                )
+            }
+
+            val dayData = uiState.days[uiState.selectedDate]
+            if (dayData == null ||
+                (dayData.projected.isEmpty() && dayData.confirmed.isEmpty() && dayData.quick.isEmpty())
+            ) {
+                item {
+                    Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
+                }
+            } else {
+                items(dayData.projected, key = { "p_${it.pattern.id}" }) { occ ->
+                    ProjectedCard(
+                        occurrence = occ,
+                        onConfirm = { viewModel.askConfirm(occ) },
+                        onEdit = { viewModel.showPatternEdit(occ.pattern) }
+                    )
+                }
+                items(dayData.confirmed, key = { "c_${it.id}" }) { mov ->
+                    ConfirmedRow(mov)
+                }
+                items(dayData.quick, key = { "q_${it.id}" }) { tx ->
+                    QuickRow(tx)
+                }
+            }
+
+            item { Spacer(modifier = Modifier.height(80.dp)) }
+            }
         }
     }
 }
@@ -492,11 +535,8 @@ private fun SummaryLine(label: String, income: Double, expense: Double) {
 }
 
 @Composable
-private fun DayDetail(
+private fun DayDetailHeader(
     date: LocalDate,
-    dayData: DayData?,
-    onConfirm: (Occurrence) -> Unit,
-    onEditPattern: (com.fintrack.app.domain.Pattern) -> Unit,
     onAdd: () -> Unit
 ) {
     Row(
@@ -512,54 +552,46 @@ private fun DayDetail(
         TextButton(onClick = onAdd) { Text("Agregar") }
     }
     Spacer(modifier = Modifier.height(8.dp))
+}
 
-    if (dayData == null || (dayData.projected.isEmpty() && dayData.confirmed.isEmpty() && dayData.quick.isEmpty())) {
-        Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
-        return
-    }
-
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        items(dayData.projected, key = { "p_${it.pattern.id}" }) { occ ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(occ.pattern.name, fontWeight = FontWeight.Medium)
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.tertiaryContainer
-                            ) {
-                                Text(
-                                    "Proyectado",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                "$${String.format("%.2f", occ.amount)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+@Composable
+private fun ProjectedCard(
+    occurrence: Occurrence,
+    onConfirm: () -> Unit,
+    onEdit: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(occurrence.pattern.name, fontWeight = FontWeight.Medium)
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            "Proyectado",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
                     }
-                    IconButton(onClick = { onEditPattern(occ.pattern) }) {
-                        Icon(Icons.Default.Edit, "Editar recurrente")
-                    }
-                    TextButton(onClick = { onConfirm(occ) }) { Text("Confirmar") }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "$${String.format("%.2f", occurrence.amount)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-        }
-        items(dayData.confirmed, key = { "c_${it.id}" }) { mov ->
-            ConfirmedRow(mov)
-        }
-        items(dayData.quick, key = { "q_${it.id}" }) { tx ->
-            QuickRow(tx)
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, "Editar recurrente")
+            }
+            TextButton(onClick = onConfirm) { Text("Confirmar") }
         }
     }
 }

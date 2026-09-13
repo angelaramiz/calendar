@@ -24,7 +24,7 @@ val appModule = module {
     single { GoalStore(androidContext()) }
     viewModel { DashboardViewModel(get(), get(), get()) }
     viewModel { AuthViewModel(get()) }
-    viewModel { CalendarViewModel(get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get()) }
     viewModel { BudgetViewModel(get(), get(), get(), get()) }
 }

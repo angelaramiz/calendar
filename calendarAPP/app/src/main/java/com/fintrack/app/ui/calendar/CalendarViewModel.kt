@@ -2,9 +2,11 @@ package com.fintrack.app.ui.calendar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.MovementRow
 import com.fintrack.app.data.repository.PatternRepository
+import com.fintrack.app.data.repository.TransactionRepository
 import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
@@ -16,19 +18,32 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneOffset
 
 data class DayData(
     val date: LocalDate,
     val projected: List<Occurrence> = emptyList(),
-    val confirmed: List<MovementRow> = emptyList()
+    val confirmed: List<MovementRow> = emptyList(),
+    /** Registros de Inicio (fintrack_transactions) caídos en este día. */
+    val quick: List<TransactionEntity> = emptyList()
 )
+
+/** Balance actual del mes: confirmados (movimientos + Inicio). */
+data class CalendarBalance(
+    val income: Double = 0.0,
+    val expense: Double = 0.0
+) {
+    val balance: Double get() = income - expense
+}
 
 data class CalendarUiState(
     val yearMonth: YearMonth = YearMonth.now(),
     val days: Map<LocalDate, DayData> = emptyMap(),
     val monthSummary: MonthSummary = MonthSummary(),
+    val balance: CalendarBalance = CalendarBalance(),
     val selectedDate: LocalDate = LocalDate.now(),
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -41,8 +56,19 @@ data class CalendarUiState(
     val needsLogin: Boolean = false
 )
 
+private fun MovementRow.isIncomeRow(): Boolean =
+    type.equals("ingreso", ignoreCase = true)
+
+private fun TransactionEntity.isIncomeTx(): Boolean =
+    type.equals("INCOME", ignoreCase = true) ||
+        type.equals("ingreso", ignoreCase = true)
+
+private fun Long.toLocalDateUtc(): LocalDate =
+    Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
+
 class CalendarViewModel(
     private val patternRepository: PatternRepository,
+    private val transactionRepository: TransactionRepository,
     private val authRepository: AuthRepository
 ) : ViewModel() {
 
@@ -92,20 +118,36 @@ class CalendarViewModel(
                     runCatching { LocalDate.parse(it.date) }.getOrNull()
                 }.filterKeys { it != null }.mapKeys { it.key!! }
 
-                val allDates = (projectedByDate.keys + confirmedByDate.keys).associateWith { date ->
-                    DayData(
-                        date = date,
-                        projected = projectedByDate[date].orEmpty(),
-                        confirmed = confirmedByDate[date].orEmpty()
-                    )
-                }
+                // Registros de Inicio según su fecha (timestamp UTC).
+                val quickInMonth = transactionRepository.getTransactions(userId)
+                    .filter { it.timestamp.toLocalDateUtc().let { d -> !d.isBefore(from) && !d.isAfter(to) } }
+                val quickByDate = quickInMonth.groupBy { it.timestamp.toLocalDateUtc() }
+
+                val allDates = (projectedByDate.keys + confirmedByDate.keys + quickByDate.keys)
+                    .associateWith { date ->
+                        DayData(
+                            date = date,
+                            projected = projectedByDate[date].orEmpty(),
+                            confirmed = confirmedByDate[date].orEmpty(),
+                            quick = quickByDate[date].orEmpty()
+                        )
+                    }
+
+                val confirmedFlat = confirmedByDate.values.flatten()
+                val balance = CalendarBalance(
+                    income = confirmedFlat.filter { it.isIncomeRow() }.sumOf { it.confirmed_amount } +
+                        quickInMonth.filter { it.isIncomeTx() }.sumOf { it.amount },
+                    expense = confirmedFlat.filter { !it.isIncomeRow() }.sumOf { it.confirmed_amount } +
+                        quickInMonth.filter { !it.isIncomeTx() }.sumOf { it.amount }
+                )
 
                 _uiState.value = _uiState.value.copy(
                     days = allDates,
                     monthSummary = computeMonthSummary(
                         projected,
-                        confirmedByDate.values.flatten()
+                        confirmedFlat
                     ),
+                    balance = balance,
                     isLoading = false,
                     needsLogin = false
                 )

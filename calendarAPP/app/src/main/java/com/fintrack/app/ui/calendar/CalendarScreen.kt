@@ -172,6 +172,10 @@ fun CalendarScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            BalanceCard(balance = uiState.balance)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             uiState.error?.let {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -298,9 +302,11 @@ private fun MonthGrid(
                     val isToday = date == LocalDate.now()
                     val dayData = days[date]
                     val hasIncome = dayData?.projected?.any { it.pattern.type == "INCOME" } == true ||
-                        dayData?.confirmed?.any { it.type == "ingreso" } == true
+                        dayData?.confirmed?.any { it.type == "ingreso" } == true ||
+                        dayData?.quick?.any { it.type.equals("INCOME", ignoreCase = true) } == true
                     val hasExpense = dayData?.projected?.any { it.pattern.type == "EXPENSE" } == true ||
-                        dayData?.confirmed?.any { it.type == "gasto" } == true
+                        dayData?.confirmed?.any { it.type == "gasto" } == true ||
+                        dayData?.quick?.any { it.type.equals("EXPENSE", ignoreCase = true) } == true
                     val allConfirmed = dayData != null &&
                         dayData.projected.isEmpty() && dayData.confirmed.isNotEmpty()
 
@@ -412,6 +418,46 @@ private fun MonthSummaryCard(summary: MonthSummary) {
 }
 
 @Composable
+private fun BalanceCard(balance: CalendarBalance) {
+    val incomeTint = incomeColor()
+    val expenseTint = expenseColor()
+    val balanceTint = if (balance.balance >= 0) incomeTint else expenseTint
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                "Balance actual",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "${if (balance.balance >= 0) "+" else "-"}$${String.format("%.2f", kotlin.math.abs(balance.balance))}",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = balanceTint
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Ingresos $${String.format("%.2f", balance.income)} · " +
+                    "Gastos $${String.format("%.2f", balance.expense)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+            )
+            Text(
+                "Incluye confirmados y registros de Inicio",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
 private fun SummaryLine(label: String, income: Double, expense: Double) {
     val incomeTint = incomeColor()
     val expenseTint = expenseColor()
@@ -465,7 +511,7 @@ private fun DayDetail(
     }
     Spacer(modifier = Modifier.height(8.dp))
 
-    if (dayData == null || (dayData.projected.isEmpty() && dayData.confirmed.isEmpty())) {
+    if (dayData == null || (dayData.projected.isEmpty() && dayData.confirmed.isEmpty() && dayData.quick.isEmpty())) {
         Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
         return
     }
@@ -510,6 +556,9 @@ private fun DayDetail(
         items(dayData.confirmed, key = { "c_${it.id}" }) { mov ->
             ConfirmedRow(mov)
         }
+        items(dayData.quick, key = { "q_${it.id}" }) { tx ->
+            QuickRow(tx)
+        }
     }
 }
 
@@ -536,6 +585,54 @@ private fun ConfirmedRow(mov: MovementRow) {
             }
             Text(
                 "${if (isIncome) "+" else "-"}$${String.format("%.2f", mov.confirmed_amount)}",
+                style = MaterialTheme.typography.titleSmall,
+                color = amountTint,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity) {
+    val isIncome = tx.type.equals("INCOME", ignoreCase = true)
+    val amountTint = if (isIncome) incomeColor() else expenseColor()
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier.size(10.dp).background(amountTint, CircleShape)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    tx.description.ifEmpty { tx.merchant ?: tx.category },
+                    fontWeight = FontWeight.Medium
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "Inicio",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        tx.category,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                "${if (isIncome) "+" else "-"}$${String.format("%.2f", tx.amount)}",
                 style = MaterialTheme.typography.titleSmall,
                 color = amountTint,
                 fontWeight = FontWeight.Bold

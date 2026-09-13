@@ -155,6 +155,12 @@ fun CalendarScreen(
                 onRefresh = { viewModel.retry() }
             )
 
+            Spacer(modifier = Modifier.height(4.dp))
+
+            BalanceCard(balance = uiState.balance)
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             WeekdayRow()
 
             MonthGrid(
@@ -169,10 +175,6 @@ fun CalendarScreen(
             Spacer(modifier = Modifier.height(4.dp))
 
             MonthSummaryCard(summary = uiState.monthSummary)
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            BalanceCard(balance = uiState.balance)
 
             Spacer(modifier = Modifier.height(12.dp))
 

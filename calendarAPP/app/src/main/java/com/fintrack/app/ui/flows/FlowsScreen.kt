@@ -74,7 +74,8 @@ import org.koin.androidx.compose.koinViewModel
 private val incomeSourceLabels = mapOf(
     "FIXED" to "Monto fijo",
     "MONTH" to "Ingresos del mes",
-    "CATEGORY" to "Total por categoria"
+    "CATEGORY" to "Total por categoria",
+    "RECURRING" to "Recurrentes del mes"
 )
 
 private val operatorLabels = mapOf(
@@ -424,6 +425,7 @@ private fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
         is IncomeSource.Fixed -> "FIXED"
         is IncomeSource.MonthIncomes -> "MONTH"
         is IncomeSource.CategoryTotal -> "CATEGORY"
+        is IncomeSource.RecurringMonth -> "RECURRING"
     }
     OutlinedTextField(
         value = node.label,
@@ -449,6 +451,7 @@ private fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
                     onClick = {
                         val source: IncomeSource = when (key) {
                             "MONTH" -> IncomeSource.MonthIncomes
+                            "RECURRING" -> IncomeSource.RecurringMonth
                             "CATEGORY" -> {
                                 val current = (node.source as? IncomeSource.CategoryTotal)?.category ?: ""
                                 IncomeSource.CategoryTotal(current)
@@ -474,6 +477,10 @@ private fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
         )
         is IncomeSource.MonthIncomes -> Text(
             "Usa la suma de tus ingresos del mes actual.",
+            style = MaterialTheme.typography.bodySmall
+        )
+        is IncomeSource.RecurringMonth -> Text(
+            "Usa la suma de tus recurrentes de ingreso del mes actual (los de Calendario).",
             style = MaterialTheme.typography.bodySmall
         )
         is IncomeSource.CategoryTotal -> OutlinedTextField(

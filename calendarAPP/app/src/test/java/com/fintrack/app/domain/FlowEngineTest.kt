@@ -6,6 +6,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
 import java.util.TimeZone
@@ -293,6 +294,67 @@ class FlowEngineTest {
     }
 
     @Test
+    fun ingreso_recurrente_suma_ocurrencias_de_ingreso_del_mes() {
+        // Septiembre 2026: mensual 3,000 (día 5) + quincenal 5,000 (días 1, 15, 29) = 18,000.
+        // El patrón de gasto se ignora.
+        val patterns = listOf(
+            Pattern(
+                id = "p-renta", name = "Renta", type = "INCOME", baseAmount = 3_000.0,
+                frequency = "monthly", startDate = LocalDate.of(2026, 1, 5)
+            ),
+            Pattern(
+                id = "p-sueldo", name = "Sueldo", type = "INCOME", baseAmount = 5_000.0,
+                frequency = "biweekly", startDate = LocalDate.of(2026, 9, 1)
+            ),
+            Pattern(
+                id = "p-luz", name = "Luz", type = "EXPENSE", baseAmount = 800.0,
+                frequency = "monthly", startDate = LocalDate.of(2026, 1, 10)
+            )
+        )
+        val nodes = listOf(
+            IncomeNode(id = "n-income", label = "Recurrentes", source = IncomeSource.RecurringMonth),
+            envelope("n-sobre", "Todo", "Otros")
+        )
+
+        val result = FlowEngine.evaluate(nodes, emptyList(), patterns, YearMonth.of(2026, 9))
+
+        assertEquals(1, result.size)
+        assertEquals(18_000.0, result[0].amount, 0.001)
+    }
+
+    @Test
+    fun ingreso_recurrente_sin_patrones_falla_con_mensaje_claro() {
+        val nodes = listOf(
+            IncomeNode(id = "n-income", label = "Recurrentes", source = IncomeSource.RecurringMonth),
+            envelope("n-sobre", "Todo", "Otros")
+        )
+
+        val error = assertThrows(FlowValidationException::class.java) {
+            FlowEngine.evaluate(nodes, emptyList(), emptyList(), YearMonth.of(2026, 9))
+        }
+        assertTrue(error.message!!.contains("recurrentes"))
+    }
+
+    @Test
+    fun ingreso_recurrente_ignora_patrones_inactivos() {
+        val patterns = listOf(
+            Pattern(
+                id = "p-viejo", name = "Viejo", type = "INCOME", baseAmount = 9_999.0,
+                frequency = "monthly", startDate = LocalDate.of(2026, 1, 5), active = false
+            )
+        )
+        val nodes = listOf(
+            IncomeNode(id = "n-income", label = "Recurrentes", source = IncomeSource.RecurringMonth),
+            envelope("n-sobre", "Todo", "Otros")
+        )
+
+        val error = assertThrows(FlowValidationException::class.java) {
+            FlowEngine.evaluate(nodes, emptyList(), patterns, YearMonth.of(2026, 9))
+        }
+        assertTrue(error.message!!.contains("recurrentes"))
+    }
+
+    @Test
     fun ingreso_en_borde_de_mes_se_atribuye_en_utc() {
         // 2026-09-01 00:30 UTC es 31 de agosto en America/Mexico_City:
         // con UTC el ingreso cae en septiembre, con zona local no.
@@ -313,7 +375,11 @@ class FlowEngineTest {
                 envelope("n-sobre", "Todo", "Otros")
             )
 
-            val result = FlowEngine.evaluate(nodes, listOf(tx), YearMonth.of(2026, 9))
+            val result = FlowEngine.evaluate(
+                nodes,
+                transactions = listOf(tx),
+                month = YearMonth.of(2026, 9)
+            )
 
             assertEquals(1, result.size)
             assertEquals(2_000.0, result[0].amount, 0.001)

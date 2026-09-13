@@ -52,6 +52,14 @@ sealed interface IncomeSource {
     @Serializable
     @SerialName("category")
     data class CategoryTotal(val category: String) : IncomeSource
+
+    /**
+     * Suma de las ocurrencias de tus patrones recurrentes de ingreso
+     * expandidos en el mes en curso (los que creas en Calendario).
+     */
+    @Serializable
+    @SerialName("recurring")
+    data object RecurringMonth : IncomeSource
 }
 
 /** Nodo origen: aporta dinero al monto actual del flujo. */
@@ -155,16 +163,18 @@ object FlowEngine {
      * Evalua la cadena de [nodes] en orden y devuelve las asignaciones.
      *
      * @param transactions movimientos del usuario (para origenes Mes y Categoria).
+     * @param patterns patrones recurrentes (para origen Recurrentes del mes).
      * @param month mes considerado "actual" (por defecto el mes en curso).
      * @throws FlowValidationException si el flujo es invalido.
      */
     fun evaluate(
         nodes: List<FlowNode>,
         transactions: List<TransactionEntity> = emptyList(),
+        patterns: List<Pattern> = emptyList(),
         month: YearMonth = YearMonth.now()
     ): List<Allocation> {
         val state = FlowState()
-        process(nodes, transactions, month, state)
+        process(nodes, transactions, patterns, month, state)
         return state.allocations
     }
 
@@ -176,17 +186,18 @@ object FlowEngine {
     private fun process(
         nodes: List<FlowNode>,
         transactions: List<TransactionEntity>,
+        patterns: List<Pattern>,
         month: YearMonth,
         state: FlowState
     ) {
         nodes.forEach { node ->
             when (node) {
                 is IncomeNode -> {
-                    val amount = resolveIncome(node, transactions, month)
+                    val amount = resolveIncome(node, transactions, patterns, month)
                     state.current = (state.current ?: 0.0) + amount
                 }
                 is FormulaNode -> applyFormula(node, state)
-                is ConditionNode -> applyCondition(node, transactions, month, state)
+                is ConditionNode -> applyCondition(node, transactions, patterns, month, state)
                 is EnvelopeNode -> applyEnvelope(node, state)
             }
         }
@@ -195,6 +206,7 @@ object FlowEngine {
     private fun resolveIncome(
         node: IncomeNode,
         transactions: List<TransactionEntity>,
+        patterns: List<Pattern>,
         month: YearMonth
     ): Double {
         return when (val source = node.source) {
@@ -232,6 +244,20 @@ object FlowEngine {
                 if (total <= 0) {
                     throw FlowValidationException(
                         "No hay ingresos en la categoria '$wanted' este mes para '${node.label}'."
+                    )
+                }
+                round2(total)
+            }
+            is IncomeSource.RecurringMonth -> {
+                val from = month.atDay(1)
+                val to = month.atEndOfMonth()
+                val total = patterns
+                    .filter { it.active && it.type.equals("INCOME", ignoreCase = true) }
+                    .flatMap { PatternExpander.expand(it, from, to) }
+                    .sumOf { it.amount }
+                if (total <= 0) {
+                    throw FlowValidationException(
+                        "No hay ingresos recurrentes en el mes actual para '${node.label}'."
                     )
                 }
                 round2(total)
@@ -304,6 +330,7 @@ object FlowEngine {
     private fun applyCondition(
         node: ConditionNode,
         transactions: List<TransactionEntity>,
+        patterns: List<Pattern>,
         month: YearMonth,
         state: FlowState
     ) {
@@ -325,7 +352,7 @@ object FlowEngine {
             ConditionOperator.EQUALS -> abs(current - node.threshold) <= EQUALS_TOLERANCE
         }
         val branch = if (matches) node.trueBranch else node.falseBranch
-        process(branch, transactions, month, state)
+        process(branch, transactions, patterns, month, state)
     }
 
     private fun applyEnvelope(node: EnvelopeNode, state: FlowState) {

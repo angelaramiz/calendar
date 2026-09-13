@@ -25,6 +25,6 @@ val appModule = module {
     viewModel { DashboardViewModel(get(), get(), get()) }
     viewModel { AuthViewModel(get()) }
     viewModel { CalendarViewModel(get(), get(), get()) }
-    viewModel { FlowsViewModel(get(), get(), get()) }
+    viewModel { FlowsViewModel(get(), get(), get(), get()) }
     viewModel { BudgetViewModel(get(), get(), get(), get()) }
 }

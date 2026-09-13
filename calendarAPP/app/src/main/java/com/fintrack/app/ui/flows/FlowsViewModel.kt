@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.FlowStore
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.Allocation
 import com.fintrack.app.domain.ConditionNode
 import com.fintrack.app.domain.ConditionOperator
@@ -38,7 +40,8 @@ data class FlowsUiState(
 class FlowsViewModel(
     private val transactionRepository: TransactionRepository,
     private val authRepository: AuthRepository,
-    private val flowStore: FlowStore
+    private val flowStore: FlowStore,
+    private val patternRepository: PatternRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FlowsUiState())
@@ -88,7 +91,10 @@ class FlowsViewModel(
             _uiState.value = _uiState.value.copy(isRunning = true, error = null)
             try {
                 val transactions = transactionRepository.getTransactions(userId)
-                val allocations = FlowEngine.evaluate(_uiState.value.nodes, transactions)
+                val patterns =
+                    patternRepository.getIncomePatterns(userId).mapNotNull { it.toDomain("INCOME") } +
+                        patternRepository.getExpensePatterns(userId).mapNotNull { it.toDomain("EXPENSE") }
+                val allocations = FlowEngine.evaluate(_uiState.value.nodes, transactions, patterns)
                 _uiState.value = _uiState.value.copy(
                     allocations = allocations,
                     totalAssigned = allocations.sumOf { it.amount },

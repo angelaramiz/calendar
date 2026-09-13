@@ -9,6 +9,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
 import com.fintrack.app.ui.auth.AuthScreen
+import com.fintrack.app.ui.auth.RecoveryWebScreen
 import com.fintrack.app.ui.budget.BudgetScreen
 import com.fintrack.app.ui.calendar.CalendarScreen
 import com.fintrack.app.ui.dashboard.DashboardScreen
@@ -23,6 +24,7 @@ object Routes {
     const val QUICK_ENTRY = "quick_entry"
     const val PERMISSIONS = "permissions"
     const val AUTH = "auth"
+    const val RECOVERY = "recovery"
     const val CALENDAR = "calendar"
     const val FLOWS = "flows"
     const val BUDGET = "budget"
@@ -97,8 +99,12 @@ fun FinTrackNavGraph(
                 onLoggedIn = {
                     dashboardViewModel.loadDashboard()
                     navController.popBackStack()
-                }
+                },
+                onNavigateToRecovery = { navController.navigate(Routes.RECOVERY) }
             )
+        }
+        composable(Routes.RECOVERY) {
+            RecoveryWebScreen(onBack = { navController.popBackStack() })
         }
         // Ventana (dialog), no pantalla completa: funciona igual desde
         // el FAB, el Tile y el Widget sin tocar el backstack de tabs.

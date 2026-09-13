@@ -14,12 +14,14 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import com.fintrack.app.domain.AuthAction
 import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
     onLoggedIn: () -> Unit,
+    onNavigateToRecovery: () -> Unit,
     viewModel: AuthViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -109,6 +111,65 @@ fun AuthScreen(
             uiState.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(8.dp))
+
+                // Acción de recuperación según el error: ya no es solo texto rojo.
+                when (uiState.pendingAction) {
+                    AuthAction.RESEND_CONFIRMATION -> {
+                        OutlinedButton(
+                            onClick = { viewModel.resendConfirmation() },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Reenviar correo de confirmación") }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    AuthAction.GO_TO_LOGIN -> {
+                        OutlinedButton(
+                            onClick = { viewModel.goToLogin() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Ir a iniciar sesión") }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    AuthAction.FORGOT_PASSWORD -> {
+                        TextButton(onClick = onNavigateToRecovery) {
+                            Text("¿Olvidaste tu contraseña? Recupérala aquí")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    AuthAction.RETRY -> {
+                        OutlinedButton(
+                            onClick = { viewModel.submit(email, password) },
+                            enabled = !uiState.isLoading,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Reintentar") }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    AuthAction.NONE -> { }
+                }
+            }
+
+            uiState.info?.let {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                if (uiState.pendingAction == AuthAction.RESEND_CONFIRMATION) {
+                    OutlinedButton(
+                        onClick = { viewModel.resendConfirmation() },
+                        enabled = !uiState.isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Reenviar correo") }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
 
             Button(
@@ -132,6 +193,12 @@ fun AuthScreen(
                     if (uiState.isLoginMode) "¿No tienes cuenta? Regístrate"
                     else "¿Ya tienes cuenta? Inicia sesión"
                 )
+            }
+
+            if (uiState.isLoginMode) {
+                TextButton(onClick = onNavigateToRecovery) {
+                    Text("¿Olvidaste tu contraseña?")
+                }
             }
 
             if (biometricAvailable && activity != null) {

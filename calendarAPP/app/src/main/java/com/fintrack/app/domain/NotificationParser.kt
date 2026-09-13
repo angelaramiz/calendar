@@ -21,16 +21,27 @@ sealed interface ParseResult {
 
 object NotificationParser {
 
+    // IDs verificados en Google Play (sep 2026): Nu com.nu.production,
+    // Plata dif.tech.plata, DiDi com.didiglobal.passenger, Azteca
+    // mx.com.bancoazteca.bazdigitalmovil, Spin com.pagopopmobile.
+    // Banamex com.citibanamex.banamexmobile (fuente secundaria).
+    // El resto sigue pendiente de confirmación en dispositivo real.
     val DEFAULT_PACKAGES = setOf(
         "com.bbva.bbvacontigo",
         "com.bancomer.mbanking",
+        "com.citibanamex.banamexmobile",
         "com.santander.santandermexico",
         "com.banorte.movil",
         "com.hsbc.hsbcmexico",
         "com.scotiabank.mobile",
         "com.inbursa.bancamovil",
+        "mx.com.bancoazteca.bazdigitalmovil",
         "com.mercadopago.wallet",
-        "com.paypal.android.p2pmobile"
+        "com.paypal.android.p2pmobile",
+        "com.nu.production",
+        "dif.tech.plata",
+        "com.didiglobal.passenger",
+        "com.pagopopmobile"
     )
 
     // Raíces (stems) normalizadas sin acentos: matchean conjugaciones

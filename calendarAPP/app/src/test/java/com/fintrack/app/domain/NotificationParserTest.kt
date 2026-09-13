@@ -235,4 +235,48 @@ class NotificationParserTest {
         assertTrue(result is ParseResult.Rejected)
         assertEquals("movimiento_rechazado", (result as ParseResult.Rejected).reason)
     }
+
+    @Test
+    fun bancos_nuevos_estan_en_allowlist() {
+        val esperados = listOf(
+            "com.nu.production",
+            "dif.tech.plata",
+            "com.didiglobal.passenger",
+            "com.citibanamex.banamexmobile",
+            "mx.com.bancoazteca.bazdigitalmovil",
+            "com.pagopopmobile",
+            "com.paypal.android.p2pmobile"
+        )
+        esperados.forEach {
+            assertTrue(it, NotificationParser.DEFAULT_PACKAGES.contains(it))
+        }
+    }
+
+    @Test
+    fun notificacion_nu_con_lista_por_defecto_es_aceptada() {
+        // Sin pasar allowlist: usa DEFAULT_PACKAGES.
+        val result = NotificationParser.parse(
+            packageName = "com.nu.production",
+            title = "Compra aprobada",
+            text = "Compra en Liverpool por $1,250.00 con tu tarjeta Nu."
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        val tx = (result as ParseResult.Accepted).tx
+        assertEquals(1250.0, tx.amount, 0.001)
+        assertEquals("EXPENSE", tx.type)
+        assertEquals("Liverpool", tx.merchant)
+    }
+
+    @Test
+    fun app_fuera_de_allowlist_sigue_rechazada() {
+        val result = NotificationParser.parse(
+            packageName = "com.ejemplo.otro",
+            title = "Compra aprobada",
+            text = "Compra en Liverpool por $1,250.00."
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("app_no_permitida", (result as ParseResult.Rejected).reason)
+    }
 }

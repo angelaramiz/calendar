@@ -4,9 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.data.repository.OtaUpdateInfo
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +24,11 @@ data class DashboardUiState(
     val error: String? = null,
     val needsLogin: Boolean = false,
     val updateAvailable: OtaUpdateInfo? = null,
-    val updateMessage: String? = null
+    val updateMessage: String? = null,
+    /** Progreso 0..100 mientras descarga (null = sin descarga activa). */
+    val otaProgress: Int? = null,
+    /** Ruta del APK listo para instalar (null = aún no). */
+    val otaApkPath: String? = null
 )
 
 class DashboardViewModel(
@@ -57,6 +64,64 @@ class DashboardViewModel(
 
     fun dismissUpdate() {
         _uiState.value = _uiState.value.copy(updateAvailable = null)
+    }
+
+    private var otaPollJob: Job? = null
+    private var otaDownloadId: Long? = null
+
+    /** Inicia la descarga con progreso visible. */
+    fun startUpdateDownload(appContext: android.content.Context) {
+        val update = _uiState.value.updateAvailable ?: return
+        if (_uiState.value.otaProgress != null) return
+        otaPollJob?.cancel()
+        val downloadId = OtaInstaller.enqueueDownload(appContext, update.apkUrl, update.versionName)
+        otaDownloadId = downloadId
+        _uiState.value = _uiState.value.copy(otaProgress = 0)
+        otaPollJob = viewModelScope.launch {
+            while (true) {
+                delay(500)
+                when (val progress = OtaInstaller.queryProgress(appContext, downloadId)) {
+                    null -> continue
+                    -1 -> {
+                        _uiState.value = _uiState.value.copy(
+                            otaProgress = null,
+                            updateMessage = "La descarga falló. Reintenta."
+                        )
+                        break
+                    }
+                    else -> {
+                        if (progress >= 100) {
+                            val file = OtaInstaller.downloadedFile(appContext, update.versionName)
+                            _uiState.value = _uiState.value.copy(
+                                otaProgress = null,
+                                otaApkPath = file?.absolutePath,
+                                updateAvailable = null,
+                                updateMessage = if (file == null) {
+                                    "Descarga completa pero no se encontró el archivo. Reintenta."
+                                } else null
+                            )
+                            break
+                        } else {
+                            _uiState.value = _uiState.value.copy(otaProgress = progress)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Cancela la descarga en curso. */
+    fun cancelUpdateDownload(appContext: android.content.Context) {
+        otaPollJob?.cancel()
+        otaPollJob = null
+        otaDownloadId?.let { OtaInstaller.cancelDownload(appContext, it) }
+        otaDownloadId = null
+        _uiState.value = _uiState.value.copy(otaProgress = null)
+    }
+
+    /** Limpia la ruta del APK tras lanzar el instalador o cerrar el diálogo. */
+    fun consumeReadyApk() {
+        _uiState.value = _uiState.value.copy(otaApkPath = null)
     }
 
     fun clearError() {

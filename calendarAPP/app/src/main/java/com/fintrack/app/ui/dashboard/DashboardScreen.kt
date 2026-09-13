@@ -60,22 +60,71 @@ fun DashboardScreen(
     }
 
     uiState.updateAvailable?.let { update ->
+        if (uiState.otaProgress == null && uiState.otaApkPath == null) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissUpdate() },
+                title = { Text("Nueva versión disponible") },
+                text = { Text("FinTrack ${update.versionName} está lista para descargar.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (!OtaInstaller.canInstallUnknownApps(context)) {
+                            OtaInstaller.openUnknownSourcesSettings(context)
+                        } else {
+                            viewModel.startUpdateDownload(context.applicationContext)
+                        }
+                    }) { Text("Descargar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Después") }
+                }
+            )
+        }
+    }
+
+    uiState.otaProgress?.let { progress ->
         AlertDialog(
-            onDismissRequest = { viewModel.dismissUpdate() },
-            title = { Text("Nueva versión disponible") },
-            text = { Text("FinTrack ${update.versionName} está lista para descargar.") },
+            onDismissRequest = { },
+            title = { Text("Descargando actualización") },
+            text = {
+                Column {
+                    Text("FinTrack ${uiState.updateAvailable?.versionName ?: ""} · $progress%")
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = { },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelUpdateDownload(context.applicationContext) }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    uiState.otaApkPath?.let { apkPath ->
+        val apkFile = remember(apkPath) { java.io.File(apkPath) }
+        // Al completarse se abre solo el instalador (pide aceptar al usuario).
+        LaunchedEffect(apkPath) {
+            if (apkFile.exists()) {
+                runCatching { OtaInstaller.promptInstall(context, apkFile) }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { viewModel.consumeReadyApk() },
+            title = { Text("Descarga completa") },
+            text = { Text("Se abrió el instalador: acepta para actualizar. Si no se abrió, toca Instalar.") },
             confirmButton = {
                 TextButton(onClick = {
-                    if (!OtaInstaller.canInstallUnknownApps(context)) {
-                        OtaInstaller.openUnknownSourcesSettings(context)
-                    } else {
-                        OtaInstaller.downloadAndInstall(context, update.apkUrl, update.versionName)
-                        viewModel.dismissUpdate()
+                    if (apkFile.exists()) {
+                        runCatching { OtaInstaller.promptInstall(context, apkFile) }
                     }
-                }) { Text("Descargar") }
+                }) { Text("Instalar") }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Después") }
+                TextButton(onClick = { viewModel.consumeReadyApk() }) { Text("Cerrar") }
             }
         )
     }

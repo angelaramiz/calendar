@@ -137,6 +137,54 @@ class PatternRepository {
         db.from(table).insert(data) { select() }.decodeSingle<PatternRow>()
     }
 
+    /**
+     * Edita un recurrente existente. El tipo (ingreso/gasto) no se cambia aquí:
+     * la UI lo bloquea porque implicaría mover la fila de tabla.
+     */
+    suspend fun updatePattern(
+        patternId: String,
+        isIncome: Boolean,
+        name: String,
+        description: String,
+        category: String,
+        baseAmount: Double,
+        frequency: String,
+        startDateIso: String,
+        endDateIso: String? = null
+    ): PatternRow = withContext(Dispatchers.IO) {
+        val start = runCatching { java.time.LocalDate.parse(startDateIso) }.getOrNull()
+        val data = buildJsonObject {
+            put("name", name)
+            put("description", description)
+            put("category", category)
+            put("base_amount", baseAmount)
+            put("frequency", frequency)
+            put("day_of_week", start?.dayOfWeek?.value)
+            put("day_of_month", start?.dayOfMonth)
+            put("start_date", startDateIso)
+            put("end_date", endDateIso)
+        }
+        val table = if (isIncome) "income_patterns" else "expense_patterns"
+        db.from(table).update(data) {
+            filter { eq("id", patternId) }
+            select()
+        }.decodeSingle<PatternRow>()
+    }
+
+    /**
+     * Desactiva un recurrente (baja lógica): deja de proyectarse a futuro
+     * pero conserva los movimientos ya confirmados en el historial.
+     */
+    suspend fun deactivatePattern(patternId: String, isIncome: Boolean) =
+        withContext(Dispatchers.IO) {
+            val data = buildJsonObject { put("active", false) }
+            val table = if (isIncome) "income_patterns" else "expense_patterns"
+            db.from(table).update(data) {
+                filter { eq("id", patternId) }
+                select()
+            }.decodeSingle<PatternRow>()
+        }
+
     suspend fun addManualMovement(
         userId: String,
         dateIso: String,

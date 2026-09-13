@@ -8,6 +8,7 @@ import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
+import com.fintrack.app.domain.Pattern
 import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.PatternValidator
 import com.fintrack.app.domain.computeMonthSummary
@@ -34,6 +35,8 @@ data class CalendarUiState(
     val confirmTarget: Occurrence? = null,
     val addTarget: LocalDate? = null,
     val showPatternDialog: Boolean = false,
+    /** Patrón en edición (null = creando uno nuevo). */
+    val patternEditTarget: Pattern? = null,
     val isSaving: Boolean = false,
     val needsLogin: Boolean = false
 )
@@ -138,14 +141,30 @@ class CalendarViewModel(
     }
 
     fun showPatternDialog() {
-        _uiState.value = _uiState.value.copy(showPatternDialog = true, error = null)
+        _uiState.value = _uiState.value.copy(
+            showPatternDialog = true,
+            patternEditTarget = null,
+            error = null
+        )
+    }
+
+    /** Abre el diálogo precargado para editar un recurrente existente. */
+    fun showPatternEdit(pattern: Pattern) {
+        _uiState.value = _uiState.value.copy(
+            showPatternDialog = true,
+            patternEditTarget = pattern,
+            error = null
+        )
     }
 
     fun dismissPatternDialog() {
-        _uiState.value = _uiState.value.copy(showPatternDialog = false)
+        _uiState.value = _uiState.value.copy(
+            showPatternDialog = false,
+            patternEditTarget = null
+        )
     }
 
-    /** Crea un recurrente validado y recarga el mes de su inicio. */
+    /** Crea o actualiza un recurrente validado y recarga el mes de su inicio. */
     fun savePattern(
         isIncome: Boolean,
         name: String,
@@ -164,26 +183,65 @@ class CalendarViewModel(
             return
         }
         if (userId.isEmpty() || startDate == null) return
+        val editTarget = _uiState.value.patternEditTarget
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
             try {
-                patternRepository.insertPattern(
-                    userId = userId,
-                    isIncome = isIncome,
-                    name = name.trim(),
-                    description = description.trim(),
-                    category = category.ifBlank { "Otros" },
-                    baseAmount = baseAmount,
-                    frequency = frequency,
-                    startDateIso = startDate.toString(),
-                    endDateIso = endDate?.toString()
-                )
+                if (editTarget != null) {
+                    patternRepository.updatePattern(
+                        patternId = editTarget.id,
+                        isIncome = editTarget.type == "INCOME",
+                        name = name.trim(),
+                        description = description.trim(),
+                        category = category.ifBlank { "Otros" },
+                        baseAmount = baseAmount,
+                        frequency = frequency,
+                        startDateIso = startDate.toString(),
+                        endDateIso = endDate?.toString()
+                    )
+                } else {
+                    patternRepository.insertPattern(
+                        userId = userId,
+                        isIncome = isIncome,
+                        name = name.trim(),
+                        description = description.trim(),
+                        category = category.ifBlank { "Otros" },
+                        baseAmount = baseAmount,
+                        frequency = frequency,
+                        startDateIso = startDate.toString(),
+                        endDateIso = endDate?.toString()
+                    )
+                }
                 _uiState.value = _uiState.value.copy(
                     showPatternDialog = false,
+                    patternEditTarget = null,
                     isSaving = false,
                     selectedDate = startDate
                 )
                 loadMonth(YearMonth.from(startDate))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+            }
+        }
+    }
+
+    /** Desactiva el recurrente en edición: no se proyecta más, se conserva el historial. */
+    fun deactivatePattern() {
+        val target = _uiState.value.patternEditTarget ?: return
+        if (userId.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSaving = true, error = null)
+            try {
+                patternRepository.deactivatePattern(
+                    patternId = target.id,
+                    isIncome = target.type == "INCOME"
+                )
+                _uiState.value = _uiState.value.copy(
+                    showPatternDialog = false,
+                    patternEditTarget = null,
+                    isSaving = false
+                )
+                loadMonth(_uiState.value.yearMonth)
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
             }

@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -75,6 +76,7 @@ fun CalendarScreen(
     if (uiState.showPatternDialog) {
         AddPatternDialog(
             initialDate = uiState.selectedDate,
+            existing = uiState.patternEditTarget,
             isSaving = uiState.isSaving,
             onDismiss = { viewModel.dismissPatternDialog() },
             onSave = { isIncome, name, description, category, amount, frequency, start, end ->
@@ -82,7 +84,8 @@ fun CalendarScreen(
                     isIncome, name, description, category,
                     amount, frequency, start, end
                 )
-            }
+            },
+            onDelete = { viewModel.deactivatePattern() }
         )
     }
 
@@ -203,6 +206,7 @@ fun CalendarScreen(
                 date = uiState.selectedDate,
                 dayData = uiState.days[uiState.selectedDate],
                 onConfirm = { viewModel.askConfirm(it) },
+                onEditPattern = { viewModel.showPatternEdit(it) },
                 onAdd = { viewModel.showAddMovement(uiState.selectedDate) }
             )
         }
@@ -444,6 +448,7 @@ private fun DayDetail(
     date: LocalDate,
     dayData: DayData?,
     onConfirm: (Occurrence) -> Unit,
+    onEditPattern: (com.fintrack.app.domain.Pattern) -> Unit,
     onAdd: () -> Unit
 ) {
     Row(
@@ -494,6 +499,9 @@ private fun DayDetail(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                    IconButton(onClick = { onEditPattern(occ.pattern) }) {
+                        Icon(Icons.Default.Edit, "Editar recurrente")
                     }
                     TextButton(onClick = { onConfirm(occ) }) { Text("Confirmar") }
                 }

@@ -12,7 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import com.fintrack.app.domain.PatternValidator
+import com.fintrack.app.domain.Pattern
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -33,10 +33,16 @@ private val FREQUENCY_LABELS = listOf(
  * Ventana "Nuevo recurrente": crea un patrón de ingreso/gasto que el
  * calendario expande como proyecciones (misma lógica que la web).
  */
+/**
+ * Ventana de recurrente: crea uno nuevo o edita uno existente (precargado).
+ * En edición el tipo Gasto/Ingreso se bloquea (cambiarlo implicaría mover
+ * la fila de tabla) y aparece la opción Desactivar; al crear está libre.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AddPatternDialog(
     initialDate: LocalDate,
+    existing: Pattern? = null,
     onDismiss: () -> Unit,
     onSave: (
         isIncome: Boolean,
@@ -48,26 +54,37 @@ fun AddPatternDialog(
         startDate: LocalDate?,
         endDate: LocalDate?
     ) -> Unit,
+    onDelete: (() -> Unit)? = null,
     isSaving: Boolean = false
 ) {
-    var isIncome by remember { mutableStateOf(true) }
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf("Sueldo") }
-    var frequency by remember { mutableStateOf("monthly") }
-    var startDate by remember(initialDate) { mutableStateOf(initialDate) }
-    var hasEndDate by remember { mutableStateOf(false) }
-    var endDate by remember(initialDate) { mutableStateOf(initialDate) }
+    val categories = listOf("Sueldo", "Comida", "Transporte", "Servicios", "Ocio", "Otros")
+    val isEditing = existing != null
+    var isIncome by remember(existing) { mutableStateOf(existing?.type != "EXPENSE") }
+    var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
+    var amount by remember(existing) {
+        mutableStateOf(existing?.let { String.format("%.2f", it.baseAmount) } ?: "")
+    }
+    var category by remember(existing) {
+        mutableStateOf(
+            existing?.category?.takeIf { it in categories }
+                ?: if (existing?.type == "EXPENSE") "Comida" else "Sueldo"
+        )
+    }
+    var frequency by remember(existing) {
+        mutableStateOf(existing?.frequency?.takeIf { it in FREQUENCY_LABELS.map { f -> f.first } } ?: "monthly")
+    }
+    var startDate by remember(existing) { mutableStateOf(existing?.startDate ?: initialDate) }
+    var hasEndDate by remember(existing) { mutableStateOf(existing?.endDate != null) }
+    var endDate by remember(existing) { mutableStateOf(existing?.endDate ?: initialDate) }
     var pickingStart by remember { mutableStateOf(false) }
     var pickingEnd by remember { mutableStateOf(false) }
-    val categories = listOf("Sueldo", "Comida", "Transporte", "Servicios", "Ocio", "Otros")
 
     val amountValue = amount.toDoubleOrNull()
     val valid = name.isNotBlank() && amountValue != null && amountValue > 0 && !isSaving
 
     AlertDialog(
         onDismissRequest = { if (!isSaving) onDismiss() },
-        title = { Text("Nuevo recurrente") },
+        title = { Text(if (isEditing) "Editar recurrente" else "Nuevo recurrente") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Row(modifier = Modifier.fillMaxWidth()) {
@@ -75,6 +92,7 @@ fun AddPatternDialog(
                         FilterChip(
                             selected = isIncome == value,
                             onClick = { isIncome = value },
+                            enabled = !isEditing,
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
                         )
@@ -165,10 +183,17 @@ fun AddPatternDialog(
                     )
                 },
                 enabled = valid
-            ) { Text(if (isSaving) "Guardando…" else "Crear") }
+            ) { Text(if (isSaving) "Guardando…" else if (isEditing) "Guardar" else "Crear") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancelar") }
+            Row {
+                if (isEditing && onDelete != null) {
+                    TextButton(onClick = onDelete, enabled = !isSaving) {
+                        Text("Desactivar", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancelar") }
+            }
         }
     )
 

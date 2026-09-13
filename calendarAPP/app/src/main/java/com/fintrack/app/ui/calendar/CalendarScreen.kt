@@ -12,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -56,9 +57,41 @@ fun CalendarScreen(
         )
     }
 
+    uiState.addTarget?.let { target ->
+        AddMovementDialog(
+            date = target,
+            isSaving = uiState.isSaving,
+            onDismiss = { viewModel.dismissAddMovement() },
+            onSave = { date, isIncome, title, category, amount, description ->
+                viewModel.saveManualMovement(date, isIncome, title, category, amount, description)
+            }
+        )
+    }
+
+    if (uiState.showPatternDialog) {
+        AddPatternDialog(
+            initialDate = uiState.selectedDate,
+            isSaving = uiState.isSaving,
+            onDismiss = { viewModel.dismissPatternDialog() },
+            onSave = { isIncome, name, description, category, amount, frequency, start, end ->
+                viewModel.savePattern(
+                    isIncome, name, description, category,
+                    amount, frequency, start, end
+                )
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Calendario") })
+            TopAppBar(
+                title = { Text("Calendario") },
+                actions = {
+                    IconButton(onClick = { viewModel.showPatternDialog() }) {
+                        Icon(Icons.Default.Add, "Nuevo recurrente")
+                    }
+                }
+            )
         },
         bottomBar = {
             FinTrackBottomBar(
@@ -141,7 +174,8 @@ fun CalendarScreen(
             DayDetail(
                 date = uiState.selectedDate,
                 dayData = uiState.days[uiState.selectedDate],
-                onConfirm = { viewModel.askConfirm(it) }
+                onConfirm = { viewModel.askConfirm(it) },
+                onAdd = { viewModel.showAddMovement(uiState.selectedDate) }
             )
         }
     }
@@ -355,13 +389,21 @@ private fun SummaryLine(label: String, income: Double, expense: Double) {
 private fun DayDetail(
     date: LocalDate,
     dayData: DayData?,
-    onConfirm: (Occurrence) -> Unit
+    onConfirm: (Occurrence) -> Unit,
+    onAdd: () -> Unit
 ) {
-    Text(
-        "${date.dayOfWeek.getDisplayName(TextStyle.FULL, ES).replaceFirstChar { it.uppercase() }} ${date.dayOfMonth}",
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold
-    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            "${date.dayOfWeek.getDisplayName(TextStyle.FULL, ES).replaceFirstChar { it.uppercase() }} ${date.dayOfMonth}",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onAdd) { Text("Agregar") }
+    }
     Spacer(modifier = Modifier.height(8.dp))
 
     if (dayData == null || (dayData.projected.isEmpty() && dayData.confirmed.isEmpty())) {

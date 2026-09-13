@@ -2,6 +2,7 @@ package com.fintrack.app.ui.budget
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.GoalStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
@@ -38,7 +39,8 @@ data class BudgetUiState(
 class BudgetViewModel(
     private val transactionRepository: TransactionRepository,
     private val patternRepository: PatternRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val goalStore: GoalStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BudgetUiState())
@@ -48,6 +50,28 @@ class BudgetViewModel(
 
     init {
         loadBudget()
+        loadGoals()
+    }
+
+    /** Recupera las metas guardadas en DataStore al abrir la pestaña. */
+    private fun loadGoals() {
+        viewModelScope.launch {
+            val saved = runCatching { goalStore.snapshot() }.getOrDefault(emptyList())
+            val currentSelected = _uiState.value.selectedGoalId
+            _uiState.value = _uiState.value.copy(
+                goals = saved,
+                selectedGoalId = saved.firstOrNull { it.id == currentSelected }?.id
+                    ?: saved.firstOrNull()?.id
+            )
+        }
+    }
+
+    /** Persiste la lista actual de metas (agregar/editar/eliminar). */
+    private fun persistGoals() {
+        val goals = _uiState.value.goals
+        viewModelScope.launch {
+            runCatching { goalStore.save(goals) }
+        }
     }
 
     fun loadBudget() {
@@ -142,12 +166,14 @@ class BudgetViewModel(
             goals = _uiState.value.goals + goal,
             selectedGoalId = goal.id
         )
+        persistGoals()
     }
 
     fun updateGoal(updated: SavingsGoal) {
         _uiState.value = _uiState.value.copy(
             goals = _uiState.value.goals.map { if (it.id == updated.id) updated else it }
         )
+        persistGoals()
     }
 
     fun removeGoal(id: String) {
@@ -160,6 +186,7 @@ class BudgetViewModel(
                 _uiState.value.selectedGoalId
             }
         )
+        persistGoals()
     }
 
     fun selectGoal(id: String?) {

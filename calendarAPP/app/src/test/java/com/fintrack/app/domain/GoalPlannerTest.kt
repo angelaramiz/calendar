@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 
 class GoalPlannerTest {
 
@@ -166,5 +168,28 @@ class GoalPlannerTest {
 
         assertEquals(200_000.0, comparison.cashTotalCost, 0.01)
         assertEquals(50_000.0, comparison.extraCost, 0.01)
+    }
+
+    @Test
+    fun meta_sobrevive_ida_y_vuelta_json_del_datastore() {
+        // Contrato que usa GoalStore: la lista debe serializar y recuperar intacta.
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; explicitNulls = false }
+        val serializer = ListSerializer(SavingsGoal.serializer())
+        val goals = listOf(
+            SavingsGoal(
+                id = "goal-1",
+                name = "Auto",
+                price = 200_000.0,
+                downPercent = 20.0,
+                downAmount = null,
+                annualRatePercent = 15.0,
+                termMonths = 48
+            )
+        )
+
+        val raw = json.encodeToString(serializer, goals)
+        val restored = json.decodeFromString(serializer, raw)
+
+        assertEquals(goals, restored)
     }
 }

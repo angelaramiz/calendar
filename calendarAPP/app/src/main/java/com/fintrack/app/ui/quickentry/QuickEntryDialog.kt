@@ -1,0 +1,109 @@
+package com.fintrack.app.ui.quickentry
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.model.TransactionEntity
+
+/**
+ * Registro rápido como ventana (AlertDialog), no pantalla completa.
+ * Se muestra como destino `dialog` del NavGraph: funciona igual desde
+ * el FAB del dashboard, el Tile y el Widget.
+ */
+@Composable
+fun QuickEntryDialog(
+    onSave: (TransactionEntity) -> Unit,
+    onCancel: () -> Unit
+) {
+    var amount by remember { mutableStateOf("") }
+    var type by remember { mutableStateOf("EXPENSE") }
+    var category by remember { mutableStateOf("Comida") }
+    var description by remember { mutableStateOf("") }
+    val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
+    val title = if (type == "INCOME") "Ingreso rápido" else "Gasto rápido"
+
+    val amountValue = amount.toDoubleOrNull()
+    val valid = amountValue != null && amountValue > 0
+
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(title) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
+                        FilterChip(
+                            selected = type == t,
+                            onClick = { type = t },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Monto") },
+                    leadingIcon = { Text("$") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Categoría", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = { Text(cat) },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Nota (opcional)") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val value = amount.toDoubleOrNull() ?: return@TextButton
+                    if (value <= 0) return@TextButton
+                    onSave(
+                        TransactionEntity(
+                            amount = value,
+                            type = type,
+                            category = category,
+                            description = description,
+                            timestamp = System.currentTimeMillis(),
+                            source = "MANUAL"
+                        )
+                    )
+                },
+                enabled = valid
+            ) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text("Cancelar") }
+        }
+    )
+}

@@ -9,6 +9,7 @@ import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
 import com.fintrack.app.domain.PatternExpander
+import com.fintrack.app.domain.PatternValidator
 import com.fintrack.app.domain.computeMonthSummary
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,9 @@ data class CalendarUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val confirmTarget: Occurrence? = null,
+    val addTarget: LocalDate? = null,
+    val showPatternDialog: Boolean = false,
+    val isSaving: Boolean = false,
     val needsLogin: Boolean = false
 )
 
@@ -123,6 +127,100 @@ class CalendarViewModel(
 
     fun dismissConfirm() {
         _uiState.value = _uiState.value.copy(confirmTarget = null)
+    }
+
+    fun showAddMovement(date: LocalDate) {
+        _uiState.value = _uiState.value.copy(addTarget = date)
+    }
+
+    fun dismissAddMovement() {
+        _uiState.value = _uiState.value.copy(addTarget = null)
+    }
+
+    fun showPatternDialog() {
+        _uiState.value = _uiState.value.copy(showPatternDialog = true, error = null)
+    }
+
+    fun dismissPatternDialog() {
+        _uiState.value = _uiState.value.copy(showPatternDialog = false)
+    }
+
+    /** Crea un recurrente validado y recarga el mes de su inicio. */
+    fun savePattern(
+        isIncome: Boolean,
+        name: String,
+        description: String,
+        category: String,
+        baseAmount: Double,
+        frequency: String,
+        startDate: LocalDate?,
+        endDate: LocalDate?
+    ) {
+        val validationError = PatternValidator.validate(
+            name, baseAmount, frequency, startDate, endDate
+        )
+        if (validationError != null) {
+            _uiState.value = _uiState.value.copy(error = validationError)
+            return
+        }
+        if (userId.isEmpty() || startDate == null) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSaving = true, error = null)
+            try {
+                patternRepository.insertPattern(
+                    userId = userId,
+                    isIncome = isIncome,
+                    name = name.trim(),
+                    description = description.trim(),
+                    category = category.ifBlank { "Otros" },
+                    baseAmount = baseAmount,
+                    frequency = frequency,
+                    startDateIso = startDate.toString(),
+                    endDateIso = endDate?.toString()
+                )
+                _uiState.value = _uiState.value.copy(
+                    showPatternDialog = false,
+                    isSaving = false,
+                    selectedDate = startDate
+                )
+                loadMonth(YearMonth.from(startDate))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+            }
+        }
+    }
+
+    fun saveManualMovement(
+        date: LocalDate,
+        isIncome: Boolean,
+        title: String,
+        category: String,
+        amount: Double,
+        description: String
+    ) {
+        if (userId.isEmpty() || amount <= 0.0) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSaving = true, error = null)
+            try {
+                patternRepository.addManualMovement(
+                    userId = userId,
+                    dateIso = date.toString(),
+                    isIncome = isIncome,
+                    title = title.ifBlank { category },
+                    description = description,
+                    category = category.ifBlank { "Otros" },
+                    amount = amount
+                )
+                _uiState.value = _uiState.value.copy(
+                    addTarget = null,
+                    isSaving = false,
+                    selectedDate = date
+                )
+                loadMonth(YearMonth.from(date))
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+            }
+        }
     }
 
     fun confirmOccurrence(occurrence: Occurrence, actualAmount: Double) {

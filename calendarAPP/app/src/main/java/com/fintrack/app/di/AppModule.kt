@@ -1,6 +1,7 @@
 package com.fintrack.app.di
 
 import com.fintrack.app.data.FlowStore
+import com.fintrack.app.data.GoalStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.PatternRepository
@@ -20,9 +21,10 @@ val appModule = module {
     single { OtaUpdateRepository() }
     single { PatternRepository() }
     single { FlowStore(androidContext()) }
+    single { GoalStore(androidContext()) }
     viewModel { DashboardViewModel(get(), get(), get()) }
     viewModel { AuthViewModel(get()) }
     viewModel { CalendarViewModel(get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get()) }
-    viewModel { BudgetViewModel(get(), get(), get()) }
+    viewModel { BudgetViewModel(get(), get(), get(), get()) }
 }

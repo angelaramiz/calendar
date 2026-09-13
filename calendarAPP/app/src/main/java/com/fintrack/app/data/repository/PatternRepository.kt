@@ -101,6 +101,65 @@ class PatternRepository {
         }
         db.from("movements").insert(data) { select() }.decodeSingle<MovementRow>()
     }
+
+    /**
+     * Crea un patrón recurrente (ingreso o gasto) que el calendario expande
+     * como proyecciones. day_of_week/day_of_month se derivan del inicio
+     * para compatibilidad con la web.
+     */
+    suspend fun insertPattern(
+        userId: String,
+        isIncome: Boolean,
+        name: String,
+        description: String,
+        category: String,
+        baseAmount: Double,
+        frequency: String,
+        startDateIso: String,
+        endDateIso: String? = null
+    ): PatternRow = withContext(Dispatchers.IO) {
+        val start = runCatching { java.time.LocalDate.parse(startDateIso) }.getOrNull()
+        val data = buildJsonObject {
+            put("user_id", userId)
+            put("name", name)
+            put("description", description)
+            put("category", category)
+            put("base_amount", baseAmount)
+            put("frequency", frequency)
+            put("interval", 1)
+            put("day_of_week", start?.dayOfWeek?.value)
+            put("day_of_month", start?.dayOfMonth)
+            put("start_date", startDateIso)
+            put("end_date", endDateIso)
+            put("active", true)
+        }
+        val table = if (isIncome) "income_patterns" else "expense_patterns"
+        db.from(table).insert(data) { select() }.decodeSingle<PatternRow>()
+    }
+
+    suspend fun addManualMovement(
+        userId: String,
+        dateIso: String,
+        isIncome: Boolean,
+        title: String,
+        description: String,
+        category: String,
+        amount: Double
+    ): MovementRow = withContext(Dispatchers.IO) {
+        val data = buildJsonObject {
+            put("user_id", userId)
+            put("type", if (isIncome) "ingreso" else "gasto")
+            put("title", title)
+            put("description", description)
+            put("category", category)
+            put("date", dateIso)
+            put("expected_amount", amount)
+            put("confirmed_amount", amount)
+            put("confirmed", true)
+            put("archived", false)
+        }
+        db.from("movements").insert(data) { select() }.decodeSingle<MovementRow>()
+    }
 }
 
 fun PatternRow.toDomain(type: String): Pattern? {

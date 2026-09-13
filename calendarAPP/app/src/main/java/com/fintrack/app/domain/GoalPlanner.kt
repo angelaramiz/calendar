@@ -1,8 +1,11 @@
 package com.fintrack.app.domain
 
+import kotlinx.serialization.Serializable
 import kotlin.math.ceil
 import kotlin.math.pow
 
+/** Meta de ahorro. @Serializable para persistir la lista en DataStore (GoalStore). */
+@Serializable
 data class SavingsGoal(
     val id: String,
     val name: String,

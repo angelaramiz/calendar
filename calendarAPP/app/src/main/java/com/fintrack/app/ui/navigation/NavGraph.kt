@@ -7,13 +7,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.dialog
 import com.fintrack.app.ui.auth.AuthScreen
 import com.fintrack.app.ui.budget.BudgetScreen
 import com.fintrack.app.ui.calendar.CalendarScreen
 import com.fintrack.app.ui.dashboard.DashboardScreen
 import com.fintrack.app.ui.flows.FlowsScreen
 import com.fintrack.app.ui.permissions.PermissionsScreen
-import com.fintrack.app.ui.quickentry.QuickEntryScreen
+import com.fintrack.app.ui.quickentry.QuickEntryDialog
 import org.koin.androidx.compose.koinViewModel
 import com.fintrack.app.ui.dashboard.DashboardViewModel
 
@@ -99,10 +100,12 @@ fun FinTrackNavGraph(
                 }
             )
         }
-        composable(Routes.QUICK_ENTRY) {
+        // Ventana (dialog), no pantalla completa: funciona igual desde
+        // el FAB, el Tile y el Widget sin tocar el backstack de tabs.
+        dialog(Routes.QUICK_ENTRY) {
             val dashboardViewModel: DashboardViewModel =
                 koinViewModel(viewModelStoreOwner = activity)
-            QuickEntryScreen(
+            QuickEntryDialog(
                 onSave = { transaction ->
                     dashboardViewModel.addTransaction(transaction)
                     navController.popBackStack()

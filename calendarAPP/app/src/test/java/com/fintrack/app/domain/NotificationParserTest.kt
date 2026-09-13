@@ -279,4 +279,65 @@ class NotificationParserTest {
         assertTrue(result is ParseResult.Rejected)
         assertEquals("app_no_permitida", (result as ParseResult.Rejected).reason)
     }
+
+    private fun categoriaDe(title: String, text: String, packageName: String = "com.nu.production"): String {
+        val result = NotificationParser.parse(
+            packageName = packageName,
+            title = title,
+            text = text,
+            allowedPackages = allowed + packageName
+        )
+        assertTrue("$title | $text", result is ParseResult.Accepted)
+        return (result as ParseResult.Accepted).tx.category
+    }
+
+    @Test
+    fun categorias_por_comercio() {
+        assertEquals("Transporte", categoriaDe("Viaje completado", "Pagaste $120.00 por tu viaje en DiDi."))
+        assertEquals("Transporte", categoriaDe("Carga de gasolina", "Cargaron $800.00 en Pemex con tu tarjeta."))
+        assertEquals("Servicios", categoriaDe("Pago aplicado", "Pagaste tu recibo de luz CFE por $450.00."))
+        assertEquals("Salud", categoriaDe("Compra aprobada", "Compra en Farmacia Benavides por $320.00."))
+        assertEquals("Compras", categoriaDe("Compra aprobada", "Compra en Amazon por $599.00 con tu tarjeta."))
+        assertEquals("Compras", categoriaDe("Pago en tienda", "Pagaste $150.00 en OXXO."))
+        assertEquals("Vivienda", categoriaDe("Cargo mensual", "Cargaron $8,000.00 de renta a tu tarjeta."))
+        assertEquals("Educación", categoriaDe("Pago aplicado", "Pagaste la colegiatura por $3,500.00."))
+        assertEquals("Ocio", categoriaDe("Suscripción", "Cargaron $219.00 de Netflix a tu tarjeta."))
+        assertEquals("Comida", categoriaDe("Consumo", "Pagaste $250.00 en Starbucks."))
+    }
+
+    @Test
+    fun categorias_financieras_y_efectivo() {
+        assertEquals(
+            "Finanzas",
+            categoriaDe("Pago aplicado", "Se aplicó el pago de tu tarjeta por $5,000.00.")
+        )
+        assertEquals(
+            "Compras",
+            categoriaDe("Compra aprobada", "Compra en Liverpool por $1,250.00 con tu tarjeta Nu.")
+        )
+        assertEquals(
+            "Efectivo",
+            categoriaDe("Retiro exitoso", "Retiraste $2,000.00 en cajero Banamex.")
+        )
+        assertEquals(
+            "Transferencias",
+            categoriaDe("Transferencia exitosa", "Transferiste $1,000.00 por SPEI a Juan.")
+        )
+    }
+
+    @Test
+    fun categorias_de_ingreso() {
+        assertEquals(
+            "Sueldo",
+            categoriaDe("Nómina recibida", "Tu nómina de $12,000.00 ya está disponible.")
+        )
+        assertEquals(
+            "Reembolso",
+            categoriaDe("Devolución", "Te reembolsamos $300.00 de tu compra.")
+        )
+        assertEquals(
+            "Otros",
+            categoriaDe("Recibiste dinero", "Te enviaron $200.00 y ya está disponible.")
+        )
+    }
 }

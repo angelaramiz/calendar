@@ -53,7 +53,7 @@ object NotificationParser {
 
     private val incomeKeywords = listOf(
         "abon", "deposit", "nomin", "ingres", "reembols", "recibid",
-        "recib", "te envio"
+        "recibi", "te envia", "te envio"
     )
 
     // Pagos que NUNCA movieron dinero: rechazados/fallidos e instrucciones
@@ -109,7 +109,7 @@ object NotificationParser {
         // 5. Tipo (ingreso gana si hay ambas), comercio y categoria
         val type = if (hasIncome) "INCOME" else "EXPENSE"
         val merchant = extractMerchant(title, text)
-        val category = categorize("$title $merchant $text")
+        val category = categorize("$title $merchant $text", type == "INCOME")
 
         return ParseResult.Accepted(
             ParsedTransaction(
@@ -151,14 +151,50 @@ object NotificationParser {
             ?: textPattern.find(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
-    private fun categorize(text: String): String {
+    private fun categorize(text: String, isIncome: Boolean): String {
         val lower = text.normalized()
         fun has(vararg keywords: String) = keywords.any { lower.contains(it.normalized()) }
+        if (isIncome) {
+            // Nómina/sueldo y devoluciones; el resto de ingresos queda en Otros.
+            if (has("nomin", "sueldo", "salario", "quincen", "aguinaldo")) return "Sueldo"
+            if (has("reembols", "reembolso", "devolucion")) return "Reembolso"
+            return "Otros"
+        }
+        // Orden intencional: lo específico (comercio) antes que lo genérico
+        // (Finanzas al final: "tarjeta de credito" no debe ganarle a Liverpool).
         return when {
-            has("restaurante", "cafe", "comida", "restaurant", "starbucks", "mcdonald") -> "Comida"
-            has("uber", "taxi", "gasolina", "estacionamiento", "metro") -> "Transporte"
-            has("luz", "agua", "gas", "internet", "telefono", "sky", "telcel") -> "Servicios"
-            has("netflix", "spotify", "cinema", "cine", "juego") -> "Ocio"
+            has("restaurante", "cafeteria", "cafe", "comida", "restaurant",
+                "starbucks", "mcdonald", "burger", "pizza", "tacos", "kfc",
+                "dominos", "sushi", "panaderia", "comedor") -> "Comida"
+            has("uber", "didi", "taxi", "cabify", "gasolina", "gasolinera",
+                "pemex", "estacionamiento", "metro", "metrobus", "peaje",
+                "caseta", "autobus", "vuelo", "aeropuerto", "volaris",
+                "vivaaerobus", "aeromexico") -> "Transporte"
+            has("cajero", "atm", "retiro") -> "Efectivo"
+            has("cfe", "luz", "agua", " de gas", "internet", "telefono",
+                "telefonia", "telcel", "telmex", "att", "movistar", "izzi",
+                "totalplay", "megacable", "sky", "predial") -> "Servicios"
+            has("farmacia", "benavides", "similar", "doctor", "hospital",
+                "dentista", "clinica", "laboratorio", "chopo",
+                "salud digna") -> "Salud"
+            has("netflix", "spotify", "disney", "prime video", "hbo", "max ",
+                "youtube", "cinema", "cine", "cinepolis", "cinemex", "juego",
+                "steam", "xbox", "playstation", "concierto",
+                "ticketmaster") -> "Ocio"
+            has("oxxo", "seven", "7-eleven", "walmart", "soriana", "chedraui",
+                "costco", "sams", "liverpool", "palacio de hierro", "amazon",
+                "mercado libre", "mercadolibre", "shein", "aliexpress", "coppel",
+                "elektra", "zara", "ropa", "tienda") -> "Compras"
+            has("renta", "alquiler", "hipoteca", "infonavit",
+                "condominio") -> "Vivienda"
+            has("escuela", "colegio", "universidad", "colegiatura", "curso",
+                "udemy", "coursera", "utiles") -> "Educación"
+            has("transferencia", "spei", "dimo", "codi", "traspaso") -> "Transferencias"
+            // "pago (de tu/la/mi) tarjeta": fraseo variable, se detecta por
+            // co-ocurrencia en vez de frase exacta.
+            has("prestamo", "credito", "interes",
+                "comision", "anualidad", "seguro de", "seguros", "tu seguro",
+                "poliza", "afore") || (has("tarjeta") && has("pago")) -> "Finanzas"
             else -> "Otros"
         }
     }

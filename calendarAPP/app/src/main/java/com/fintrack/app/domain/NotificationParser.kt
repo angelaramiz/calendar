@@ -37,11 +37,12 @@ object NotificationParser {
     // ("debitamos"~"debito", "ingresaste"~"ingres", "pagaste"~"pag").
     private val expenseKeywords = listOf(
         "carg", "compr", "pag", "retir", "transfer",
-        "debit", "recarg", "comisi"
+        "debit", "recarg", "comisi", "enviaste"
     )
 
     private val incomeKeywords = listOf(
-        "abon", "deposit", "nomin", "ingres", "reembols", "recibid"
+        "abon", "deposit", "nomin", "ingres", "reembols", "recibid",
+        "recib", "te envio"
     )
 
     // Promociones y avisos que NUNCA son movimientos.
@@ -69,15 +70,16 @@ object NotificationParser {
         if (isPromo("$title $text")) {
             return ParseResult.Rejected("promocion")
         }
-        // 3. Keywords financieras
-        val normalized = text.normalized()
+        // 3. Keywords financieras (título + texto: "Recibiste $200" trae todo arriba)
+        val combined = "$title $text"
+        val normalized = combined.normalized()
         val hasExpense = expenseKeywords.any { normalized.contains(it) }
         val hasIncome = incomeKeywords.any { normalized.contains(it) }
         if (!hasExpense && !hasIncome) {
             return ParseResult.Rejected("sin_keywords")
         }
-        // 4. Monto valido
-        val amount = extractAmount(text) ?: return ParseResult.Rejected("sin_monto")
+        // 4. Monto valido (también puede venir solo en el título)
+        val amount = extractAmount(combined) ?: return ParseResult.Rejected("sin_monto")
         if (amount <= 0) return ParseResult.Rejected("monto_invalido")
 
         // 5. Tipo (ingreso gana si hay ambas), comercio y categoria
@@ -113,9 +115,15 @@ object NotificationParser {
 
     private fun extractMerchant(title: String, text: String): String? {
         val titlePattern = Regex("""(?i)(?:pagaste a|pago a|compra en|pago en)\s+([A-Za-z0-9\s]+)""")
+        // "Bautista Gonzalez ... te envió dinero" -> remitente (sobre texto normalizado)
+        val senderPattern = Regex("""([a-z\s]+?)\s+te\s+envio\b""")
         // "Compra en Starbucks por $85.00." -> "Starbucks" (para en $, dígitos o "por")
         val textPattern = Regex("""en\s+([A-Za-z][A-Za-z\s]*?)(?=\s+por\b|\s*\d|\$|\.|$)""")
+        val normalizedText = text.normalized()
         return titlePattern.find(title)?.groupValues?.get(1)?.trim()
+            ?: senderPattern.find(normalizedText)?.groupValues?.get(1)?.trim()
+                ?.split(" ")?.map { it.replaceFirstChar(Char::uppercase) }?.joinToString(" ")
+                ?.takeIf { it.isNotEmpty() }
             ?: textPattern.find(text)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
     }
 

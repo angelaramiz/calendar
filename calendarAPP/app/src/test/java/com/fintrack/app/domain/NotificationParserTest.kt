@@ -167,6 +167,35 @@ class NotificationParserTest {
     }
 
     @Test
+    fun ingresoConMontoEnTitulo_esAceptado() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Recibiste $ 200.00",
+            text = "Bautista Gonzalez Maria Remedios te envió dinero y ya está disponible en tu cuenta.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        val tx = (result as ParseResult.Accepted).tx
+        assertEquals(200.0, tx.amount, 0.001)
+        assertEquals("INCOME", tx.type)
+        assertEquals("Bautista Gonzalez Maria Remedios", tx.merchant)
+    }
+
+    @Test
+    fun dineroEnviado_esGasto() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Enviaste $ 150.00",
+            text = "Le enviaste dinero a Juan Perez.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        assertEquals("EXPENSE", (result as ParseResult.Accepted).tx.type)
+    }
+
+    @Test
     fun comercioSeExtraeDelTexto_siTituloNoLoTrae() {
         val result = NotificationParser.parse(
             packageName = "com.mercadopago.wallet",

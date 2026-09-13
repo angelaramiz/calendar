@@ -64,6 +64,7 @@ import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.domain.ConditionNode
 import com.fintrack.app.domain.ConditionOperator
 import com.fintrack.app.domain.EnvelopeNode
+import com.fintrack.app.domain.FlowEngine
 import com.fintrack.app.domain.FlowNode
 import com.fintrack.app.domain.FormulaNode
 import com.fintrack.app.domain.IncomeNode
@@ -234,6 +235,24 @@ fun FlowsScreen(
 
             item {
                 Spacer(modifier = Modifier.height(12.dp))
+                if (FlowEngine.hasMixedIncomeBases(uiState.nodes)) {
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Mezclas base proyectada (Recurrentes) con base real o simulada: " +
+                                "el mismo dinero puede contarse dos veces. " +
+                                "Usa una sola base por flujo, salvo un ingreso extra aparte.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
                 Button(
                     onClick = { viewModel.runFlow() },
                     modifier = Modifier.fillMaxWidth(),

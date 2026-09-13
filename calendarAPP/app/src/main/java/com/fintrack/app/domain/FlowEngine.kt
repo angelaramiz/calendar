@@ -370,6 +370,34 @@ object FlowEngine {
         state.current = 0.0
     }
 
+    /**
+     * Detecta si el flujo mezcla base proyectada ([IncomeSource.RecurringMonth])
+     * con base real o simulada (Mes, Categoría, Fijo), incluyendo ramas de
+     * condiciones. Mezclarlas suele duplicar el mismo dinero (el sueldo cuenta
+     * una vez proyectado y otra cuando realmente entra), así que la UI advierte
+     * en vez de bloquear: hay casos legítimos (ej. recurrentes + un fijo extra).
+     */
+    fun hasMixedIncomeBases(nodes: List<FlowNode>): Boolean {
+        val sources = mutableListOf<IncomeSource>()
+        collectIncomeSources(nodes, sources)
+        val projected = sources.any { it is IncomeSource.RecurringMonth }
+        val actual = sources.any { it !is IncomeSource.RecurringMonth }
+        return projected && actual
+    }
+
+    private fun collectIncomeSources(nodes: List<FlowNode>, out: MutableList<IncomeSource>) {
+        nodes.forEach { node ->
+            when (node) {
+                is IncomeNode -> out.add(node.source)
+                is ConditionNode -> {
+                    collectIncomeSources(node.trueBranch, out)
+                    collectIncomeSources(node.falseBranch, out)
+                }
+                else -> Unit
+            }
+        }
+    }
+
     private fun yearMonthOf(timestamp: Long): YearMonth =
         YearMonth.from(Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC).toLocalDate())
 

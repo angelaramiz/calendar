@@ -2,6 +2,7 @@ package com.fintrack.app.domain
 
 import com.fintrack.app.data.model.TransactionEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -352,6 +353,68 @@ class FlowEngineTest {
             FlowEngine.evaluate(nodes, emptyList(), patterns, YearMonth.of(2026, 9))
         }
         assertTrue(error.message!!.contains("recurrentes"))
+    }
+
+    @Test
+    fun mezcla_recurrente_con_mes_real_se_detecta() {
+        val nodes = listOf(
+            IncomeNode(id = "n1", label = "A", source = IncomeSource.RecurringMonth),
+            IncomeNode(id = "n2", label = "B", source = IncomeSource.MonthIncomes)
+        )
+
+        assertTrue(FlowEngine.hasMixedIncomeBases(nodes))
+    }
+
+    @Test
+    fun mezcla_recurrente_con_fijo_y_categoria_se_detecta() {
+        assertTrue(
+            FlowEngine.hasMixedIncomeBases(
+                listOf(
+                    IncomeNode(id = "n1", label = "A", source = IncomeSource.RecurringMonth),
+                    IncomeNode(id = "n2", label = "B", source = IncomeSource.Fixed(500.0))
+                )
+            )
+        )
+        assertTrue(
+            FlowEngine.hasMixedIncomeBases(
+                listOf(
+                    IncomeNode(id = "n1", label = "A", source = IncomeSource.RecurringMonth),
+                    IncomeNode(id = "n2", label = "B", source = IncomeSource.CategoryTotal("Sueldo"))
+                )
+            )
+        )
+    }
+
+    @Test
+    fun mezcla_dentro_de_rama_de_condicion_se_detecta() {
+        val nodes = listOf(
+            IncomeNode(id = "n1", label = "A", source = IncomeSource.RecurringMonth),
+            ConditionNode(
+                id = "n-cond",
+                operator = ConditionOperator.GREATER_THAN,
+                threshold = 100.0,
+                trueBranch = listOf(
+                    IncomeNode(id = "n2", label = "B", source = IncomeSource.Fixed(500.0))
+                )
+            )
+        )
+
+        assertTrue(FlowEngine.hasMixedIncomeBases(nodes))
+    }
+
+    @Test
+    fun base_unica_no_marca_mezcla() {
+        assertFalse(
+            FlowEngine.hasMixedIncomeBases(
+                listOf(IncomeNode(id = "n1", label = "A", source = IncomeSource.RecurringMonth))
+            )
+        )
+        assertFalse(
+            FlowEngine.hasMixedIncomeBases(
+                listOf(IncomeNode(id = "n1", label = "A", source = IncomeSource.Fixed(500.0)))
+            )
+        )
+        assertFalse(FlowEngine.hasMixedIncomeBases(emptyList()))
     }
 
     @Test

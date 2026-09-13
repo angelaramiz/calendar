@@ -45,7 +45,13 @@ object NotificationParser {
         "recib", "te envio"
     )
 
-    // Promociones y avisos que NUNCA son movimientos.
+    // Pagos que NUNCA movieron dinero: rechazados/fallidos e instrucciones
+    // de fondeo ("Ingresa $X para realizar el pago"). Corren antes de las
+    // keywords porque "ingresa" activa la raíz de ingreso "ingres".
+    private val rejectionStems = listOf(
+        "rechaz", "fallid", "no se pudo", "no pudimos", "declinad"
+    )
+    private val fundingInstruction = Regex("""\bingresa\b.*\bpara\b""")
     // Corren ANTES de buscar montos: "Terminal MINI por solo $99" no es un gasto.
     private val promoExclusions = listOf(
         "%", "anual", "invert", "promoc", "referid", "publicidad",
@@ -69,6 +75,13 @@ object NotificationParser {
         // 2. Anti-promos (antes de buscar montos: "12% anual" no es movimiento)
         if (isPromo("$title $text")) {
             return ParseResult.Rejected("promocion")
+        }
+        // 2b. Rechazos: el dinero nunca se movió (ej. "Rechazamos tu pago").
+        val combinedLower = "$title $text".normalized()
+        if (rejectionStems.any { combinedLower.contains(it) } ||
+            fundingInstruction.containsMatchIn(combinedLower)
+        ) {
+            return ParseResult.Rejected("movimiento_rechazado")
         }
         // 3. Keywords financieras (título + texto: "Recibiste $200" trae todo arriba)
         val combined = "$title $text"

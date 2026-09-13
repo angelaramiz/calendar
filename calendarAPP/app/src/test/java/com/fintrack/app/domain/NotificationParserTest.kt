@@ -209,4 +209,30 @@ class NotificationParserTest {
         assertEquals("Starbucks", tx.merchant)
         assertEquals("Comida", tx.category)
     }
+
+    @Test
+    fun pago_rechazado_no_es_movimiento() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Rechazamos tu pago a Paypal steam games",
+            text = "Ingresa $752.48 para realizar el pago.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("movimiento_rechazado", (result as ParseResult.Rejected).reason)
+    }
+
+    @Test
+    fun instruccion_de_fondeo_no_es_ingreso() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Fondos insuficientes",
+            text = "Ingresa $500.00 para completar tu compra.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+        assertEquals("movimiento_rechazado", (result as ParseResult.Rejected).reason)
+    }
 }

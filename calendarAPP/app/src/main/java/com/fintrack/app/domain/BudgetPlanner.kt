@@ -11,7 +11,7 @@ data class CategoryBudget(
     val spent: Double
 ) {
     val usageRatio: Double get() = if (cap <= 0.0) 0.0 else spent / cap
-    val nearLimit: Boolean get() = usageRatio > BudgetPlanner.ALERT_THRESHOLD
+    val nearLimit: Boolean get() = usageRatio >= BudgetPlanner.ALERT_THRESHOLD
     val overCap: Boolean get() = cap > 0.0 && spent > cap
 }
 

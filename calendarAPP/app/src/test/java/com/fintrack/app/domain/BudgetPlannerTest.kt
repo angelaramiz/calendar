@@ -70,6 +70,22 @@ class BudgetPlannerTest {
     }
 
     @Test
+    fun corto_plazo_marca_alerta_al_80_porciento_exacto_del_tope() {
+        val month = YearMonth.of(2026, 9)
+        val transactions = listOf(
+            tx("INCOME", "Sueldo", 4_000.0, LocalDate.of(2026, 9, 1)),
+            tx("EXPENSE", "Comida", 800.0, LocalDate.of(2026, 9, 10))
+        )
+
+        val report = BudgetPlanner.buildShortTerm(transactions, month)
+        val comida = report.items.first { it.category == "Comida" }
+
+        assertEquals(0.80, comida.usageRatio, 0.001)
+        assertTrue(comida.nearLimit)
+        assertFalse(comida.overCap)
+    }
+
+    @Test
     fun corto_plazo_marca_exceso_cuando_supera_el_tope() {
         val month = YearMonth.of(2026, 9)
         val transactions = listOf(

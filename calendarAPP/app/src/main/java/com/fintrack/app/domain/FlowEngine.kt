@@ -6,7 +6,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.YearMonth
-import java.time.ZoneId
+import java.time.ZoneOffset
 import kotlin.math.abs
 import kotlin.math.round
 
@@ -344,7 +344,7 @@ object FlowEngine {
     }
 
     private fun yearMonthOf(timestamp: Long): YearMonth =
-        YearMonth.from(Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDate())
+        YearMonth.from(Instant.ofEpochMilli(timestamp).atZone(ZoneOffset.UTC).toLocalDate())
 
     private fun round2(value: Double): Double = round(value * 100) / 100.0
 }

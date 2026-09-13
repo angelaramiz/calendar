@@ -5,8 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
+import java.util.TimeZone
 
 class FlowEngineTest {
 
@@ -288,5 +290,35 @@ class FlowEngineTest {
             FlowEngine.evaluate(nodes)
         }
         assertTrue(error.message!!.contains("rama"))
+    }
+
+    @Test
+    fun ingreso_en_borde_de_mes_se_atribuye_en_utc() {
+        // 2026-09-01 00:30 UTC es 31 de agosto en America/Mexico_City:
+        // con UTC el ingreso cae en septiembre, con zona local no.
+        val original = TimeZone.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Mexico_City"))
+        try {
+            val timestamp = Instant.parse("2026-09-01T00:30:00Z").toEpochMilli()
+            val tx = TransactionEntity(
+                id = "tx-borde",
+                amount = 2_000.0,
+                type = "INCOME",
+                category = "Sueldo",
+                description = "test",
+                timestamp = timestamp
+            )
+            val nodes = listOf(
+                IncomeNode(id = "n-income", label = "Sueldo", source = IncomeSource.MonthIncomes),
+                envelope("n-sobre", "Todo", "Otros")
+            )
+
+            val result = FlowEngine.evaluate(nodes, listOf(tx), YearMonth.of(2026, 9))
+
+            assertEquals(1, result.size)
+            assertEquals(2_000.0, result[0].amount, 0.001)
+        } finally {
+            TimeZone.setDefault(original)
+        }
     }
 }

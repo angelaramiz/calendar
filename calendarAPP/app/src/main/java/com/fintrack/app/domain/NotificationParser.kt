@@ -23,7 +23,8 @@ object NotificationParser {
 
     // IDs verificados en Google Play (sep 2026): Nu com.nu.production,
     // Plata dif.tech.plata, DiDi com.didiglobal.passenger, Azteca
-    // mx.com.bancoazteca.bazdigitalmovil, Spin com.pagopopmobile.
+    // mx.com.bancoazteca.bazdigitalmovil, Spin com.pagopopmobile,
+    // Google Wallet com.google.android.apps.walletnfcrel.
     // Banamex com.citibanamex.banamexmobile (fuente secundaria).
     // El resto sigue pendiente de confirmación en dispositivo real.
     val DEFAULT_PACKAGES = setOf(
@@ -41,7 +42,8 @@ object NotificationParser {
         "com.nu.production",
         "dif.tech.plata",
         "com.didiglobal.passenger",
-        "com.pagopopmobile"
+        "com.pagopopmobile",
+        "com.google.android.apps.walletnfcrel"
     )
 
     // Raíces (stems) normalizadas sin acentos: matchean conjugaciones

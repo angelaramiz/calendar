@@ -245,7 +245,8 @@ class NotificationParserTest {
             "com.citibanamex.banamexmobile",
             "mx.com.bancoazteca.bazdigitalmovil",
             "com.pagopopmobile",
-            "com.paypal.android.p2pmobile"
+            "com.paypal.android.p2pmobile",
+            "com.google.android.apps.walletnfcrel"
         )
         esperados.forEach {
             assertTrue(it, NotificationParser.DEFAULT_PACKAGES.contains(it))
@@ -266,6 +267,22 @@ class NotificationParserTest {
         assertEquals(1250.0, tx.amount, 0.001)
         assertEquals("EXPENSE", tx.type)
         assertEquals("Liverpool", tx.merchant)
+    }
+
+    @Test
+    fun pago_contactless_de_wallet_es_detectado() {
+        // Sin pasar allowlist: usa DEFAULT_PACKAGES.
+        val result = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Pago realizado",
+            text = "Pagaste $350.00 en Starbucks con tu tarjeta terminación 1234."
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        val tx = (result as ParseResult.Accepted).tx
+        assertEquals(350.0, tx.amount, 0.001)
+        assertEquals("EXPENSE", tx.type)
+        assertEquals("Comida", tx.category)
     }
 
     @Test

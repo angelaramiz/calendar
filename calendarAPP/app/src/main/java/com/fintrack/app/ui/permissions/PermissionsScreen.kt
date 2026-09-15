@@ -133,7 +133,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            DetectorDiagnosticsSection()
+            DetectorDiagnosticsSection(listenerGranted = listenerGranted)
 
             AppFilterSection()
         }
@@ -141,7 +141,7 @@ fun PermissionsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DetectorDiagnosticsSection() {
+private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val store = remember { AppFilterStore(context.applicationContext) }
@@ -161,6 +161,22 @@ private fun DetectorDiagnosticsSection() {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Diagnóstico del detector", style = MaterialTheme.typography.titleSmall)
             Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Acceso a notificaciones: " + if (listenerGranted) "OTORGADO"
+                else "PENDIENTE: otórgalo arriba o no llegará nada.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (!listenerGranted) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Ahorro de batería: si tu teléfono mata la app en segundo plano, " +
+                    "el detector deja de recibir. Pon FinTrack en \"Sin restricciones\" " +
+                    "en Ajustes → Batería.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 "Sesión: " + when (sessionActive) {
                     true -> "activa (puede guardar)"

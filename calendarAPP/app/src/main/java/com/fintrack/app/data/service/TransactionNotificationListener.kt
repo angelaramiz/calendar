@@ -29,11 +29,28 @@ class TransactionNotificationListener : NotificationListenerService() {
     @Volatile
     private var lastTime: Long = 0L
 
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        // Prueba de vida: si esto no aparece en el diagnóstico, el sistema
+        // no está entregando notificaciones al servicio (permiso revocado,
+        // ahorro de batería agresivo o servicio detenido).
+        diag("LISTENER CONECTADO", packageName, "servicio activo")
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        diag("LISTENER DESCONECTADO (revisa acceso y batería)", packageName, "servicio detenido")
+        // Pide re-vinculación al sistema (API 24+).
+        try { requestRebind(android.content.ComponentName(this, TransactionNotificationListener::class.java)) } catch (_: Exception) { }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val extras = sbn.notification.extras
-        // Algunas notificaciones (BigTextStyle) traen el texto en EXTRA_BIG_TEXT
+        // Algunas notificaciones traen el texto en BIG_TEXT o en líneas (InboxStyle).
+        val textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
         val text = extras.getString(Notification.EXTRA_TEXT)
             ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()
+            ?: textLines?.firstOrNull()?.toString()
             ?: return
         val title = extras.getString(Notification.EXTRA_TITLE) ?: ""
         val packageName = sbn.packageName

@@ -46,6 +46,26 @@ class DashboardViewModel(
     init {
         loadDashboard()
         checkForUpdate()
+        startAutoRefresh()
+    }
+
+    private var autoRefreshJob: Job? = null
+
+    /** Refresca los datos cada 5 s para que las detecciones aparezcan solas. */
+    fun startAutoRefresh() {
+        autoRefreshJob?.cancel()
+        autoRefreshJob = viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(5000)
+                loadDashboard(silent = true)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        autoRefreshJob?.cancel()
+        otaPollJob?.cancel()
+        super.onCleared()
     }
 
     fun checkForUpdate(manual: Boolean = false) {
@@ -129,7 +149,7 @@ class DashboardViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    fun loadDashboard() {
+    fun loadDashboard(silent: Boolean = false) {
         if (userId.isEmpty()) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -139,7 +159,9 @@ class DashboardViewModel(
             return
         }
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
+            if (!silent) {
+                _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
+            }
             try {
                 val transactions = transactionRepository.getTransactions(userId)
                 // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia

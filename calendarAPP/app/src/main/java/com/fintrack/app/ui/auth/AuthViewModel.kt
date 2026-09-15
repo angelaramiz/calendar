@@ -146,6 +146,8 @@ class AuthViewModel(
 
     fun refreshSession() {
         viewModelScope.launch {
+            // Intenta rescatar la sesión antes de pedir login manual.
+            runCatching { authRepository.ensureSession() }
             if (authRepository.isLoggedIn) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = null, loggedIn = true)
             } else {

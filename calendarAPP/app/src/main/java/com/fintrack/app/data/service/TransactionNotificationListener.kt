@@ -6,11 +6,10 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.fintrack.app.data.AppFilterStore
 import com.fintrack.app.data.model.TransactionEntity
-import com.fintrack.app.data.remote.SupabaseClientProvider
+import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.TransactionRepository
 import com.fintrack.app.domain.NotificationParser
 import com.fintrack.app.domain.ParseResult
-import io.github.jan.supabase.auth.auth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -20,6 +19,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     private val tag = "NotificationListener"
     private val scope = CoroutineScope(Dispatchers.IO)
     private val transactionRepository = TransactionRepository()
+    private val authRepository = AuthRepository()
     private val appFilter by lazy { AppFilterStore(applicationContext) }
 
     // Anti-duplicados: misma app + monto + minuto (las notificaciones se re-publican)
@@ -61,14 +61,11 @@ class TransactionNotificationListener : NotificationListenerService() {
                             return@launch
                         }
 
-                        val userId = try {
-                            SupabaseClientProvider.client.auth.currentSessionOrNull()?.user?.id
-                        } catch (e: Exception) {
-                            Log.w(tag, "Sin sesión, no se puede guardar: ${e.message}")
-                            null
-                        }
+                        // Sin sesión: un refresco la rescata (expiró en segundo
+                        // plano); solo si falla se registra y se omite.
+                        val userId = authRepository.ensureSession()
                         if (userId == null) {
-                            // Antes era un return silencioso: ahora queda en diagnóstico.
+                            Log.w(tag, "Sin sesión tras refresco, no se puede guardar")
                             diag("SIN SESIÓN (inicia sesión)", packageName, title)
                             return@launch
                         }

@@ -1,6 +1,7 @@
 package com.fintrack.app.data.remote
 
 import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.createSupabaseClient
 
 object SupabaseClientProvider {
@@ -9,7 +10,16 @@ object SupabaseClientProvider {
 
     val client: SupabaseClient by lazy {
         createSupabaseClient(SUPABASE_URL, SUPABASE_KEY) {
-            install(io.github.jan.supabase.auth.Auth)
+            install(Auth) {
+                // Sesión persistente: se guarda/carga del almacén y se
+                // refresca sola. enableLifecycleCallbacks=false es intencional:
+                // con true el refresco se pausa sin foco y el listener en
+                // segundo plano se quedaba con token expirado.
+                alwaysAutoRefresh = true
+                autoLoadFromStorage = true
+                autoSaveToStorage = true
+                enableLifecycleCallbacks = false
+            }
             install(io.github.jan.supabase.postgrest.Postgrest)
         }
     }

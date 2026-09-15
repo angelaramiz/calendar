@@ -24,6 +24,19 @@ class AuthRepository {
     val isLoggedIn: Boolean
         get() = try { client.auth.currentSessionOrNull() != null } catch (e: Exception) { false }
 
+    /**
+     * Sesión lista para usar: si no hay (expiró en segundo plano), intenta
+     * un refresco con el refresh token guardado antes de rendirse.
+     * Devuelve el userId o null si hay que iniciar sesión de nuevo.
+     */
+    suspend fun ensureSession(): String? {
+        currentUserId?.let { return it }
+        return runCatching {
+            client.auth.refreshCurrentSession()
+            client.auth.currentSessionOrNull()?.user?.id
+        }.getOrNull()
+    }
+
     suspend fun login(email: String, password: String): Result<String> {
         return try {
             client.auth.signInWith(Email) {

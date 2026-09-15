@@ -20,6 +20,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fintrack.app.data.AppFilterStore
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.service.TransactionNotificationListener
 import com.fintrack.app.domain.NotificationParser
 import com.fintrack.app.domain.ParseResult
 import kotlinx.coroutines.launch
@@ -176,6 +177,25 @@ private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                // Fuerza al sistema a revincular el servicio (repara el caso
+                // "acceso otorgado pero el listener nunca arranca").
+                val pm = context.packageManager
+                val cn = android.content.ComponentName(
+                    context, TransactionNotificationListener::class.java
+                )
+                pm.setComponentEnabledSetting(
+                    cn,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+                pm.setComponentEnabledSetting(
+                    cn,
+                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    android.content.pm.PackageManager.DONT_KILL_APP
+                )
+            }) { Text("Reiniciar detector") }
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 "Sesión: " + when (sessionActive) {

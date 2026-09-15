@@ -2,6 +2,7 @@ package com.fintrack.app.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.fintrack.app.domain.NotificationParser
@@ -19,9 +20,40 @@ class AppFilterStore(private val context: Context) {
 
     private val allowedKey = stringSetPreferencesKey("allowed_packages")
     private val seenKey = stringSetPreferencesKey("seen_packages")
+    /** Última decisión del detector: "epoch|resultado|paquete|título". */
+    private val diagKey = stringPreferencesKey("listener_diag")
+    /** Defaults ya sembrados: para fusionar bancos nuevos sin revivir bajas. */
+    private val seededKey = stringSetPreferencesKey("seeded_defaults")
 
     val allowedPackages: Flow<Set<String>> = context.appFilterDataStore.data.map { prefs ->
         prefs[allowedKey] ?: NotificationParser.DEFAULT_PACKAGES
+    }
+
+    val lastDecision: Flow<String?> = context.appFilterDataStore.data.map { prefs ->
+        prefs[diagKey]
+    }
+
+    /**
+     * Fusiona bancos nuevos de DEFAULT_PACKAGES en la lista guardada.
+     * Respeta las bajas del usuario (solo agrega lo nunca sembrado).
+     */
+    suspend fun ensureDefaults() {
+        context.appFilterDataStore.edit { prefs ->
+            val seeded = prefs[seededKey] ?: emptySet()
+            val fresh = NotificationParser.DEFAULT_PACKAGES - seeded
+            if (fresh.isNotEmpty()) {
+                val current = (prefs[allowedKey] ?: NotificationParser.DEFAULT_PACKAGES).toMutableSet()
+                current.addAll(fresh)
+                prefs[allowedKey] = current
+            }
+            prefs[seededKey] = NotificationParser.DEFAULT_PACKAGES
+        }
+    }
+
+    suspend fun recordDecision(line: String) {
+        context.appFilterDataStore.edit { prefs ->
+            prefs[diagKey] = line
+        }
     }
 
     val seenPackages: Flow<List<String>> = context.appFilterDataStore.data.map { prefs ->

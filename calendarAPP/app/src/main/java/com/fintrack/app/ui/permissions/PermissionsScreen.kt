@@ -19,7 +19,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fintrack.app.data.AppFilterStore
+import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.domain.NotificationParser
+import com.fintrack.app.domain.ParseResult
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,9 +133,115 @@ fun PermissionsScreen(onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            DetectorDiagnosticsSection()
+
             AppFilterSection()
         }
     }
+}
+
+@Composable
+private fun DetectorDiagnosticsSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { AppFilterStore(context.applicationContext) }
+    val lastDecision by store.lastDecision.collectAsState(initial = null)
+    var sessionActive by remember { mutableStateOf<Boolean?>(null) }
+    var simPkg by remember { mutableStateOf("com.mercadopago.wallet") }
+    var simTitle by remember { mutableStateOf("") }
+    var simText by remember { mutableStateOf("") }
+    var simResult by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        scope.launch { store.ensureDefaults() }
+        sessionActive = runCatching { AuthRepository().isLoggedIn }.getOrNull()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Diagnóstico del detector", style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Sesión: " + when (sessionActive) {
+                    true -> "activa (puede guardar)"
+                    false -> "INACTIVA: sin sesión no se guarda nada. Cierra e inicia sesión."
+                    null -> "revisando…"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (sessionActive == false) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Última actividad: " + (lastDecision?.let { formatDecision(it) }
+                    ?: "sin notificaciones procesadas aún"),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Probar una notificación", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "Copia aquí el título y texto de una notificación para ver si se detecta y por qué.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = simPkg,
+                onValueChange = { simPkg = it },
+                label = { Text("ID de paquete") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = simTitle,
+                onValueChange = { simTitle = it },
+                label = { Text("Título") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = simText,
+                onValueChange = { simText = it },
+                label = { Text("Texto") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                scope.launch {
+                    val allowed = runCatching { store.allowedSnapshot() }
+                        .getOrDefault(NotificationParser.DEFAULT_PACKAGES)
+                    simResult = when (
+                        val r = NotificationParser.parse(
+                            simPkg.trim(), simTitle, simText, allowed
+                        )
+                    ) {
+                        is ParseResult.Accepted ->
+                            "Aceptada: ${r.tx.type} $${r.tx.amount} · ${r.tx.category}" +
+                                (r.tx.merchant?.let { " · $it" } ?: "")
+                        is ParseResult.Rejected -> "Rechazada: ${r.reason}"
+                    }
+                }
+            }) { Text("Probar") }
+            simResult?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
+private fun formatDecision(raw: String): String {
+    // "epoch|resultado|paquete|título"
+    val parts = raw.split("|", limit = 4)
+    if (parts.size < 4) return raw
+    val time = runCatching {
+        java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(parts[0].toLong()))
+    }.getOrNull() ?: ""
+    return "$time · ${parts[1]} · ${parts[2]} · ${parts[3]}"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

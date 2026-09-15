@@ -297,6 +297,23 @@ class NotificationParserTest {
         assertEquals("app_no_permitida", (result as ParseResult.Rejected).reason)
     }
 
+    @Test
+    fun pago_mercadopago_debitamos_cuenta_es_gasto() {
+        // Caso real 14/09/2026: "Pagaste a Pay trans urbani / Debitamos $ 40.00 de tu cuenta."
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Pagaste a Pay trans urbani",
+            text = "Debitamos $ 40.00 de tu cuenta.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        val tx = (result as ParseResult.Accepted).tx
+        assertEquals(40.0, tx.amount, 0.001)
+        assertEquals("EXPENSE", tx.type)
+        assertEquals("Pay trans urbani", tx.merchant)
+    }
+
     private fun categoriaDe(title: String, text: String, packageName: String = "com.nu.production"): String {
         val result = NotificationParser.parse(
             packageName = packageName,

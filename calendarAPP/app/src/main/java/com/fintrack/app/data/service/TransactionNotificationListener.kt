@@ -41,11 +41,14 @@ class TransactionNotificationListener : NotificationListenerService() {
         scope.launch {
             try {
                 appFilter.recordSeen(packageName)
+                // Fusiona bancos nuevos de cada update sin revivir bajas del usuario.
+                appFilter.ensureDefaults()
                 val allowed = appFilter.allowedSnapshot()
 
                 when (val result = NotificationParser.parse(packageName, title, text, allowed)) {
                     is ParseResult.Rejected -> {
                         Log.d(tag, "Ignorada (${result.reason}): $packageName | $title")
+                        diag("RECHAZADA (${result.reason})", packageName, title)
                         return@launch
                     }
                     is ParseResult.Accepted -> {
@@ -54,6 +57,7 @@ class TransactionNotificationListener : NotificationListenerService() {
                         val key = "$packageName|${parsed.amount}|$bucket"
                         if (key == lastKey && System.currentTimeMillis() - lastTime < 120_000) {
                             Log.d(tag, "Duplicada, se omite: $key")
+                            diag("DUPLICADA", packageName, title)
                             return@launch
                         }
 
@@ -62,29 +66,53 @@ class TransactionNotificationListener : NotificationListenerService() {
                         } catch (e: Exception) {
                             Log.w(tag, "Sin sesión, no se puede guardar: ${e.message}")
                             null
-                        } ?: return@launch
+                        }
+                        if (userId == null) {
+                            // Antes era un return silencioso: ahora queda en diagnóstico.
+                            diag("SIN SESIÓN (inicia sesión)", packageName, title)
+                            return@launch
+                        }
 
-                        val saved = transactionRepository.insertTransaction(
-                            userId,
-                            TransactionEntity(
-                                amount = parsed.amount,
-                                type = parsed.type,
-                                category = parsed.category,
-                                description = parsed.description,
-                                merchant = parsed.merchant,
-                                timestamp = System.currentTimeMillis(),
-                                source = parsed.source
+                        try {
+                            val saved = transactionRepository.insertTransaction(
+                                userId,
+                                TransactionEntity(
+                                    amount = parsed.amount,
+                                    type = parsed.type,
+                                    category = parsed.category,
+                                    description = parsed.description,
+                                    merchant = parsed.merchant,
+                                    timestamp = System.currentTimeMillis(),
+                                    source = parsed.source
+                                )
                             )
-                        )
-                        lastKey = key
-                        lastTime = System.currentTimeMillis()
-                        Log.d(tag, "Guardada: ${saved.id} ${saved.type} $${saved.amount} ${saved.category}")
-                        DetectionNotifier.showDetected(applicationContext, saved)
+                            lastKey = key
+                            lastTime = System.currentTimeMillis()
+                            Log.d(tag, "Guardada: ${saved.id} ${saved.type} $${saved.amount} ${saved.category}")
+                            diag(
+                                "GUARDADA ${parsed.type} $${parsed.amount} ${parsed.category}",
+                                packageName,
+                                title
+                            )
+                            DetectionNotifier.showDetected(applicationContext, saved)
+                        } catch (e: Exception) {
+                            Log.e(tag, "Error guardando: ${e.message}")
+                            diag("ERROR AL GUARDAR (${e.message?.take(60)})", packageName, title)
+                        }
                     }
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Error procesando notificación: ${e.message}")
             }
+        }
+    }
+
+    /** Guarda la última decisión para el diagnóstico en Permisos. */
+    private fun diag(outcome: String, packageName: String, title: String) {
+        val cleanTitle = title.replace("\n", " ").take(40)
+        val line = "${System.currentTimeMillis()}|$outcome|$packageName|$cleanTitle"
+        scope.launch {
+            runCatching { appFilter.recordDecision(line) }
         }
     }
 }

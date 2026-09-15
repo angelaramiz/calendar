@@ -8,6 +8,7 @@ import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.data.repository.OtaUpdateInfo
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import com.fintrack.app.domain.onDayUtc
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,14 +142,18 @@ class DashboardViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
             try {
                 val transactions = transactionRepository.getTransactions(userId)
-                val income = transactions.filter { it.isIncomeType() }.sumOf { it.amount }
-                val expenses = transactions.filter { !it.isIncomeType() }.sumOf { it.amount }
+                // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia
+                // sola y todo lo anterior vive en Calendario/Presupuesto.
+                val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+                val todays = transactions.onDayUtc(today)
+                val income = todays.filter { it.isIncomeType() }.sumOf { it.amount }
+                val expenses = todays.filter { !it.isIncomeType() }.sumOf { it.amount }
 
                 _uiState.value = _uiState.value.copy(
                     currentBalance = income - expenses,
                     totalIncome = income,
                     totalExpenses = expenses,
-                    recentTransactions = transactions,
+                    recentTransactions = todays,
                     isLoading = false
                 )
             } catch (e: Exception) {

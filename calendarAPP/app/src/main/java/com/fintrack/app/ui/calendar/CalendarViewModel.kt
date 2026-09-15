@@ -14,14 +14,13 @@ import com.fintrack.app.domain.Pattern
 import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.PatternValidator
 import com.fintrack.app.domain.computeMonthSummary
+import com.fintrack.app.domain.toLocalDateUtc
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
-import java.time.ZoneOffset
 
 data class DayData(
     val date: LocalDate,
@@ -62,9 +61,6 @@ private fun MovementRow.isIncomeRow(): Boolean =
 private fun TransactionEntity.isIncomeTx(): Boolean =
     type.equals("INCOME", ignoreCase = true) ||
         type.equals("ingreso", ignoreCase = true)
-
-private fun Long.toLocalDateUtc(): LocalDate =
-    Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate()
 
 class CalendarViewModel(
     private val patternRepository: PatternRepository,

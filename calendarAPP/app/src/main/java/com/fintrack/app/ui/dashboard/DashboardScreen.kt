@@ -182,7 +182,7 @@ fun DashboardScreen(
 
             // Transactions Header
             item {
-                Text("Transacciones recientes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text("Transacciones de hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
 
             if (uiState.recentTransactions.isEmpty()) {

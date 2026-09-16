@@ -2,6 +2,9 @@ package com.fintrack.app.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.CredentialStore
+import com.fintrack.app.data.PendingTx
+import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaInstaller
@@ -24,6 +27,10 @@ data class DashboardUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val needsLogin: Boolean = false,
+    /** Hay credenciales guardadas: el bloqueo biométrico puede desbloquear. */
+    val canUnlockWithBiometrics: Boolean = false,
+    /** Entrando con huella (evita doble tap). */
+    val unlocking: Boolean = false,
     val updateAvailable: OtaUpdateInfo? = null,
     val updateMessage: String? = null,
     /** Progreso 0..100 mientras descarga (null = sin descarga activa). */
@@ -35,7 +42,9 @@ data class DashboardUiState(
 class DashboardViewModel(
     private val transactionRepository: TransactionRepository,
     private val authRepository: AuthRepository,
-    private val otaUpdateRepository: OtaUpdateRepository
+    private val otaUpdateRepository: OtaUpdateRepository,
+    private val credentialStore: CredentialStore,
+    private val pendingTxStore: PendingTxStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -45,6 +54,7 @@ class DashboardViewModel(
 
     init {
         loadDashboard()
+        syncPending()
         checkForUpdate()
         startAutoRefresh()
     }
@@ -149,11 +159,61 @@ class DashboardViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
+    /**
+     * Desbloqueo estilo banco: la huella ya validó al usuario en la UI, aquí
+     * se entra con las credenciales cifradas y se sincroniza la cola local.
+     */
+    fun unlockWithSavedLogin() {
+        val email = credentialStore.email()
+        val password = credentialStore.password()
+        if (email.isNullOrBlank() || password.isNullOrBlank() || _uiState.value.unlocking) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(unlocking = true, error = null)
+            val ok = authRepository.login(email, password).isSuccess
+            _uiState.value = _uiState.value.copy(unlocking = false)
+            if (ok) {
+                syncPending()
+                loadDashboard()
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    error = "No se pudo entrar con huella. Usa tu contraseña."
+                )
+            }
+        }
+    }
+
+    /**
+     * Sube la cola local de detecciones (guardadas sin sesión) y la vacía.
+     * Se llama al abrir la app y tras cada login/desbloqueo.
+     */
+    fun syncPending() {
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession() ?: return@launch
+            val queued = runCatching { pendingTxStore.snapshot() }.getOrNull()
+                ?: return@launch
+            if (queued.isEmpty()) return@launch
+            val synced = mutableListOf<PendingTx>()
+            for (item in queued) {
+                runCatching {
+                    transactionRepository.insertTransaction(uid, item.tx)
+                }.onSuccess { synced.add(item) }.onFailure { break }
+            }
+            if (synced.isNotEmpty()) {
+                runCatching { pendingTxStore.removeAll(synced) }
+                _uiState.value = _uiState.value.copy(
+                    updateMessage = "${synced.size} movimiento(s) del teléfono sincronizados."
+                )
+                loadDashboard()
+            }
+        }
+    }
+
     fun loadDashboard(silent: Boolean = false) {
         if (userId.isEmpty()) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 needsLogin = true,
+                canUnlockWithBiometrics = credentialStore.hasCredentials(),
                 error = "Inicia sesión para ver tus transacciones."
             )
             return

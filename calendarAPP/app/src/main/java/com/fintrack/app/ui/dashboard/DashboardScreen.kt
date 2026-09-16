@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
+import com.fintrack.app.ui.auth.BiometricLockScreen
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.theme.expenseColor
@@ -48,6 +49,18 @@ fun DashboardScreen(
             snackbarHostState.showSnackbar(message)
             viewModel.clearUpdateMessage()
         }
+    }
+
+    // Bloqueo estilo banco: sin sesión pero con credenciales guardadas, la
+    // huella desbloquea y sincroniza la cola sin pedir contraseña.
+    if (uiState.needsLogin && uiState.canUnlockWithBiometrics) {
+        BiometricLockScreen(
+            unlocking = uiState.unlocking,
+            unlockError = uiState.error,
+            onUnlock = { viewModel.unlockWithSavedLogin() },
+            onUsePassword = onNavigateToAuth
+        )
+        return
     }
 
     if (!uiState.needsLogin) {
@@ -218,7 +231,11 @@ fun DashboardScreen(
                                 }
                                 if (uiState.needsLogin) {
                                     Spacer(modifier = Modifier.height(12.dp))
-                                    Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                                    if (uiState.canUnlockWithBiometrics) {
+                                        Button(onClick = onNavigateToAuth) { Text("Desbloquear") }
+                                    } else {
+                                        Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                                    }
                                     TextButton(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
                                 }
                             }

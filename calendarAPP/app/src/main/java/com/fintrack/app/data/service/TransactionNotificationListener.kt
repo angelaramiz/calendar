@@ -5,6 +5,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.fintrack.app.data.AppFilterStore
+import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.TransactionRepository
@@ -21,6 +22,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     private val transactionRepository = TransactionRepository()
     private val authRepository = AuthRepository()
     private val appFilter by lazy { AppFilterStore(applicationContext) }
+    private val pendingStore by lazy { PendingTxStore(applicationContext) }
 
     // Anti-duplicados: misma app + monto + minuto (las notificaciones se re-publican)
     @Volatile
@@ -78,28 +80,28 @@ class TransactionNotificationListener : NotificationListenerService() {
                             return@launch
                         }
 
-                        // Sin sesión: un refresco la rescata (expiró en segundo
-                        // plano); solo si falla se registra y se omite.
+                        // Sin sesión: se guarda en el teléfono y se sincroniza
+                        // al entrar (la huella refresca el token). Nada se pierde.
                         val userId = authRepository.ensureSession()
+                        val entity = TransactionEntity(
+                            amount = parsed.amount,
+                            type = parsed.type,
+                            category = parsed.category,
+                            description = parsed.description,
+                            merchant = parsed.merchant,
+                            timestamp = System.currentTimeMillis(),
+                            source = parsed.source
+                        )
                         if (userId == null) {
-                            Log.w(tag, "Sin sesión tras refresco, no se puede guardar")
-                            diag("SIN SESIÓN (inicia sesión)", packageName, title)
+                            val total = pendingStore.enqueue(entity)
+                            Log.w(tag, "Sin sesión: encolada local ($total en cola)")
+                            diag("EN COLA ($total sin sesión)", packageName, title)
+                            DetectionNotifier.showPending(applicationContext, entity, total)
                             return@launch
                         }
 
                         try {
-                            val saved = transactionRepository.insertTransaction(
-                                userId,
-                                TransactionEntity(
-                                    amount = parsed.amount,
-                                    type = parsed.type,
-                                    category = parsed.category,
-                                    description = parsed.description,
-                                    merchant = parsed.merchant,
-                                    timestamp = System.currentTimeMillis(),
-                                    source = parsed.source
-                                )
-                            )
+                            val saved = transactionRepository.insertTransaction(userId, entity)
                             lastKey = key
                             lastTime = System.currentTimeMillis()
                             Log.d(tag, "Guardada: ${saved.id} ${saved.type} $${saved.amount} ${saved.category}")
@@ -110,8 +112,17 @@ class TransactionNotificationListener : NotificationListenerService() {
                             )
                             DetectionNotifier.showDetected(applicationContext, saved)
                         } catch (e: Exception) {
-                            Log.e(tag, "Error guardando: ${e.message}")
-                            diag("ERROR AL GUARDAR (${e.message?.take(60)})", packageName, title)
+                            // Fallo de red/sesión a mitad de camino: también a la
+                            // cola en vez de perderse (el dedup evita duplicados).
+                            if (isRecoverable(e)) {
+                                val total = pendingStore.enqueue(entity)
+                                Log.w(tag, "Fallo recuperable, encolada ($total): ${e.message}")
+                                diag("EN COLA ($total: ${e.message?.take(40)})", packageName, title)
+                                DetectionNotifier.showPending(applicationContext, entity, total)
+                            } else {
+                                Log.e(tag, "Error guardando: ${e.message}")
+                                diag("ERROR AL GUARDAR (${e.message?.take(60)})", packageName, title)
+                            }
                         }
                     }
                 }
@@ -119,6 +130,16 @@ class TransactionNotificationListener : NotificationListenerService() {
                 Log.e(tag, "Error procesando notificación: ${e.message}")
             }
         }
+    }
+
+    /** Errores donde reintentar después tiene sentido (sesión/red), no errores de datos. */
+    private fun isRecoverable(e: Exception): Boolean {
+        val msg = (e.message ?: "").lowercase()
+        return listOf(
+            "jwt", "auth", "401", "403", "unauthor", "forbidden", "token",
+            "network", "timeout", "host", "ssl", "socket", "econn", "unreachable",
+            "Unable to resolve".lowercase()
+        ).any { msg.contains(it) }
     }
 
     /** Guarda la última decisión para el diagnóstico en Permisos. */

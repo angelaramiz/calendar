@@ -45,7 +45,7 @@ fun AuthScreen(
             executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                    viewModel.refreshSession()
+                    viewModel.loginWithBiometrics()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {

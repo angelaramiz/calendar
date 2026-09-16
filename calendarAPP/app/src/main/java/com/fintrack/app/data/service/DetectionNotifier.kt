@@ -83,6 +83,42 @@ object DetectionNotifier {
         }
     }
 
+    /** Aviso de detección guardada solo en el teléfono (sin sesión/red). */
+    fun showPending(context: Context, tx: TransactionEntity, queueSize: Int) {
+        ensureChannel(context)
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val isIncome = tx.type.equals("INCOME", ignoreCase = true)
+        val kind = if (isIncome) "Ingreso" else "Gasto"
+        val detail = "$kind $${String.format("%.2f", tx.amount)}" +
+            (tx.merchant?.let { " en $it" } ?: "") +
+            " · guardado en el teléfono ($queueSize en cola, se sincroniza al entrar)."
+
+        val openIntent = PendingIntent.getActivity(
+            context,
+            ("pending" + tx.hashCode()).hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_detect)
+            .setContentTitle("$kind detectado (pendiente de sincronizar)")
+            .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context)
+                .notify(("pending" + tx.hashCode()).hashCode(), notification)
+        } catch (_: SecurityException) {
+        }
+    }
+
     fun dismiss(context: Context, txId: String) {
         NotificationManagerCompat.from(context).cancel(txId.hashCode())
     }

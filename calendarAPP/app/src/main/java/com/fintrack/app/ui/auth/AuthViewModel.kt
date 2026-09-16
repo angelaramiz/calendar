@@ -2,6 +2,7 @@ package com.fintrack.app.ui.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.remote.RegisterOutcome
 import com.fintrack.app.domain.AuthAction
@@ -27,7 +28,8 @@ data class AuthUiState(
 )
 
 class AuthViewModel(
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val credentialStore: CredentialStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -82,6 +84,8 @@ class AuthViewModel(
             )
             if (_uiState.value.isLoginMode) {
                 authRepository.login(cleanEmail, password).onSuccess {
+                    // Guarda cifrado para el desbloqueo con huella estilo banco.
+                    runCatching { credentialStore.save(cleanEmail, password) }
                     _uiState.value = _uiState.value.copy(isLoading = false, loggedIn = true)
                 }.onFailure { e ->
                     val raw = e.message.orEmpty()
@@ -142,6 +146,36 @@ class AuthViewModel(
 
     fun consumeLoggedIn() {
         _uiState.value = _uiState.value.copy(loggedIn = false)
+    }
+
+    /** Hay credenciales guardadas para entrar con huella. */
+    val hasSavedLogin: Boolean get() = credentialStore.hasCredentials()
+
+    /**
+     * Entrada con huella: la biometría ya validó al usuario en la UI, aquí se
+     * usan las credenciales cifradas para refrescar el token. Sin guardadas,
+     * se intenta el rescate con refresh token como antes.
+     */
+    fun loginWithBiometrics() {
+        val email = credentialStore.email()
+        val password = credentialStore.password()
+        if (email.isNullOrBlank() || password.isNullOrBlank()) {
+            refreshSession()
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, info = null)
+            authRepository.login(email, password).onSuccess {
+                _uiState.value = _uiState.value.copy(isLoading = false, loggedIn = true)
+            }.onFailure { e ->
+                val raw = e.message.orEmpty()
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = friendlyAuthMessage(raw),
+                    pendingAction = authActionFor(raw)
+                )
+            }
+        }
     }
 
     fun refreshSession() {

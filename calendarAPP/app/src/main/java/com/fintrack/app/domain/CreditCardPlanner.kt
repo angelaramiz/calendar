@@ -12,13 +12,18 @@ object CreditCardPlanner {
         val cardId: String,
         /** Cargos del periodo actual (tras el último corte). */
         val periodCharges: Double,
+        /** Pagos registrados contra este corte. */
+        val paid: Double,
         /** Inicio del periodo (último corte). */
         val lastCutoff: LocalDate,
         /** Fecha del próximo corte. */
         val nextCutoff: LocalDate,
         /** Fecha de pago correspondiente a ese corte. */
         val nextPayment: LocalDate
-    )
+    ) {
+        /** Restante a pagar (nunca negativo: de más se considera a favor). */
+        val remaining: Double get() = (periodCharges - paid).coerceAtLeast(0.0)
+    }
 
     private fun atDay(month: java.time.YearMonth, day: Int): LocalDate {
         val safe = day.coerceIn(1, month.lengthOfMonth())
@@ -26,8 +31,7 @@ object CreditCardPlanner {
     }
 
     /** Último corte en o antes de hoy. */
-    fun lastCutoff(cutoffDay: Int, today: LocalDate): LocalDate {
-        val thisMonth = atDay(java.time.YearMonth.from(today), cutoffDay)
+    fun lastCutoff(cutoffDay: Int, today: LocalDate): LocalDate {        val thisMonth = atDay(java.time.YearMonth.from(today), cutoffDay)
         return if (!thisMonth.isAfter(today)) thisMonth
         else atDay(java.time.YearMonth.from(today).minusMonths(1), cutoffDay)
     }
@@ -57,16 +61,22 @@ object CreditCardPlanner {
         cutoffDay: Int,
         paymentDay: Int,
         charges: List<Pair<LocalDate, Double>>,
-        today: LocalDate
+        today: LocalDate,
+        /** Pagos como (corte del estado de cuenta, monto). */
+        payments: List<Pair<LocalDate, Double>> = emptyList()
     ): CardSummary {
         val last = lastCutoff(cutoffDay, today)
         val next = nextCutoff(cutoffDay, today)
         val periodTotal = charges
             .filter { (date, _) -> !date.isBefore(last) && date.isBefore(next) }
             .sumOf { (_, amount) -> amount }
+        val paid = payments
+            .filter { (cutoff, _) -> cutoff == next }
+            .sumOf { (_, amount) -> amount }
         return CardSummary(
             cardId = cardId,
             periodCharges = periodTotal,
+            paid = paid,
             lastCutoff = last,
             nextCutoff = next,
             nextPayment = paymentForCutoff(next, paymentDay)

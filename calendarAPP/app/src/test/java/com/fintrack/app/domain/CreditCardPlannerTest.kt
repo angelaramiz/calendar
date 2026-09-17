@@ -58,5 +58,36 @@ class CreditCardPlannerTest {
             "nu", 10, 30, emptyList(), LocalDate.of(2026, 9, 12)
         )
         assertEquals(0.0, summary.periodCharges, 0.0)
+        assertEquals(0.0, summary.remaining, 0.0)
+    }
+
+    @Test
+    fun pagos_descuentan_del_restante_del_corte() {
+        val today = LocalDate.of(2026, 9, 12)
+        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
+        val payments = listOf(LocalDate.of(2026, 10, 10) to 500.0)
+        val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
+        assertEquals(700.0, summary.periodCharges, 0.0)
+        assertEquals(500.0, summary.paid, 0.0)
+        assertEquals(200.0, summary.remaining, 0.0)
+    }
+
+    @Test
+    fun pago_mayor_al_total_no_deja_negativo() {
+        val today = LocalDate.of(2026, 9, 12)
+        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
+        val payments = listOf(LocalDate.of(2026, 10, 10) to 1_000.0)
+        val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
+        assertEquals(0.0, summary.remaining, 0.0)
+    }
+
+    @Test
+    fun pago_de_otro_corte_no_descuenta() {
+        val today = LocalDate.of(2026, 9, 12)
+        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
+        // Pago contra el corte anterior (10 sep): no toca el periodo actual.
+        val payments = listOf(LocalDate.of(2026, 9, 10) to 500.0)
+        val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
+        assertEquals(700.0, summary.remaining, 0.0)
     }
 }

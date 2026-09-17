@@ -3,9 +3,12 @@ package com.fintrack.app.ui.budget
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.BudgetCapsStore
+import com.fintrack.app.data.CardPayment
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.GoalStore
+import com.fintrack.app.data.ServiceBillRow
+import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.MovementRow
 import com.fintrack.app.data.remote.AuthRepository
@@ -46,6 +49,10 @@ data class BudgetUiState(
     val cards: List<CreditCardRow> = emptyList(),
     /** Tag de cargos: "tx:<id>" o "mov:<id>" -> cardId. */
     val cardCharges: Map<String, String> = emptyMap(),
+    /** Pagos registrados contra cortes. */
+    val cardPayments: List<CardPayment> = emptyList(),
+    /** Pagos de servicios (vencimientos con recordatorio). */
+    val bills: List<ServiceBillRow> = emptyList(),
     /** Movimientos del mes actual y anterior (para cargos a tarjeta). */
     val recentMovements: List<MovementRow> = emptyList(),
     /** Transacciones cargadas (para cargos a tarjeta). */
@@ -62,7 +69,8 @@ class BudgetViewModel(
     private val authRepository: AuthRepository,
     private val goalStore: GoalStore,
     private val capsStore: BudgetCapsStore,
-    private val creditCardStore: CreditCardStore
+    private val creditCardStore: CreditCardStore,
+    private val billStore: ServiceBillStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BudgetUiState())
@@ -116,6 +124,9 @@ class BudgetViewModel(
                     .getOrDefault(emptyList())
                 val cardCharges = runCatching { creditCardStore.chargesSnapshot() }
                     .getOrDefault(emptyMap())
+                val cardPayments = runCatching { creditCardStore.paymentsSnapshot() }
+                    .getOrDefault(emptyList())
+                val bills = runCatching { billStore.snapshot() }.getOrDefault(emptyList())
                 val prevMonth = month.minusMonths(1)
                 val recentMovements = runCatching {
                     patternRepository.getMovementsForMonth(
@@ -144,6 +155,8 @@ class BudgetViewModel(
                     subscriptions = subscriptions,
                     cards = cards,
                     cardCharges = cardCharges,
+                    cardPayments = cardPayments,
+                    bills = bills,
                     recentMovements = recentMovements,
                     allTransactions = transactions,
                     goalEvaluation = evaluation,
@@ -203,6 +216,50 @@ class BudgetViewModel(
     fun untagCharge(key: String) {
         viewModelScope.launch {
             runCatching { creditCardStore.setCharge(key, null) }
+            loadBudget()
+        }
+    }
+
+    /** Registra lo que en realidad se pagó contra el corte indicado. */
+    fun recordCardPayment(cardId: String, statementCutoffIso: String, amount: Double) {
+        if (amount <= 0.0) return
+        viewModelScope.launch {
+            runCatching {
+                creditCardStore.addPayment(
+                    CardPayment(
+                        id = "pay-${System.currentTimeMillis()}",
+                        cardId = cardId,
+                        amount = amount,
+                        dateIso = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
+                        statementCutoffIso = statementCutoffIso
+                    )
+                )
+            }
+            _uiState.value = _uiState.value.copy(info = "Pago registrado.")
+            loadBudget()
+        }
+    }
+
+    /** Alta/edición de pago de servicio (vencimiento + recordatorio). */
+    fun saveBill(id: String?, name: String, estimatedAmount: Double, dueDay: Int, frequency: String) {
+        val cleanName = name.trim().ifBlank { "Servicio" }
+        val bill = ServiceBillRow(
+            id = id ?: "bill-${System.currentTimeMillis()}",
+            name = cleanName,
+            estimatedAmount = if (estimatedAmount < 0.0) 0.0 else estimatedAmount,
+            dueDay = dueDay.coerceIn(1, 31),
+            frequency = if (frequency == "bimonthly") "bimonthly" else "monthly"
+        )
+        viewModelScope.launch {
+            runCatching { billStore.upsert(bill) }
+            _uiState.value = _uiState.value.copy(info = "${bill.name} programado.")
+            loadBudget()
+        }
+    }
+
+    fun deleteBill(id: String) {
+        viewModelScope.launch {
+            runCatching { billStore.delete(id) }
             loadBudget()
         }
     }

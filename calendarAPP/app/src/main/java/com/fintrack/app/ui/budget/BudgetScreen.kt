@@ -13,6 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -220,13 +221,30 @@ fun BudgetScreen(
                 CreditCardsCard(
                     cards = uiState.cards,
                     charges = uiState.cardCharges,
+                    payments = uiState.cardPayments,
                     transactions = uiState.allTransactions,
                     movements = uiState.recentMovements,
                     onSave = { id, name, cutoff, payment ->
                         viewModel.saveCard(id, name, cutoff, payment)
                     },
                     onDelete = { viewModel.deleteCard(it) },
-                    onUntag = { viewModel.untagCharge(it) }
+                    onUntag = { viewModel.untagCharge(it) },
+                    onPay = { cardId, cutoffIso, amount ->
+                        viewModel.recordCardPayment(cardId, cutoffIso, amount)
+                    }
+                )
+            }
+
+            item {
+                SectionHeader(title = "Servicios", subtitle = "Vencimientos")
+            }
+            item {
+                ServiceBillsCard(
+                    bills = uiState.bills,
+                    onSave = { id, name, amount, dueDay, frequency ->
+                        viewModel.saveBill(id, name, amount, dueDay, frequency)
+                    },
+                    onDelete = { viewModel.deleteBill(it) }
                 )
             }
 
@@ -542,14 +560,17 @@ private fun SubscriptionCard(
 private fun CreditCardsCard(
     cards: List<com.fintrack.app.data.CreditCardRow>,
     charges: Map<String, String>,
+    payments: List<com.fintrack.app.data.CardPayment>,
     transactions: List<com.fintrack.app.data.model.TransactionEntity>,
     movements: List<com.fintrack.app.data.repository.MovementRow>,
     onSave: (String?, String, Int, Int) -> Unit,
     onDelete: (String) -> Unit,
-    onUntag: (String) -> Unit
+    onUntag: (String) -> Unit,
+    onPay: (String, String, Double) -> Unit
 ) {
     var editing by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
     var adding by remember { mutableStateOf(false) }
+    var paying by remember { mutableStateOf<com.fintrack.app.domain.CreditCardPlanner.CardSummary?>(null) }
     val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -577,9 +598,17 @@ private fun CreditCardsCard(
                             Triple("mov:${mov.id}", mov.title.ifBlank { mov.category }, date to mov.confirmed_amount)
                         }
                     val all = (txCharges + movCharges)
+                    val cardPayments = payments
+                        .filter { it.cardId == card.id }
+                        .mapNotNull { pay ->
+                            val cutoff = runCatching {
+                                java.time.LocalDate.parse(pay.statementCutoffIso)
+                            }.getOrNull() ?: return@mapNotNull null
+                            cutoff to pay.amount
+                        }
                     val summary = com.fintrack.app.domain.CreditCardPlanner.summarize(
                         card.id, card.cutoffDay, card.paymentDay,
-                        all.map { it.third }, today
+                        all.map { it.third }, today, cardPayments
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
@@ -601,10 +630,17 @@ private fun CreditCardsCard(
                             }
                         }
                         Text(
-                            "A pagar ${formatMoney(summary.periodCharges)} el " +
-                                "${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}",
+                            "A pagar ${formatMoney(summary.remaining)} " +
+                                "(cargos ${formatMoney(summary.periodCharges)}" +
+                                if (summary.paid > 0.0) " − pagos ${formatMoney(summary.paid)}" else "" +
+                                ") el ${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}",
                             fontWeight = FontWeight.Bold
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { paying = summary }) {
+                                Text("Marcar pago")
+                            }
+                        }
                         val periodOnly = all.filter { (_, _, dated) ->
                             !dated.first.isBefore(summary.lastCutoff) &&
                                 dated.first.isBefore(summary.nextCutoff)
@@ -660,6 +696,213 @@ private fun CreditCardsCard(
             onDelete = { onDelete(card.id); editing = null }
         )
     }
+    paying?.let { summary ->
+        CardPayDialog(
+            summary = summary,
+            onDismiss = { paying = null },
+            onSave = { amount ->
+                onPay(summary.cardId, summary.nextCutoff.toString(), amount)
+                paying = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun CardPayDialog(
+    summary: com.fintrack.app.domain.CreditCardPlanner.CardSummary,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var amountText by remember(summary) {
+        mutableStateOf(formatMoney(summary.remaining))
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Marcar pago") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Estimado a pagar: ${formatMoney(summary.remaining)} " +
+                        "(corte ${summary.nextCutoff.dayOfMonth}/${summary.nextCutoff.monthValue}, " +
+                        "límite ${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}). " +
+                        "Corrige con lo que en realidad pagaste.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { raw ->
+                        amountText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                    },
+                    label = { Text("Monto pagado") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val amount = amountText.replace(".", "").replace(",", "").toDoubleOrNull() ?: 0.0
+                if (amount > 0.0) onSave(amount)
+            }) { Text("Guardar pago") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+private fun ServiceBillsCard(
+    bills: List<com.fintrack.app.data.ServiceBillRow>,
+    onSave: (String?, String, Double, Int, String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    var editing by remember { mutableStateOf<com.fintrack.app.data.ServiceBillRow?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Toca para dar de alta luz, agua, internet, etc. Te avisamos 3 días antes, 1 día antes y el día del vencimiento.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (bills.isEmpty()) {
+                Text("Sin servicios programados.")
+            } else {
+                bills.forEach { bill ->
+                    val due = com.fintrack.app.domain.ServiceBills.nextDue(
+                        bill.dueDay, bill.frequency, today
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(bill.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Vence ${due.dayOfMonth}/${due.monthValue}" +
+                                    (if (bill.estimatedAmount > 0.0) " · aprox. ${formatMoney(bill.estimatedAmount)}" else "") +
+                                    (if (bill.frequency == "bimonthly") " · bimestral" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Row {
+                            TextButton(onClick = { editing = bill }) { Text("Editar") }
+                            TextButton(onClick = { onDelete(bill.id) }) { Text("Eliminar") }
+                        }
+                    }
+                }
+            }
+            Button(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Agregar servicio")
+            }
+        }
+    }
+    if (adding) {
+        BillEditDialog(
+            existing = null,
+            onDismiss = { adding = false },
+            onSave = { _, name, amount, dueDay, frequency ->
+                onSave(null, name, amount, dueDay, frequency)
+                adding = false
+            }
+        )
+    }
+    editing?.let { bill ->
+        BillEditDialog(
+            existing = bill,
+            onDismiss = { editing = null },
+            onSave = { id, name, amount, dueDay, frequency ->
+                onSave(id, name, amount, dueDay, frequency)
+                editing = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun BillEditDialog(
+    existing: com.fintrack.app.data.ServiceBillRow?,
+    onDismiss: () -> Unit,
+    onSave: (String?, String, Double, Int, String) -> Unit
+) {
+    var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
+    var amountText by remember(existing) {
+        mutableStateOf(
+            existing?.takeIf { it.estimatedAmount > 0.0 }?.let { formatMoney(it.estimatedAmount) } ?: ""
+        )
+    }
+    var dueText by remember(existing) {
+        mutableStateOf(existing?.dueDay?.toString() ?: "")
+    }
+    var frequency by remember(existing) {
+        mutableStateOf(existing?.frequency?.takeIf { it == "bimonthly" } ?: "monthly")
+    }
+    val valid = name.isNotBlank() && (dueText.toIntOrNull() in 1..31)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Nuevo servicio" else "Editar servicio") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nombre (ej. CFE, Telmex)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { raw ->
+                        amountText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                    },
+                    label = { Text("Monto estimado (opcional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = dueText,
+                    onValueChange = { dueText = it.filter { c -> c.isDigit() }.take(2) },
+                    label = { Text("Día de vencimiento (1-31)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    listOf("monthly" to "Mensual", "bimonthly" to "Bimestral").forEach { (value, label) ->
+                        FilterChip(
+                            selected = frequency == value,
+                            onClick = { frequency = value },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        existing?.id, name,
+                        amountText.replace(".", "").replace(",", "").toDoubleOrNull() ?: 0.0,
+                        dueText.toIntOrNull() ?: 1,
+                        frequency
+                    )
+                },
+                enabled = valid
+            ) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
 }
 
 private fun txDateUtc(timestamp: Long): java.time.LocalDate =

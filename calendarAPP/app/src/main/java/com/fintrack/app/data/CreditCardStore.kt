@@ -24,6 +24,20 @@ data class CreditCardRow(
 )
 
 /**
+ * Pago registrado contra un corte: el usuario corrige lo que en realidad
+ * pagó (el estimado viene del acumulado del periodo).
+ */
+@Serializable
+data class CardPayment(
+    val id: String,
+    val cardId: String,
+    val amount: Double,
+    val dateIso: String,
+    /** Corte del estado de cuenta que liquida (ISO yyyy-MM-dd). */
+    val statementCutoffIso: String
+)
+
+/**
  * Tarjetas de crédito + tag de cargos (local, sin columna en el servidor).
  * Clave de cargo: "tx:<id>" o "mov:<id>".
  */
@@ -31,8 +45,10 @@ class CreditCardStore(private val context: Context) {
 
     private val cardsKey = stringPreferencesKey("credit_cards_json")
     private val chargesKey = stringPreferencesKey("credit_charges_json")
+    private val paymentsKey = stringPreferencesKey("credit_payments_json")
 
     private val listSerializer = ListSerializer(CreditCardRow.serializer())
+    private val paymentsSerializer = ListSerializer(CardPayment.serializer())
 
     val cards: Flow<List<CreditCardRow>> = context.creditCardDataStore.data.map { prefs ->
         prefs[cardsKey]?.let { raw ->
@@ -74,6 +90,25 @@ class CreditCardStore(private val context: Context) {
             val current = PendingOpCodec.decodeStrings(prefs[chargesKey]).toMutableMap()
             if (cardId == null) current.remove(key) else current[key] = cardId
             prefs[chargesKey] = PendingOpCodec.encodeStrings(current)
+        }
+    }
+
+    val payments: Flow<List<CardPayment>> = context.creditCardDataStore.data.map { prefs ->
+        prefs[paymentsKey]?.let { raw ->
+            runCatching { PendingOpCodec.json.decodeFromString(paymentsSerializer, raw) }.getOrNull()
+        } ?: emptyList()
+    }
+
+    suspend fun paymentsSnapshot(): List<CardPayment> = payments.first()
+
+    suspend fun addPayment(payment: CardPayment) {
+        context.creditCardDataStore.edit { prefs ->
+            val current = prefs[paymentsKey]?.let { raw ->
+                runCatching { PendingOpCodec.json.decodeFromString(paymentsSerializer, raw) }.getOrNull()
+            } ?: emptyList()
+            prefs[paymentsKey] = PendingOpCodec.json.encodeToString(
+                paymentsSerializer, (current + payment).takeLast(500)
+            )
         }
     }
 }

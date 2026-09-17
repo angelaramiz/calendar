@@ -93,6 +93,19 @@ class PatternValidatorTest {
     }
 
     @Test
+    fun bimestral_es_frecuencia_valida() {
+        assertNull(
+            PatternValidator.validate(
+                name = "Luz",
+                baseAmount = 800.0,
+                frequency = "bimonthly",
+                startDate = start,
+                endDate = null
+            )
+        )
+    }
+
+    @Test
     fun fin_igual_al_inicio_es_valido() {
         assertNull(
             PatternValidator.validate(

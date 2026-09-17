@@ -166,6 +166,25 @@ class PatternExpanderTest {
     }
 
     @Test
+    fun bimonthly_generatesEvery2Months() {
+        val occ = PatternExpander.expand(
+            pattern("bimonthly", start = LocalDate.of(2026, 1, 15)),
+            LocalDate.of(2026, 1, 1),
+            LocalDate.of(2026, 7, 31)
+        ).map { it.date }
+
+        assertEquals(
+            listOf(
+                LocalDate.of(2026, 1, 15),
+                LocalDate.of(2026, 3, 15),
+                LocalDate.of(2026, 5, 15),
+                LocalDate.of(2026, 7, 15)
+            ),
+            occ
+        )
+    }
+
+    @Test
     fun occurrence_carriesPatternReference() {
         val p = pattern("weekly")
         val occ = PatternExpander.expand(p, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31))

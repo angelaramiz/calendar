@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.domain.TransactionCategories
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -39,11 +40,11 @@ fun AddMovementDialog(
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
     var title by remember(date) { mutableStateOf("") }
-    var category by remember(date) { mutableStateOf("Comida") }
+    var category by remember(date) { mutableStateOf(TransactionCategories.defaultFor(false)) }
     var description by remember(date) { mutableStateOf("") }
     var currentDate by remember(date) { mutableStateOf(date) }
     var showPicker by remember { mutableStateOf(false) }
-    val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
+    val categories = TransactionCategories.forType(isIncome)
 
     val amountValue = amount.toDoubleOrNull()
     val valid = amountValue != null && amountValue > 0 && !isSaving
@@ -72,7 +73,10 @@ fun AddMovementDialog(
                     listOf(false to "Gasto", true to "Ingreso").forEach { (value, label) ->
                         FilterChip(
                             selected = isIncome == value,
-                            onClick = { isIncome = value },
+                            onClick = {
+                                isIncome = value
+                                category = TransactionCategories.defaultFor(value)
+                            },
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
                         )

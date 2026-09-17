@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.domain.TransactionCategories
 
 /**
  * Registro rápido como ventana (AlertDialog), no pantalla completa.
@@ -24,10 +25,11 @@ fun QuickEntryDialog(
 ) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("EXPENSE") }
-    var category by remember { mutableStateOf("Comida") }
+    var category by remember { mutableStateOf(TransactionCategories.defaultFor(false)) }
     var description by remember { mutableStateOf("") }
-    val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
-    val title = if (type == "INCOME") "Ingreso rápido" else "Gasto rápido"
+    val isIncome = type == "INCOME"
+    val categories = TransactionCategories.forType(isIncome)
+    val title = if (isIncome) "Ingreso rápido" else "Gasto rápido"
 
     val amountValue = amount.toDoubleOrNull()
     val valid = amountValue != null && amountValue > 0
@@ -41,7 +43,12 @@ fun QuickEntryDialog(
                     listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
                         FilterChip(
                             selected = type == t,
-                            onClick = { type = t },
+                            onClick = {
+                                type = t
+                                // Al cambiar de tipo, la categoría anterior ya no
+                                // aplica: se reinicia al default de ese tipo.
+                                category = TransactionCategories.defaultFor(t == "INCOME")
+                            },
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
                         )

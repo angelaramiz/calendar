@@ -31,6 +31,7 @@ object PatternExpander {
         val dates = when (pattern.frequency) {
             "biweekly" -> everyDays(pattern.startDate, end, 14L)
             "weekly" -> everyDays(pattern.startDate, end, 7L * pattern.interval.coerceAtLeast(1))
+            "bimonthly" -> everyMonths(pattern.startDate, end, 2 * pattern.interval.coerceAtLeast(1))
             "monthly" -> everyMonths(pattern.startDate, end, pattern.interval.coerceAtLeast(1))
             "yearly" -> everyYears(pattern.startDate, end, pattern.interval.coerceAtLeast(1))
             else -> emptyList()

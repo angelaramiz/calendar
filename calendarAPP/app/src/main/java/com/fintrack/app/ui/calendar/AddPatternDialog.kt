@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.domain.Pattern
+import com.fintrack.app.domain.TransactionCategories
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -26,6 +27,7 @@ private val FREQUENCY_LABELS = listOf(
     "weekly" to "Semanal",
     "biweekly" to "Quincenal",
     "monthly" to "Mensual",
+    "bimonthly" to "Bimestral",
     "yearly" to "Anual"
 )
 
@@ -57,9 +59,9 @@ fun AddPatternDialog(
     onDelete: (() -> Unit)? = null,
     isSaving: Boolean = false
 ) {
-    val categories = listOf("Sueldo", "Comida", "Transporte", "Servicios", "Ocio", "Otros")
     val isEditing = existing != null
     var isIncome by remember(existing) { mutableStateOf(existing?.type != "EXPENSE") }
+    val categories = TransactionCategories.forType(isIncome)
     var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
     var amount by remember(existing) {
         mutableStateOf(existing?.let { String.format("%.2f", it.baseAmount) } ?: "")
@@ -67,7 +69,7 @@ fun AddPatternDialog(
     var category by remember(existing) {
         mutableStateOf(
             existing?.category?.takeIf { it in categories }
-                ?: if (existing?.type == "EXPENSE") "Comida" else "Sueldo"
+                ?: TransactionCategories.defaultFor(isIncome)
         )
     }
     var frequency by remember(existing) {
@@ -91,7 +93,10 @@ fun AddPatternDialog(
                     listOf(false to "Gasto", true to "Ingreso").forEach { (value, label) ->
                         FilterChip(
                             selected = isIncome == value,
-                            onClick = { isIncome = value },
+                            onClick = {
+                                isIncome = value
+                                category = TransactionCategories.defaultFor(value)
+                            },
                             enabled = !isEditing,
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)

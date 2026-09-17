@@ -3,6 +3,7 @@ package com.fintrack.app.di
 import com.fintrack.app.data.BudgetCapsStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.PatternLinkStore
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.FlowStore
 import com.fintrack.app.data.GoalStore
@@ -37,10 +38,11 @@ val appModule = module {
     single { BudgetCapsStore(androidContext()) }
     single { CreditCardStore(androidContext()) }
     single { ServiceBillStore(androidContext()) }
-    single { PendingOpSync(get(), get(), get(), get(), get()) }
+    single { PatternLinkStore(androidContext()) }
+    single { PendingOpSync(get(), get(), get(), get(), get(), get()) }
     viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AuthViewModel(get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get(), get()) }
     viewModel { BudgetViewModel(get(), get(), get(), get(), get(), get(), get()) }
 }

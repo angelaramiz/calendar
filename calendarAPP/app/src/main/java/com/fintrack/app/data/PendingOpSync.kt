@@ -12,7 +12,8 @@ class PendingOpSync(
     private val transactionRepository: TransactionRepository,
     private val patternRepository: PatternRepository,
     private val walletStore: WalletStore,
-    private val creditCardStore: CreditCardStore
+    private val creditCardStore: CreditCardStore,
+    private val linkStore: PatternLinkStore
 ) {
 
     suspend fun sync(userId: String): Int {
@@ -76,17 +77,18 @@ class PendingOpSync(
                     category = p.category,
                     description = p.description
                 )
-                patternRepository.confirmOccurrence(
+                val saved = patternRepository.confirmOccurrence(
                     userId,
                     com.fintrack.app.domain.Occurrence(date = date, pattern = pattern),
                     p.actualAmount,
                     p.dateIso
                 )
+                p.cardId?.let { creditCardStore.setCharge("mov:${saved.id}", it) }
                 true
             }
             PendingOpKind.PATTERN_INSERT -> {
                 val p = PendingOpCodec.payload<PatternOpPayload>(op) ?: return true
-                patternRepository.insertPattern(
+                val saved = patternRepository.insertPattern(
                     userId = userId,
                     isIncome = p.isIncome,
                     name = p.name,
@@ -97,6 +99,7 @@ class PendingOpSync(
                     startDateIso = p.startDateIso,
                     endDateIso = p.endDateIso
                 )
+                linkStore.setLink(saved.id, p.linkKind, p.linkCardId)
                 true
             }
             PendingOpKind.PATTERN_UPDATE -> {
@@ -113,6 +116,7 @@ class PendingOpSync(
                     startDateIso = p.startDateIso,
                     endDateIso = p.endDateIso
                 )
+                linkStore.setLink(id, p.linkKind, p.linkCardId)
                 true
             }
             PendingOpKind.PATTERN_DEACTIVATE -> {

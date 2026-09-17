@@ -12,6 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.PatternLink
+import com.fintrack.app.data.PatternLinkKind
 import com.fintrack.app.domain.Pattern
 import com.fintrack.app.domain.TransactionCategories
 import java.time.Instant
@@ -45,6 +48,8 @@ private val FREQUENCY_LABELS = listOf(
 fun AddPatternDialog(
     initialDate: LocalDate,
     existing: Pattern? = null,
+    existingLink: PatternLink? = null,
+    cards: List<CreditCardRow> = emptyList(),
     onDismiss: () -> Unit,
     onSave: (
         isIncome: Boolean,
@@ -54,7 +59,9 @@ fun AddPatternDialog(
         baseAmount: Double,
         frequency: String,
         startDate: LocalDate?,
-        endDate: LocalDate?
+        endDate: LocalDate?,
+        linkKind: String?,
+        linkCardId: String?
     ) -> Unit,
     onDelete: (() -> Unit)? = null,
     isSaving: Boolean = false
@@ -77,6 +84,10 @@ fun AddPatternDialog(
     }
     var startDate by remember(existing) { mutableStateOf(existing?.startDate ?: initialDate) }
     var hasEndDate by remember(existing) { mutableStateOf(existing?.endDate != null) }
+    var linkKind by remember(existing) { mutableStateOf(existingLink?.kind) }
+    var linkCardId by remember(existing) {
+        mutableStateOf(existingLink?.cardId?.takeIf { cards.any { c -> c.id == it } })
+    }
     var endDate by remember(existing) { mutableStateOf(existing?.endDate ?: initialDate) }
     var pickingStart by remember { mutableStateOf(false) }
     var pickingEnd by remember { mutableStateOf(false) }
@@ -156,6 +167,61 @@ fun AddPatternDialog(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
 
+                Text("Tipo", style = MaterialTheme.typography.labelLarge)
+                Spacer(modifier = Modifier.height(8.dp))
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    FilterChip(
+                        selected = linkKind == null,
+                        onClick = {
+                            linkKind = null
+                            linkCardId = null
+                        },
+                        label = { Text("Normal") }
+                    )
+                    FilterChip(
+                        selected = linkKind == PatternLinkKind.CREDIT,
+                        onClick = { linkKind = PatternLinkKind.CREDIT },
+                        label = { Text("Tarjeta") }
+                    )
+                    FilterChip(
+                        selected = linkKind == PatternLinkKind.SERVICE,
+                        onClick = {
+                            linkKind = PatternLinkKind.SERVICE
+                            linkCardId = null
+                        },
+                        label = { Text("Servicio") }
+                    )
+                    FilterChip(
+                        selected = linkKind == PatternLinkKind.SUBSCRIPTION,
+                        onClick = {
+                            linkKind = PatternLinkKind.SUBSCRIPTION
+                            linkCardId = null
+                        },
+                        label = { Text("Suscripción") }
+                    )
+                }
+                if (linkKind == PatternLinkKind.CREDIT && cards.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    @OptIn(ExperimentalLayoutApi::class)
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        cards.forEach { card ->
+                            FilterChip(
+                                selected = linkCardId == card.id,
+                                onClick = { linkCardId = card.id },
+                                label = { Text(card.name) }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+
                 DateButton(
                     label = "Primer cobro/pago",
                     date = startDate,
@@ -184,7 +250,9 @@ fun AddPatternDialog(
                     val value = amount.toDoubleOrNull() ?: return@TextButton
                     onSave(
                         isIncome, name, "", category, value, frequency,
-                        startDate, endDate.takeIf { hasEndDate }
+                        startDate, endDate.takeIf { hasEndDate },
+                        linkKind,
+                        linkCardId.takeIf { linkKind == PatternLinkKind.CREDIT }
                     )
                 },
                 enabled = valid

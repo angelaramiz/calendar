@@ -82,12 +82,14 @@ fun CalendarScreen(
         AddPatternDialog(
             initialDate = uiState.selectedDate,
             existing = uiState.patternEditTarget,
+            existingLink = uiState.patternEditTarget?.let { uiState.links[it.id] },
+            cards = uiState.cards,
             isSaving = uiState.isSaving,
             onDismiss = { viewModel.dismissPatternDialog() },
-            onSave = { isIncome, name, description, category, amount, frequency, start, end ->
+            onSave = { isIncome, name, description, category, amount, frequency, start, end, kind, cardId ->
                 viewModel.savePattern(
                     isIncome, name, description, category,
-                    amount, frequency, start, end
+                    amount, frequency, start, end, kind, cardId
                 )
             },
             onDelete = { viewModel.deactivatePattern() }
@@ -179,6 +181,7 @@ fun CalendarScreen(
                     MonthGrid(
                         yearMonth = uiState.yearMonth,
                         days = uiState.days,
+                        markers = uiState.markers,
                         selectedDate = uiState.selectedDate,
                         onSelect = { viewModel.selectDate(it) }
                     )
@@ -239,25 +242,37 @@ fun CalendarScreen(
             }
 
             val dayData = uiState.days[uiState.selectedDate]
-            if (dayData == null ||
-                (dayData.projected.isEmpty() && dayData.confirmed.isEmpty() && dayData.quick.isEmpty())
-            ) {
+            val dayMarkers = uiState.markers[uiState.selectedDate].orEmpty()
+            val hasMovements = dayData != null &&
+                (dayData.projected.isNotEmpty() || dayData.confirmed.isNotEmpty() || dayData.quick.isNotEmpty())
+            if (!hasMovements && dayMarkers.isEmpty()) {
                 item {
                     Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
-                items(dayData.projected, key = { "p_${it.pattern.id}" }) { occ ->
-                    ProjectedCard(
-                        occurrence = occ,
-                        onConfirm = { viewModel.askConfirm(occ) },
-                        onEdit = { viewModel.showPatternEdit(occ.pattern) }
-                    )
+                if (dayMarkers.isNotEmpty()) {
+                    items(dayMarkers, key = { "m_$it" }) { marker ->
+                        MarkerRow(marker)
+                    }
                 }
-                items(dayData.confirmed, key = { "c_${it.id}" }) { mov ->
-                    ConfirmedRow(mov)
-                }
-                items(dayData.quick, key = { "q_${it.id}" }) { tx ->
-                    QuickRow(tx)
+                dayData?.let { data ->
+                    val cardNames = uiState.cards.associate { it.id to it.name }
+                    items(data.projected, key = { "p_${it.pattern.id}" }) { occ ->
+                        val link = uiState.links[occ.pattern.id]
+                        ProjectedCard(
+                            occurrence = occ,
+                            onConfirm = { viewModel.askConfirm(occ) },
+                            onEdit = { viewModel.showPatternEdit(occ.pattern) },
+                            linkKind = link?.kind,
+                            cardName = link?.cardId?.let { cardNames[it] }
+                        )
+                    }
+                    items(data.confirmed, key = { "c_${it.id}" }) { mov ->
+                        ConfirmedRow(mov)
+                    }
+                    items(data.quick, key = { "q_${it.id}" }) { tx ->
+                        QuickRow(tx)
+                    }
                 }
             }
 
@@ -334,6 +349,7 @@ private fun WeekdayRow() {
 private fun MonthGrid(
     yearMonth: YearMonth,
     days: Map<LocalDate, DayData>,
+    markers: Map<LocalDate, List<String>>,
     selectedDate: LocalDate,
     onSelect: (LocalDate) -> Unit
 ) {
@@ -359,6 +375,7 @@ private fun MonthGrid(
                         dayData?.quick?.any { it.type.equals("EXPENSE", ignoreCase = true) } == true
                     val allConfirmed = dayData != null &&
                         dayData.projected.isEmpty() && dayData.confirmed.isNotEmpty()
+                    val hasMarker = markers[date]?.isNotEmpty() == true
 
                     val isSelected = date == selectedDate
                     val incomeDot = incomeColor()
@@ -402,6 +419,10 @@ private fun MonthGrid(
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Dot(if (allConfirmed) expenseDot else expenseDot.copy(alpha = 0.45f))
                                 }
+                                if (hasMarker) {
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Dot(MaterialTheme.colorScheme.tertiary)
+                                }
                             }
                         }
                     }
@@ -442,6 +463,27 @@ private fun LegendRow() {
         Box(modifier = Modifier.size(10.dp).border(1.5.dp, MaterialTheme.colorScheme.tertiary, RoundedCornerShape(3.dp)))
         Spacer(modifier = Modifier.width(4.dp))
         Text("Hoy", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.width(12.dp))
+        Dot(MaterialTheme.colorScheme.tertiary)
+        Spacer(modifier = Modifier.width(4.dp))
+        Text("Aviso", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MarkerRow(marker: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        )
+    ) {
+        Text(
+            "🔔 $marker",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+        )
     }
 }
 
@@ -563,7 +605,9 @@ private fun DayDetailHeader(
 private fun ProjectedCard(
     occurrence: Occurrence,
     onConfirm: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    linkKind: String? = null,
+    cardName: String? = null
 ) {
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(
@@ -592,6 +636,14 @@ private fun ProjectedCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                linkLabel(linkKind, cardName)?.let { label ->
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             IconButton(onClick = onEdit) {
                 Icon(Icons.Default.Edit, "Editar recurrente")
@@ -599,6 +651,14 @@ private fun ProjectedCard(
             TextButton(onClick = onConfirm) { Text("Confirmar") }
         }
     }
+}
+
+private fun linkLabel(linkKind: String?, cardName: String?): String? = when (linkKind) {
+    com.fintrack.app.data.PatternLinkKind.CREDIT ->
+        "💳 Tarjeta" + (cardName?.let { " $it" } ?: "")
+    com.fintrack.app.data.PatternLinkKind.SERVICE -> "🧾 Servicio"
+    com.fintrack.app.data.PatternLinkKind.SUBSCRIPTION -> "🔁 Suscripción"
+    else -> null
 }
 
 @Composable

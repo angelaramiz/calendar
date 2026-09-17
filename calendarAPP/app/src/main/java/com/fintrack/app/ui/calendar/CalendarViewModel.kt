@@ -6,11 +6,15 @@ import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.MovConfirmPayload
 import com.fintrack.app.data.MovInsertPayload
+import com.fintrack.app.data.PatternLink
+import com.fintrack.app.data.PatternLinkKind
+import com.fintrack.app.data.PatternLinkStore
 import com.fintrack.app.data.PatternOpPayload
 import com.fintrack.app.data.PendingOp
 import com.fintrack.app.data.PendingOpCodec
 import com.fintrack.app.data.PendingOpKind
 import com.fintrack.app.data.PendingOpStore
+import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.model.TransactionEntity
@@ -67,7 +71,11 @@ data class CalendarUiState(
     /** Billeteras para el selector del formulario. */
     val wallets: List<WalletRow> = emptyList(),
     /** Tarjetas de crédito para el tag de gastos. */
-    val cards: List<CreditCardRow> = emptyList()
+    val cards: List<CreditCardRow> = emptyList(),
+    /** Clasificación de recurrentes: patternId -> link. */
+    val links: Map<String, PatternLink> = emptyMap(),
+    /** Avisos del mes (vencimientos y pagos): fecha -> etiquetas. */
+    val markers: Map<LocalDate, List<String>> = emptyMap()
 )
 
 private fun MovementRow.isIncomeRow(): Boolean =
@@ -83,7 +91,9 @@ class CalendarViewModel(
     private val authRepository: AuthRepository,
     private val pendingOpStore: PendingOpStore,
     private val walletStore: WalletStore,
-    private val creditCardStore: CreditCardStore
+    private val creditCardStore: CreditCardStore,
+    private val linkStore: PatternLinkStore,
+    private val billStore: ServiceBillStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -171,6 +181,8 @@ class CalendarViewModel(
                         confirmedFlat
                     ),
                     balance = balance,
+                    links = runCatching { linkStore.snapshot() }.getOrDefault(emptyMap()),
+                    markers = buildMarkers(from, to),
                     isLoading = false,
                     needsLogin = false
                 )
@@ -184,6 +196,41 @@ class CalendarViewModel(
     fun nextMonth() = loadMonth(_uiState.value.yearMonth.plusMonths(1))
 
     fun retry() = loadMonth(_uiState.value.yearMonth)
+
+    /**
+     * Avisos del mes (capa local, sin crear movimientos): vencimientos de
+     * servicios y fechas de pago de tarjetas que caigan en el rango.
+     */
+    private suspend fun buildMarkers(from: LocalDate, to: LocalDate): Map<LocalDate, List<String>> {
+        val markers = mutableMapOf<LocalDate, MutableList<String>>()
+        fun add(date: LocalDate, label: String) {
+            if (!date.isBefore(from) && !date.isAfter(to)) {
+                markers.getOrPut(date) { mutableListOf() }.add(label)
+            }
+        }
+        val bills = runCatching { billStore.snapshot() }.getOrDefault(emptyList())
+        bills.forEach { bill ->
+            com.fintrack.app.domain.ServiceBills
+                .duesInRange(bill.dueDay, bill.frequency, from, to)
+                .forEach { add(it, "${bill.name} vence ${it.dayOfMonth}") }
+        }
+        val cards = runCatching { creditCardStore.cardsSnapshot() }.getOrDefault(emptyList())
+        cards.forEach { card ->
+            val nextCutoff = com.fintrack.app.domain.CreditCardPlanner
+                .nextCutoff(card.cutoffDay, from)
+            val payment = com.fintrack.app.domain.CreditCardPlanner
+                .paymentForCutoff(nextCutoff, card.paymentDay)
+            add(payment, "Pagar ${card.name} (límite ${payment.dayOfMonth})")
+            val prevCutoff = com.fintrack.app.domain.CreditCardPlanner
+                .lastCutoff(card.cutoffDay, from)
+            val prevPayment = com.fintrack.app.domain.CreditCardPlanner
+                .paymentForCutoff(prevCutoff, card.paymentDay)
+            if (prevPayment != payment) {
+                add(prevPayment, "Pagar ${card.name} (límite ${prevPayment.dayOfMonth})")
+            }
+        }
+        return markers
+    }
 
     fun selectDate(date: LocalDate) {
         _uiState.value = _uiState.value.copy(selectedDate = date)
@@ -238,7 +285,9 @@ class CalendarViewModel(
         baseAmount: Double,
         frequency: String,
         startDate: LocalDate?,
-        endDate: LocalDate?
+        endDate: LocalDate?,
+        linkKind: String? = null,
+        linkCardId: String? = null
     ) {
         val validationError = PatternValidator.validate(
             name, baseAmount, frequency, startDate, endDate
@@ -249,8 +298,14 @@ class CalendarViewModel(
         }
         if (startDate == null) return
         val editTarget = _uiState.value.patternEditTarget
+        val cleanLinkKind = linkKind?.takeIf {
+            it == PatternLinkKind.CREDIT || it == PatternLinkKind.SERVICE ||
+                it == PatternLinkKind.SUBSCRIPTION
+        }
+        val cleanLinkCard = linkCardId.takeIf { cleanLinkKind == PatternLinkKind.CREDIT }
         viewModelScope.launch {
-            // Sin sesión: a la bandeja (se sube al entrar).
+            // Sin sesión: a la bandeja (el link viaja en la operación y se
+            // aplica con el id real al sincronizar).
             if (authRepository.ensureSession() == null || userId.isEmpty()) {
                 enqueueOp(
                     if (editTarget != null) PendingOpKind.PATTERN_UPDATE
@@ -265,7 +320,9 @@ class CalendarViewModel(
                         baseAmount = baseAmount,
                         frequency = frequency,
                         startDateIso = startDate.toString(),
-                        endDateIso = endDate?.toString()
+                        endDateIso = endDate?.toString(),
+                        linkKind = cleanLinkKind,
+                        linkCardId = cleanLinkCard
                     )
                 )
                 _uiState.value = _uiState.value.copy(
@@ -278,7 +335,7 @@ class CalendarViewModel(
             }
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
             try {
-                if (editTarget != null) {
+                val savedId = if (editTarget != null) {
                     patternRepository.updatePattern(
                         patternId = editTarget.id,
                         isIncome = editTarget.type == "INCOME",
@@ -290,6 +347,7 @@ class CalendarViewModel(
                         startDateIso = startDate.toString(),
                         endDateIso = endDate?.toString()
                     )
+                    editTarget.id
                 } else {
                     patternRepository.insertPattern(
                         userId = userId,
@@ -301,8 +359,9 @@ class CalendarViewModel(
                         frequency = frequency,
                         startDateIso = startDate.toString(),
                         endDateIso = endDate?.toString()
-                    )
+                    ).id
                 }
+                runCatching { linkStore.setLink(savedId, cleanLinkKind, cleanLinkCard) }
                 _uiState.value = _uiState.value.copy(
                     showPatternDialog = false,
                     patternEditTarget = null,
@@ -325,7 +384,9 @@ class CalendarViewModel(
                             baseAmount = baseAmount,
                             frequency = frequency,
                             startDateIso = startDate.toString(),
-                            endDateIso = endDate?.toString()
+                            endDateIso = endDate?.toString(),
+                            linkKind = cleanLinkKind,
+                            linkCardId = cleanLinkCard
                         )
                     )
                     _uiState.value = _uiState.value.copy(
@@ -485,6 +546,8 @@ class CalendarViewModel(
     fun confirmOccurrence(occurrence: Occurrence, actualAmount: Double) {
         val pattern = occurrence.pattern
         viewModelScope.launch {
+            // Si el recurrente es de tarjeta, el movimiento confirmado nace tageado.
+            val linkCard = linkCardOf(pattern)
             if (authRepository.ensureSession() == null || userId.isEmpty()) {
                 enqueueOp(
                     PendingOpKind.MOV_CONFIRM,
@@ -497,7 +560,8 @@ class CalendarViewModel(
                         category = pattern.category,
                         baseAmount = pattern.baseAmount,
                         actualAmount = actualAmount,
-                        dateIso = occurrence.date.toString()
+                        dateIso = occurrence.date.toString(),
+                        cardId = linkCard
                     )
                 )
                 _uiState.value = _uiState.value.copy(
@@ -507,9 +571,10 @@ class CalendarViewModel(
                 return@launch
             }
             try {
-                patternRepository.confirmOccurrence(
+                val saved = patternRepository.confirmOccurrence(
                     userId, occurrence, actualAmount, occurrence.date.toString()
                 )
+                linkCard?.let { runCatching { creditCardStore.setCharge("mov:${saved.id}", it) } }
                 _uiState.value = _uiState.value.copy(confirmTarget = null)
                 loadMonth(_uiState.value.yearMonth)
             } catch (e: Exception) {
@@ -525,7 +590,8 @@ class CalendarViewModel(
                             category = pattern.category,
                             baseAmount = pattern.baseAmount,
                             actualAmount = actualAmount,
-                            dateIso = occurrence.date.toString()
+                            dateIso = occurrence.date.toString(),
+                            cardId = linkCard
                         )
                     )
                     _uiState.value = _uiState.value.copy(
@@ -553,6 +619,13 @@ class CalendarViewModel(
             }.getOrDefault(emptyList())
             _uiState.value = _uiState.value.copy(wallets = wallets)
         }
+    }
+
+    /** Tarjeta del recurrente si está clasificado como crédito. */
+    private suspend fun linkCardOf(pattern: Pattern): String? {
+        val link = runCatching { linkStore.snapshot()[pattern.id] }.getOrNull()
+            ?: return null
+        return link.cardId.takeIf { link.kind == PatternLinkKind.CREDIT }
     }
 
     private suspend fun <T> enqueueOp(

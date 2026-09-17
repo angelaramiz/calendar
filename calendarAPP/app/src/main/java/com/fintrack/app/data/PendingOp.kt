@@ -64,7 +64,8 @@ data class MovConfirmPayload(
     val category: String,
     val baseAmount: Double,
     val actualAmount: Double,
-    val dateIso: String
+    val dateIso: String,
+    val cardId: String? = null
 )
 
 @Serializable
@@ -77,7 +78,10 @@ data class PatternOpPayload(
     val baseAmount: Double = 0.0,
     val frequency: String = "monthly",
     val startDateIso: String = "",
-    val endDateIso: String? = null
+    val endDateIso: String? = null,
+    /** Clasificación local ("credit"/"service"/"subscription", null = normal). */
+    val linkKind: String? = null,
+    val linkCardId: String? = null
 )
 
 object PendingOpCodec {

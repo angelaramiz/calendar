@@ -11,7 +11,8 @@ class PendingOpSync(
     private val opStore: PendingOpStore,
     private val transactionRepository: TransactionRepository,
     private val patternRepository: PatternRepository,
-    private val walletStore: WalletStore
+    private val walletStore: WalletStore,
+    private val creditCardStore: CreditCardStore
 ) {
 
     suspend fun sync(userId: String): Int {
@@ -33,6 +34,7 @@ class PendingOpSync(
                 val p = PendingOpCodec.payload<TxInsertPayload>(op) ?: return true
                 val saved = transactionRepository.insertTransaction(userId, p.tx)
                 p.walletId?.let { walletStore.setOverride("tx:${saved.id}", it) }
+                p.cardId?.let { creditCardStore.setCharge("tx:${saved.id}", it) }
                 true
             }
             PendingOpKind.TX_UPDATE -> {
@@ -57,6 +59,7 @@ class PendingOpSync(
                     amount = p.amount
                 )
                 p.walletId?.let { walletStore.setOverride("mov:${saved.id}", it) }
+                p.cardId?.let { creditCardStore.setCharge("mov:${saved.id}", it) }
                 true
             }
             PendingOpKind.MOV_CONFIRM -> {

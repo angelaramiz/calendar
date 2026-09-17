@@ -12,6 +12,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.TransactionCategories
 import com.fintrack.app.domain.WalletResolver
@@ -36,10 +37,12 @@ fun AddMovementDialog(
         category: String,
         amount: Double,
         description: String,
-        walletId: String?
+        walletId: String?,
+        cardId: String?
     ) -> Unit,
     isSaving: Boolean = false,
-    wallets: List<WalletRow> = emptyList()
+    wallets: List<WalletRow> = emptyList(),
+    cards: List<CreditCardRow> = emptyList()
 ) {
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
@@ -52,6 +55,7 @@ fun AddMovementDialog(
                 ?: wallets.firstOrNull()?.id
         )
     }
+    var cardId by remember(date) { mutableStateOf<String?>(null) }
     var currentDate by remember(date) { mutableStateOf(date) }
     var showPicker by remember { mutableStateOf(false) }
     val categories = TransactionCategories.forType(isIncome)
@@ -86,6 +90,7 @@ fun AddMovementDialog(
                             onClick = {
                                 isIncome = value
                                 category = TransactionCategories.defaultFor(value)
+                                if (value) cardId = null
                             },
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
@@ -151,6 +156,31 @@ fun AddMovementDialog(
                         }
                     }
                 }
+
+                if (!isIncome && cards.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Pagar con tarjeta (se paga al corte)",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        FilterChip(
+                            selected = cardId == null,
+                            onClick = { cardId = null },
+                            label = { Text("Débito / Efectivo") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        cards.forEach { card ->
+                            FilterChip(
+                                selected = cardId == card.id,
+                                onClick = { cardId = card.id },
+                                label = { Text(card.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -158,7 +188,10 @@ fun AddMovementDialog(
                 onClick = {
                     val value = amount.toDoubleOrNull() ?: return@TextButton
                     if (value <= 0) return@TextButton
-                    onSave(currentDate, isIncome, title, category, value, description, walletId)
+                    onSave(
+                        currentDate, isIncome, title, category, value, description,
+                        walletId, if (isIncome) null else cardId
+                    )
                 },
                 enabled = valid
             ) { Text(if (isSaving) "Guardando…" else "Guardar") }

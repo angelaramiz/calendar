@@ -3,6 +3,8 @@ package com.fintrack.app.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.CredentialStore
+import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.PendingOp
 import com.fintrack.app.data.PendingOpCodec
 import com.fintrack.app.data.PendingOpKind
@@ -53,6 +55,12 @@ data class DashboardUiState(
     val selectedWalletId: String? = null,
     /** Última billetera usada en registro manual. */
     val lastWalletId: String? = null,
+    /** Tarjetas de crédito para el selector y el tag. */
+    val cards: List<CreditCardRow> = emptyList(),
+    /** Cargos a tarjeta: "tx:<id>" -> cardId. */
+    val cardCharges: Map<String, String> = emptyMap(),
+    /** Suma de gastos a crédito de hoy (no restan al balance). */
+    val creditPendingToday: Double = 0.0,
     val updateAvailable: OtaUpdateInfo? = null,
     val updateMessage: String? = null,
     /** Progreso 0..100 mientras descarga (null = sin descarga activa). */
@@ -69,7 +77,8 @@ class DashboardViewModel(
     private val pendingTxStore: PendingTxStore,
     private val pendingOpStore: PendingOpStore,
     private val walletStore: WalletStore,
-    private val opSync: PendingOpSync
+    private val opSync: PendingOpSync,
+    private val creditCardStore: CreditCardStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -263,6 +272,10 @@ class DashboardViewModel(
                 val overrides = runCatching { walletStore.overridesSnapshot() }
                     .getOrDefault(emptyMap())
                 val lastWallet = runCatching { walletStore.lastSnapshot() }.getOrNull()
+                val cards = runCatching { creditCardStore.cardsSnapshot() }
+                    .getOrDefault(emptyList())
+                val cardCharges = runCatching { creditCardStore.chargesSnapshot() }
+                    .getOrDefault(emptyMap())
                 val resolverWallets = wallets.map { it.toResolver() }
                 // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia
                 // sola y todo lo anterior vive en Calendario/Presupuesto.
@@ -270,8 +283,14 @@ class DashboardViewModel(
                 val month = java.time.YearMonth.now(java.time.ZoneOffset.UTC)
                 val todays = transactions.onDayUtc(today)
                     .filter { selectedWalletMatches(it, resolverWallets, overrides) }
-                val income = todays.filter { it.isIncomeType() }.sumOf { it.amount }
-                val expenses = todays.filter { !it.isIncomeType() }.sumOf { it.amount }
+                // Gastos con tag de tarjeta: se registran pero no se aplican
+                // al balance del momento (se pagan al corte).
+                val creditToday = todays
+                    .filter { !it.isIncomeType() && cardCharges["tx:${it.id}"] != null }
+                    .sumOf { it.amount }
+                val cashToday = todays.filter { cardCharges["tx:${it.id}"] == null }
+                val income = cashToday.filter { it.isIncomeType() }.sumOf { it.amount }
+                val expenses = cashToday.filter { !it.isIncomeType() }.sumOf { it.amount }
 
                 _uiState.value = _uiState.value.copy(
                     currentBalance = income - expenses,
@@ -283,6 +302,9 @@ class DashboardViewModel(
                         transactions, month, resolverWallets, overrides
                     ),
                     lastWalletId = lastWallet,
+                    cards = cards,
+                    cardCharges = cardCharges,
+                    creditPendingToday = creditToday,
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -291,14 +313,18 @@ class DashboardViewModel(
         }
     }
 
-    fun addTransaction(transaction: TransactionEntity, walletId: String? = null) {
+    fun addTransaction(
+        transaction: TransactionEntity,
+        walletId: String? = null,
+        cardId: String? = null
+    ) {
         viewModelScope.launch {
             val uid = authRepository.ensureSession()
             if (uid == null) {
                 enqueueOp(
                     PendingOpKind.TX_INSERT,
                     TxInsertPayload.serializer(),
-                    TxInsertPayload(transaction, walletId)
+                    TxInsertPayload(transaction, walletId, cardId)
                 )
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -310,6 +336,7 @@ class DashboardViewModel(
             try {
                 val saved = transactionRepository.insertTransaction(uid, transaction)
                 walletId?.let { runCatching { walletStore.setOverride("tx:${saved.id}", it) } }
+                cardId?.let { runCatching { creditCardStore.setCharge("tx:${saved.id}", it) } }
                 runCatching { walletStore.setLast(walletId ?: WalletResolver.EFECTIVO_ID) }
                 loadDashboard()
             } catch (e: Exception) {
@@ -317,7 +344,7 @@ class DashboardViewModel(
                     enqueueOp(
                         PendingOpKind.TX_INSERT,
                         TxInsertPayload.serializer(),
-                        TxInsertPayload(transaction, walletId)
+                        TxInsertPayload(transaction, walletId, cardId)
                     )
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,

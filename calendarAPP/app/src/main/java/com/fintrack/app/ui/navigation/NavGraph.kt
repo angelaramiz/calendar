@@ -117,8 +117,9 @@ fun FinTrackNavGraph(
             QuickEntryDialog(
                 wallets = dashState.wallets,
                 initialWalletId = dashState.lastWalletId,
-                onSave = { transaction, walletId ->
-                    dashboardViewModel.addTransaction(transaction, walletId)
+                cards = dashState.cards,
+                onSave = { transaction, walletId, cardId ->
+                    dashboardViewModel.addTransaction(transaction, walletId, cardId)
                     navController.popBackStack()
                 },
                 onCancel = { navController.popBackStack() }

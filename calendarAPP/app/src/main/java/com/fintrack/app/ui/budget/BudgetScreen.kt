@@ -214,6 +214,23 @@ fun BudgetScreen(
             }
 
             item {
+                SectionHeader(title = "Tarjetas de crédito", subtitle = "Corte y pago")
+            }
+            item {
+                CreditCardsCard(
+                    cards = uiState.cards,
+                    charges = uiState.cardCharges,
+                    transactions = uiState.allTransactions,
+                    movements = uiState.recentMovements,
+                    onSave = { id, name, cutoff, payment ->
+                        viewModel.saveCard(id, name, cutoff, payment)
+                    },
+                    onDelete = { viewModel.deleteCard(it) },
+                    onUntag = { viewModel.untagCharge(it) }
+                )
+            }
+
+            item {
                 SectionHeader(title = "Mediano plazo", subtitle = "Próximos 3 meses")
             }
             if (uiState.mediumTerm.isEmpty()) {
@@ -519,6 +536,210 @@ private fun SubscriptionCard(
             }
         }
     }
+}
+
+@Composable
+private fun CreditCardsCard(
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    charges: Map<String, String>,
+    transactions: List<com.fintrack.app.data.model.TransactionEntity>,
+    movements: List<com.fintrack.app.data.repository.MovementRow>,
+    onSave: (String?, String, Int, Int) -> Unit,
+    onDelete: (String) -> Unit,
+    onUntag: (String) -> Unit
+) {
+    var editing by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Los gastos con tag de tarjeta no restan al balance: se acumulan para pagarse al corte.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (cards.isEmpty()) {
+                Text("Sin tarjetas. Agrega tu Nu, Plata, etc. con su día de corte y pago.")
+            } else {
+                cards.forEach { card ->
+                    val txCharges = transactions
+                        .filter { charges["tx:${it.id}"] == card.id }
+                        .mapNotNull { tx ->
+                            val date = txDateUtc(tx.timestamp)
+                            Triple("tx:${tx.id}", txLabel(tx), date to tx.amount)
+                        }
+                    val movCharges = movements
+                        .filter { charges["mov:${it.id}"] == card.id && !it.archived }
+                        .mapNotNull { mov ->
+                            val date = runCatching {
+                                java.time.LocalDate.parse(mov.date)
+                            }.getOrNull() ?: return@mapNotNull null
+                            Triple("mov:${mov.id}", mov.title.ifBlank { mov.category }, date to mov.confirmed_amount)
+                        }
+                    val all = (txCharges + movCharges)
+                    val summary = com.fintrack.app.domain.CreditCardPlanner.summarize(
+                        card.id, card.cutoffDay, card.paymentDay,
+                        all.map { it.third }, today
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(card.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Corte día ${card.cutoffDay} · Pago día ${card.paymentDay}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Row {
+                                TextButton(onClick = { editing = card }) { Text("Editar") }
+                                TextButton(onClick = { onDelete(card.id) }) { Text("Eliminar") }
+                            }
+                        }
+                        Text(
+                            "A pagar ${formatMoney(summary.periodCharges)} el " +
+                                "${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}",
+                            fontWeight = FontWeight.Bold
+                        )
+                        val periodOnly = all.filter { (_, _, dated) ->
+                            !dated.first.isBefore(summary.lastCutoff) &&
+                                dated.first.isBefore(summary.nextCutoff)
+                        }
+                        if (periodOnly.isEmpty()) {
+                            Text(
+                                "Sin cargos en este periodo.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            periodOnly.forEach { (key, label, dated) ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "$label · ${formatMoney(dated.second)} · " +
+                                            "${dated.first.dayOfMonth}/${dated.first.monthValue}",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    TextButton(onClick = { onUntag(key) }) { Text("Quitar") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Button(onClick = { adding = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Agregar tarjeta")
+            }
+        }
+    }
+    if (adding) {
+        CardEditDialog(
+            existing = null,
+            onDismiss = { adding = false },
+            onSave = { _, name, cutoff, payment ->
+                onSave(null, name, cutoff, payment)
+                adding = false
+            },
+            onDelete = null
+        )
+    }
+    editing?.let { card ->
+        CardEditDialog(
+            existing = card,
+            onDismiss = { editing = null },
+            onSave = { id, name, cutoff, payment ->
+                onSave(id, name, cutoff, payment)
+                editing = null
+            },
+            onDelete = { onDelete(card.id); editing = null }
+        )
+    }
+}
+
+private fun txDateUtc(timestamp: Long): java.time.LocalDate =
+    java.time.Instant.ofEpochMilli(timestamp)
+        .atZone(java.time.ZoneOffset.UTC).toLocalDate()
+
+private fun txLabel(tx: com.fintrack.app.data.model.TransactionEntity): String =
+    tx.description.ifBlank { tx.category } +
+        (tx.merchant?.let { " ($it)" } ?: "")
+
+@Composable
+private fun CardEditDialog(
+    existing: com.fintrack.app.data.CreditCardRow?,
+    onDismiss: () -> Unit,
+    onSave: (String?, String, Int, Int) -> Unit,
+    onDelete: (() -> Unit)?
+) {
+    var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
+    var cutoffText by remember(existing) {
+        mutableStateOf(existing?.cutoffDay?.toString() ?: "")
+    }
+    var paymentText by remember(existing) {
+        mutableStateOf(existing?.paymentDay?.toString() ?: "")
+    }
+    val valid = name.isNotBlank() &&
+        (cutoffText.toIntOrNull() in 1..31) &&
+        (paymentText.toIntOrNull() in 1..31)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Nueva tarjeta" else "Editar tarjeta") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nombre / banco (ej. Nu)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = cutoffText,
+                    onValueChange = { cutoffText = it.filter { c -> c.isDigit() }.take(2) },
+                    label = { Text("Día de corte (1-31)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = paymentText,
+                    onValueChange = { paymentText = it.filter { c -> c.isDigit() }.take(2) },
+                    label = { Text("Día de pago (1-31)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(
+                        existing?.id, name,
+                        cutoffText.toIntOrNull() ?: 1,
+                        paymentText.toIntOrNull() ?: 1
+                    )
+                },
+                enabled = valid
+            ) { Text("Guardar") }
+        },
+        dismissButton = {
+            Row {
+                if (existing != null && onDelete != null) {
+                    TextButton(onClick = onDelete) {
+                        Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                TextButton(onClick = onDismiss) { Text("Cancelar") }
+            }
+        }
+    )
 }
 
 @Composable

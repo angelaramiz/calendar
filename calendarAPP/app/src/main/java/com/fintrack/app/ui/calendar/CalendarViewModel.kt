@@ -2,6 +2,8 @@ package com.fintrack.app.ui.calendar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.MovConfirmPayload
 import com.fintrack.app.data.MovInsertPayload
 import com.fintrack.app.data.PatternOpPayload
@@ -63,7 +65,9 @@ data class CalendarUiState(
     val isSaving: Boolean = false,
     val needsLogin: Boolean = false,
     /** Billeteras para el selector del formulario. */
-    val wallets: List<WalletRow> = emptyList()
+    val wallets: List<WalletRow> = emptyList(),
+    /** Tarjetas de crédito para el tag de gastos. */
+    val cards: List<CreditCardRow> = emptyList()
 )
 
 private fun MovementRow.isIncomeRow(): Boolean =
@@ -78,7 +82,8 @@ class CalendarViewModel(
     private val transactionRepository: TransactionRepository,
     private val authRepository: AuthRepository,
     private val pendingOpStore: PendingOpStore,
-    private val walletStore: WalletStore
+    private val walletStore: WalletStore,
+    private val creditCardStore: CreditCardStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -93,7 +98,9 @@ class CalendarViewModel(
                 walletStore.ensureDefaults()
                 walletStore.snapshot()
             }.getOrDefault(emptyList())
-            _uiState.value = _uiState.value.copy(wallets = wallets)
+            val cards = runCatching { creditCardStore.cardsSnapshot() }
+                .getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(wallets = wallets, cards = cards)
         }
     }
 
@@ -395,11 +402,13 @@ class CalendarViewModel(
         category: String,
         amount: Double,
         description: String,
-        walletId: String? = null
+        walletId: String? = null,
+        cardId: String? = null
     ) {
         if (amount <= 0.0) return
         val cleanTitle = title.ifBlank { category }
         val cleanCategory = category.ifBlank { "Otros" }
+        val cleanCard = if (isIncome) null else cardId
         viewModelScope.launch {
             val uid = authRepository.ensureSession()
             if (uid == null || userId.isEmpty()) {
@@ -413,7 +422,8 @@ class CalendarViewModel(
                         description = description,
                         category = cleanCategory,
                         amount = amount,
-                        walletId = walletId
+                        walletId = walletId,
+                        cardId = cleanCard
                     )
                 )
                 _uiState.value = _uiState.value.copy(
@@ -436,6 +446,7 @@ class CalendarViewModel(
                     amount = amount
                 )
                 walletId?.let { runCatching { walletStore.setOverride("mov:${saved.id}", it) } }
+                cleanCard?.let { runCatching { creditCardStore.setCharge("mov:${saved.id}", it) } }
                 _uiState.value = _uiState.value.copy(
                     addTarget = null,
                     isSaving = false,
@@ -454,7 +465,8 @@ class CalendarViewModel(
                             description = description,
                             category = cleanCategory,
                             amount = amount,
-                            walletId = walletId
+                            walletId = walletId,
+                            cardId = cleanCard
                         )
                     )
                     _uiState.value = _uiState.value.copy(

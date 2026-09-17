@@ -31,7 +31,11 @@ object PendingOpKind {
 }
 
 @Serializable
-data class TxInsertPayload(val tx: TransactionEntity, val walletId: String? = null)
+data class TxInsertPayload(
+    val tx: TransactionEntity,
+    val walletId: String? = null,
+    val cardId: String? = null
+)
 
 @Serializable
 data class TxUpdatePayload(val id: String, val tx: TransactionEntity)
@@ -47,7 +51,8 @@ data class MovInsertPayload(
     val description: String,
     val category: String,
     val amount: Double,
-    val walletId: String? = null
+    val walletId: String? = null,
+    val cardId: String? = null
 )
 
 @Serializable
@@ -115,4 +120,14 @@ object PendingOpCodec {
     fun decodeStrings(raw: String?): Map<String, String> =
         if (raw.isNullOrBlank()) emptyMap()
         else runCatching { json.decodeFromString(stringsSerializer, raw) }.getOrNull() ?: emptyMap()
+
+    private val cardsSerializer =
+        ListSerializer(com.fintrack.app.data.CreditCardRow.serializer())
+
+    fun encodeCards(cards: List<com.fintrack.app.data.CreditCardRow>): String =
+        json.encodeToString(cardsSerializer, cards)
+
+    fun decodeCards(raw: String?): List<com.fintrack.app.data.CreditCardRow> =
+        if (raw.isNullOrBlank()) emptyList()
+        else runCatching { json.decodeFromString(cardsSerializer, raw) }.getOrNull() ?: emptyList()
 }

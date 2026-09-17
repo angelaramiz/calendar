@@ -189,7 +189,8 @@ fun DashboardScreen(
                 BalanceCard(
                     balance = uiState.currentBalance,
                     income = uiState.totalIncome,
-                    expenses = uiState.totalExpenses
+                    expenses = uiState.totalExpenses,
+                    creditPending = uiState.creditPendingToday
                 )
             }
 
@@ -255,9 +256,12 @@ fun DashboardScreen(
                     }
                 }
             } else {
+                val cardNames = uiState.cards.associate { it.id to it.name }
                 items(uiState.recentTransactions) { transaction ->
                     TransactionItem(
                         transaction = transaction,
+                        cardName = uiState.cardCharges["tx:${transaction.id}"]
+                            ?.let { cardNames[it] },
                         onDelete = { viewModel.deleteTransaction(transaction.id) },
                         onUpdate = { updated -> viewModel.updateTransaction(transaction.id, updated) }
                     )
@@ -296,7 +300,7 @@ private fun WalletFilterRow(
 }
 
 @Composable
-private fun BalanceCard(balance: Double, income: Double, expenses: Double) {
+private fun BalanceCard(balance: Double, income: Double, expenses: Double, creditPending: Double = 0.0) {
     val amountColor = if (balance >= 0) incomeColor() else expenseColor()
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -321,6 +325,15 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
             )
+            if (creditPending > 0.0) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Por pagar en tarjetas: $${String.format("%.2f", creditPending)} (se paga al corte)",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -397,7 +410,8 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double) {
 private fun TransactionItem(
     transaction: TransactionEntity,
     onDelete: () -> Unit,
-    onUpdate: (TransactionEntity) -> Unit
+    onUpdate: (TransactionEntity) -> Unit,
+    cardName: String? = null
 ) {
     var showOptions by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -476,7 +490,11 @@ private fun TransactionItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(transaction.description.ifEmpty { transaction.category }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(2.dp))
-                Text(transaction.category, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    transaction.category + (cardName?.let { " · 💳 $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             Text(
                 "${if (isIncome) "+" else "-"}$${String.format("%.2f", transaction.amount)}",

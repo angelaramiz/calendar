@@ -286,7 +286,16 @@ private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
                         val appContext = context.applicationContext
                         val report = com.fintrack.app.data.service.ReminderCheck.evaluate(appContext)
                         val fired = com.fintrack.app.data.service.ReminderCheck.fire(appContext, report)
-                        com.fintrack.app.data.service.ReminderCheck.describe(report, fired)
+                        // Aviso de prueba fijo: verifica el canal sin depender
+                        // de ningún vencimiento real.
+                        com.fintrack.app.data.service.RemindersNotifier.show(
+                            appContext,
+                            "prueba-recordatorios",
+                            "Notificación de prueba",
+                            "Si ves esto, los avisos de FinTrack funcionan en tu teléfono."
+                        )
+                        com.fintrack.app.data.service.ReminderCheck.describe(report, fired) +
+                            " Aviso de prueba enviado."
                     }.getOrElse { e ->
                         "No se pudo lanzar la revisión: ${e.message}"
                     }

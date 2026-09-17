@@ -278,13 +278,24 @@ private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(8.dp))
+            var remindResult by remember { mutableStateOf<String?>(null) }
             Button(onClick = {
-                runCatching {
-                    com.fintrack.app.data.service.RemindersWorker.runNow(
-                        context.applicationContext
-                    )
+                scope.launch {
+                    remindResult = "Revisando…"
+                    remindResult = runCatching {
+                        val appContext = context.applicationContext
+                        val report = com.fintrack.app.data.service.ReminderCheck.evaluate(appContext)
+                        val fired = com.fintrack.app.data.service.ReminderCheck.fire(appContext, report)
+                        com.fintrack.app.data.service.ReminderCheck.describe(report, fired)
+                    }.getOrElse { e ->
+                        "No se pudo lanzar la revisión: ${e.message}"
+                    }
                 }
             }) { Text("Probar recordatorios") }
+            remindResult?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
         }
     }
 }

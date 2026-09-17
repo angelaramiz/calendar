@@ -20,8 +20,13 @@ data class CreditCardRow(
     /** Día de corte (1-31). */
     val cutoffDay: Int,
     /** Día de pago (1-31). */
-    val paymentDay: Int
-)
+    val paymentDay: Int,
+    /** Últimos 4 dígitos (ej. "1234"), para identificarla. */
+    val last4: String = ""
+) {
+    /** "Nu •1234" o solo "Nu" si no hay terminación. */
+    val displayName: String get() = if (last4.isBlank()) name else "$name •$last4"
+}
 
 /**
  * Pago registrado contra un corte: el usuario corrige lo que en realidad

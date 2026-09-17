@@ -256,7 +256,7 @@ fun CalendarScreen(
                     }
                 }
                 dayData?.let { data ->
-                    val cardNames = uiState.cards.associate { it.id to it.name }
+                    val cardNames = uiState.cards.associate { it.id to it.displayName }
                     items(data.projected, key = { "p_${it.pattern.id}" }) { occ ->
                         val link = uiState.links[occ.pattern.id]
                         ProjectedCard(

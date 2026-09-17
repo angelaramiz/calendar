@@ -124,7 +124,7 @@ object ReminderCheck {
                 val whenText = if (days == 0) "hoy" else "en $days día${if (days == 1) "" else "s"}"
                 RemindersNotifier.show(
                     context, key,
-                    "Pagar ${card.name} $whenText",
+                    "Pagar ${card.displayName} $whenText",
                     "Fecha límite $payment. El estimado está en Presupuesto → Tarjetas."
                 )
                 fresh.add(key)

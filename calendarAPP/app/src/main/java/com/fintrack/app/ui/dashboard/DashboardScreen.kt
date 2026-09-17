@@ -256,7 +256,7 @@ fun DashboardScreen(
                     }
                 }
             } else {
-                val cardNames = uiState.cards.associate { it.id to it.name }
+                val cardNames = uiState.cards.associate { it.id to it.displayName }
                 items(uiState.recentTransactions) { transaction ->
                     TransactionItem(
                         transaction = transaction,

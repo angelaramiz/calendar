@@ -1,10 +1,20 @@
 package com.fintrack.app.domain
 
+import com.fintrack.app.data.CreditCardRow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
 
 class CreditCardPlannerTest {
+
+    @Test
+    fun displayName_con_y_sin_terminacion() {
+        assertEquals(
+            "Nu •1234",
+            CreditCardRow("1", "Nu", 10, 30, "1234").displayName
+        )
+        assertEquals("Nu", CreditCardRow("1", "Nu", 10, 30).displayName)
+    }
 
     @Test
     fun corte_y_pago_del_mes_actual() {

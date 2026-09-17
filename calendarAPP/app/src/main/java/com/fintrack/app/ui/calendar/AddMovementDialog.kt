@@ -184,7 +184,7 @@ fun AddMovementDialog(
                             FilterChip(
                                 selected = cardId == card.id,
                                 onClick = { cardId = card.id },
-                                label = { Text(card.name) },
+                                label = { Text(card.displayName) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }

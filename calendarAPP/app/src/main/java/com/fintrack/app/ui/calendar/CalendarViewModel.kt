@@ -220,13 +220,13 @@ class CalendarViewModel(
                 .nextCutoff(card.cutoffDay, from)
             val payment = com.fintrack.app.domain.CreditCardPlanner
                 .paymentForCutoff(nextCutoff, card.paymentDay)
-            add(payment, "Pagar ${card.name} (límite ${payment.dayOfMonth})")
+            add(payment, "Pagar ${card.displayName} (límite ${payment.dayOfMonth})")
             val prevCutoff = com.fintrack.app.domain.CreditCardPlanner
                 .lastCutoff(card.cutoffDay, from)
             val prevPayment = com.fintrack.app.domain.CreditCardPlanner
                 .paymentForCutoff(prevCutoff, card.paymentDay)
             if (prevPayment != payment) {
-                add(prevPayment, "Pagar ${card.name} (límite ${prevPayment.dayOfMonth})")
+                add(prevPayment, "Pagar ${card.displayName} (límite ${prevPayment.dayOfMonth})")
             }
         }
         return markers

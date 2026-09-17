@@ -224,8 +224,8 @@ fun BudgetScreen(
                     payments = uiState.cardPayments,
                     transactions = uiState.allTransactions,
                     movements = uiState.recentMovements,
-                    onSave = { id, name, cutoff, payment ->
-                        viewModel.saveCard(id, name, cutoff, payment)
+                    onSave = { id, name, cutoff, payment, last4 ->
+                        viewModel.saveCard(id, name, cutoff, payment, last4)
                     },
                     onDelete = { viewModel.deleteCard(it) },
                     onUntag = { viewModel.untagCharge(it) },
@@ -563,7 +563,7 @@ private fun CreditCardsCard(
     payments: List<com.fintrack.app.data.CardPayment>,
     transactions: List<com.fintrack.app.data.model.TransactionEntity>,
     movements: List<com.fintrack.app.data.repository.MovementRow>,
-    onSave: (String?, String, Int, Int) -> Unit,
+    onSave: (String?, String, Int, Int, String) -> Unit,
     onDelete: (String) -> Unit,
     onUntag: (String) -> Unit,
     onPay: (String, String, Double) -> Unit
@@ -617,7 +617,7 @@ private fun CreditCardsCard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(card.name, fontWeight = FontWeight.SemiBold)
+                                Text(card.displayName, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     "Corte día ${card.cutoffDay} · Pago día ${card.paymentDay}",
                                     style = MaterialTheme.typography.bodySmall,
@@ -678,8 +678,8 @@ private fun CreditCardsCard(
         CardEditDialog(
             existing = null,
             onDismiss = { adding = false },
-            onSave = { _, name, cutoff, payment ->
-                onSave(null, name, cutoff, payment)
+            onSave = { _, name, cutoff, payment, last4 ->
+                onSave(null, name, cutoff, payment, last4)
                 adding = false
             },
             onDelete = null
@@ -689,8 +689,8 @@ private fun CreditCardsCard(
         CardEditDialog(
             existing = card,
             onDismiss = { editing = null },
-            onSave = { id, name, cutoff, payment ->
-                onSave(id, name, cutoff, payment)
+            onSave = { id, name, cutoff, payment, last4 ->
+                onSave(id, name, cutoff, payment, last4)
                 editing = null
             },
             onDelete = { onDelete(card.id); editing = null }
@@ -699,6 +699,7 @@ private fun CreditCardsCard(
     paying?.let { summary ->
         CardPayDialog(
             summary = summary,
+            cardName = cards.firstOrNull { it.id == summary.cardId }?.displayName,
             onDismiss = { paying = null },
             onSave = { amount ->
                 onPay(summary.cardId, summary.nextCutoff.toString(), amount)
@@ -711,6 +712,7 @@ private fun CreditCardsCard(
 @Composable
 private fun CardPayDialog(
     summary: com.fintrack.app.domain.CreditCardPlanner.CardSummary,
+    cardName: String?,
     onDismiss: () -> Unit,
     onSave: (Double) -> Unit
 ) {
@@ -719,7 +721,7 @@ private fun CardPayDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Marcar pago") },
+        title = { Text("Marcar pago${cardName?.let { " · $it" } ?: ""}") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -917,10 +919,11 @@ private fun txLabel(tx: com.fintrack.app.data.model.TransactionEntity): String =
 private fun CardEditDialog(
     existing: com.fintrack.app.data.CreditCardRow?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, Int, Int) -> Unit,
+    onSave: (String?, String, Int, Int, String) -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
+    var last4Text by remember(existing) { mutableStateOf(existing?.last4 ?: "") }
     var cutoffText by remember(existing) {
         mutableStateOf(existing?.cutoffDay?.toString() ?: "")
     }
@@ -939,6 +942,14 @@ private fun CardEditDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Nombre / banco (ej. Nu)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = last4Text,
+                    onValueChange = { last4Text = it.filter { c -> c.isDigit() }.take(4) },
+                    label = { Text("Terminación (4 dígitos)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -966,7 +977,8 @@ private fun CardEditDialog(
                     onSave(
                         existing?.id, name,
                         cutoffText.toIntOrNull() ?: 1,
-                        paymentText.toIntOrNull() ?: 1
+                        paymentText.toIntOrNull() ?: 1,
+                        last4Text
                     )
                 },
                 enabled = valid

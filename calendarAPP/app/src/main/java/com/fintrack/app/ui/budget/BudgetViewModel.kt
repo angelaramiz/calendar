@@ -187,13 +187,14 @@ class BudgetViewModel(
     }
 
     /** Crea o actualiza una tarjeta (corte y pago por día del mes 1-31). */
-    fun saveCard(id: String?, name: String, cutoffDay: Int, paymentDay: Int) {
+    fun saveCard(id: String?, name: String, cutoffDay: Int, paymentDay: Int, last4: String = "") {
         val cleanName = name.trim().ifBlank { "Mi tarjeta" }
         val card = CreditCardRow(
             id = id ?: "card-${System.currentTimeMillis()}",
             name = cleanName,
             cutoffDay = cutoffDay.coerceIn(1, 31),
-            paymentDay = paymentDay.coerceIn(1, 31)
+            paymentDay = paymentDay.coerceIn(1, 31),
+            last4 = last4.filter { it.isDigit() }.take(4)
         )
         viewModelScope.launch {
             runCatching { creditCardStore.upsertCard(card) }

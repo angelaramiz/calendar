@@ -215,7 +215,7 @@ fun AddPatternDialog(
                             FilterChip(
                                 selected = linkCardId == card.id,
                                 onClick = { linkCardId = card.id },
-                                label = { Text(card.name) }
+                                label = { Text(card.displayName) }
                             )
                         }
                     }

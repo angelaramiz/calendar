@@ -47,12 +47,44 @@ class WalletStore(private val context: Context) {
             val ids = current.map { it.id }.toSet()
             val missing = com.fintrack.app.domain.WalletResolver.DEFAULT_WALLETS
                 .filter { it.id !in ids }
-                .map { WalletRow(it.id, it.name, it.packages) }
+                .map { WalletRow(it.id, it.name, it.packages, custom = false) }
             if (missing.isNotEmpty()) {
                 prefs[walletsKey] = PendingOpCodec.json.encodeToString(
                     walletListSerializer, current + missing
                 )
             }
+        }
+    }
+
+    /** Agrega una billetera propia y devuelve su id. */
+    suspend fun addWallet(name: String): String {
+        val id = "wallet-${System.currentTimeMillis()}"
+        context.walletDataStore.edit { prefs ->
+            val current = prefs[walletsKey]?.let { raw ->
+                runCatching {
+                    PendingOpCodec.json.decodeFromString(walletListSerializer, raw)
+                }.getOrNull()
+            } ?: emptyList()
+            prefs[walletsKey] = PendingOpCodec.json.encodeToString(
+                walletListSerializer,
+                current + WalletRow(id, name.trim(), emptyList(), custom = true)
+            )
+        }
+        return id
+    }
+
+    /** Borra solo billeteras propias (las fijas no se tocan). */
+    suspend fun deleteWallet(id: String) {
+        context.walletDataStore.edit { prefs ->
+            val current = prefs[walletsKey]?.let { raw ->
+                runCatching {
+                    PendingOpCodec.json.decodeFromString(walletListSerializer, raw)
+                }.getOrNull()
+            } ?: emptyList()
+            prefs[walletsKey] = PendingOpCodec.json.encodeToString(
+                walletListSerializer,
+                current.filterNot { it.id == id && it.custom }
+            )
         }
     }
 
@@ -82,7 +114,9 @@ class WalletStore(private val context: Context) {
 data class WalletRow(
     val id: String,
     val name: String,
-    val packages: List<String> = emptyList()
+    val packages: List<String> = emptyList(),
+    /** Creada por el usuario (las fijas no se pueden borrar). */
+    val custom: Boolean = false
 )
 
 fun WalletRow.toResolver() = com.fintrack.app.domain.WalletResolver.Wallet(id, name, packages)

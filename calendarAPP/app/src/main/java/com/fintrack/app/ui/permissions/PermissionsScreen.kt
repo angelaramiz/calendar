@@ -19,6 +19,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fintrack.app.data.AppFilterStore
+import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.service.TransactionNotificationListener
 import com.fintrack.app.domain.NotificationParser
@@ -137,6 +138,8 @@ fun PermissionsScreen(onBack: () -> Unit) {
             DetectorDiagnosticsSection(listenerGranted = listenerGranted)
 
             AppFilterSection()
+
+            WalletsSection()
         }
     }
 }
@@ -365,6 +368,73 @@ private fun AppFilterSection() {
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = {
                     scope.launch { store.addCustom(customPkg); customPkg = "" }
+                }) { Text("Añadir") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WalletsSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val store = remember { WalletStore(context.applicationContext) }
+    val wallets by store.wallets.collectAsState(initial = emptyList())
+    var newName by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) {
+        runCatching { store.ensureDefaults() }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Mis billeteras", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Las fijas vienen por defecto; agrega las tuyas (Banorte, BBVA, etc.) " +
+                    "para elegirlas al registrar.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            wallets.forEach { wallet ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(wallet.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            if (wallet.custom) "Propia" else "Fija",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (wallet.custom) {
+                        TextButton(onClick = {
+                            scope.launch { store.deleteWallet(wallet.id) }
+                        }) { Text("Quitar") }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = newName,
+                    onValueChange = { newName = it },
+                    label = { Text("Nueva billetera") },
+                    placeholder = { Text("Banorte, BBVA…") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = {
+                    scope.launch {
+                        if (newName.isNotBlank()) {
+                            store.addWallet(newName)
+                            newName = ""
+                        }
+                    }
                 }) { Text("Añadir") }
             }
         }

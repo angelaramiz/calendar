@@ -15,6 +15,7 @@ import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.TransactionCategories
 import com.fintrack.app.domain.WalletResolver
+import com.fintrack.app.ui.wallet.NewWalletDialog
 
 /**
  * Registro rápido como ventana (AlertDialog), no pantalla completa.
@@ -27,7 +28,8 @@ fun QuickEntryDialog(
     onCancel: () -> Unit,
     wallets: List<WalletRow> = emptyList(),
     initialWalletId: String? = null,
-    cards: List<CreditCardRow> = emptyList()
+    cards: List<CreditCardRow> = emptyList(),
+    onAddWallet: (String) -> Unit = {}
 ) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("EXPENSE") }
@@ -41,6 +43,7 @@ fun QuickEntryDialog(
     }
     // Tag de tarjeta de crédito (solo gastos): se registra pero se paga al corte.
     var cardId by remember { mutableStateOf<String?>(null) }
+    var showNewWallet by remember { mutableStateOf(false) }
     val isIncome = type == "INCOME"
     val categories = TransactionCategories.forType(isIncome)
     val title = if (isIncome) "Ingreso rápido" else "Gasto rápido"
@@ -118,6 +121,12 @@ fun QuickEntryDialog(
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }
+                        FilterChip(
+                            selected = false,
+                            onClick = { showNewWallet = true },
+                            label = { Text("+ Nueva") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
                     }
                 }
 
@@ -172,4 +181,14 @@ fun QuickEntryDialog(
             TextButton(onClick = onCancel) { Text("Cancelar") }
         }
     )
+
+    if (showNewWallet) {
+        NewWalletDialog(
+            onDismiss = { showNewWallet = false },
+            onSave = { name ->
+                onAddWallet(name)
+                showNewWallet = false
+            }
+        )
+    }
 }

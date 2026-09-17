@@ -16,6 +16,7 @@ import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.TransactionCategories
 import com.fintrack.app.domain.WalletResolver
+import com.fintrack.app.ui.wallet.NewWalletDialog
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -42,7 +43,8 @@ fun AddMovementDialog(
     ) -> Unit,
     isSaving: Boolean = false,
     wallets: List<WalletRow> = emptyList(),
-    cards: List<CreditCardRow> = emptyList()
+    cards: List<CreditCardRow> = emptyList(),
+    onAddWallet: (String) -> Unit = {}
 ) {
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
@@ -56,6 +58,7 @@ fun AddMovementDialog(
         )
     }
     var cardId by remember(date) { mutableStateOf<String?>(null) }
+    var showNewWallet by remember { mutableStateOf(false) }
     var currentDate by remember(date) { mutableStateOf(date) }
     var showPicker by remember { mutableStateOf(false) }
     val categories = TransactionCategories.forType(isIncome)
@@ -154,6 +157,12 @@ fun AddMovementDialog(
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }
+                        FilterChip(
+                            selected = false,
+                            onClick = { showNewWallet = true },
+                            label = { Text("+ Nueva") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
                     }
                 }
 
@@ -200,6 +209,16 @@ fun AddMovementDialog(
             TextButton(onClick = onDismiss, enabled = !isSaving) { Text("Cancelar") }
         }
     )
+
+    if (showNewWallet) {
+        NewWalletDialog(
+            onDismiss = { showNewWallet = false },
+            onSave = { name ->
+                onAddWallet(name)
+                showNewWallet = false
+            }
+        )
+    }
 
     if (showPicker) {
         val pickerState = rememberDatePickerState(

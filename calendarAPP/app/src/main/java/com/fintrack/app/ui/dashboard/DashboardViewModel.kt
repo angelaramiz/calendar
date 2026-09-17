@@ -434,6 +434,19 @@ class DashboardViewModel(
         loadDashboard(silent = true)
     }
 
+    /** Alta de billetera propia + recarga de la lista. */
+    fun addWallet(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            runCatching { walletStore.addWallet(name) }
+            val wallets = runCatching {
+                walletStore.ensureDefaults()
+                walletStore.snapshot()
+            }.getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(wallets = wallets)
+        }
+    }
+
     private suspend fun <T> enqueueOp(
         kind: String,
         serializer: kotlinx.serialization.KSerializer<T>,

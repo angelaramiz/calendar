@@ -69,4 +69,21 @@ class WalletResolverTest {
         )
         assertEquals("efectivo", WalletResolver.resolveMovement("m2", wallets, emptyMap()))
     }
+
+    @Test
+    fun dayNet_solo_cuenta_el_dia_pedido() {
+        val now = YearMonth.now(ZoneOffset.UTC)
+        val todayTs = now.atDay(10).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val yesterdayTs = now.atDay(9).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val txs = listOf(
+            tx("1", "com.nu.production", 500.0).copy(timestamp = todayTs),
+            tx("2", "com.nu.production", 999.0).copy(timestamp = yesterdayTs)
+        )
+        val net = WalletResolver.monthNet(txs, now, wallets, emptyMap())
+        assertEquals(-1499.0, net["nu"] ?: 0.0, 0.0)
+        val day = WalletResolver.dayNet(
+            txs, now.atDay(10), wallets, emptyMap()
+        )
+        assertEquals(-500.0, day["nu"] ?: 0.0, 0.0)
+    }
 }

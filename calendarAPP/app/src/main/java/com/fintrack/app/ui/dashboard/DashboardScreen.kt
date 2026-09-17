@@ -262,8 +262,22 @@ fun DashboardScreen(
                         transaction = transaction,
                         cardName = uiState.cardCharges["tx:${transaction.id}"]
                             ?.let { cardNames[it] },
+                        wallets = uiState.wallets,
+                        cards = uiState.cards,
+                        initialWalletId = uiState.walletOverrides["tx:${transaction.id}"]
+                            ?: com.fintrack.app.domain.WalletResolver.walletForPackage(
+                                transaction.source.takeIf { it != "MANUAL" },
+                                uiState.wallets.map {
+                                    com.fintrack.app.domain.WalletResolver.Wallet(
+                                        it.id, it.name, it.packages
+                                    )
+                                }
+                            ),
+                        initialCardId = uiState.cardCharges["tx:${transaction.id}"],
                         onDelete = { viewModel.deleteTransaction(transaction.id) },
-                        onUpdate = { updated -> viewModel.updateTransaction(transaction.id, updated) }
+                        onUpdate = { updated, walletId, cardId ->
+                            viewModel.updateTransaction(transaction.id, updated, walletId, cardId)
+                        }
                     )
                 }
             }
@@ -410,8 +424,12 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double, credi
 private fun TransactionItem(
     transaction: TransactionEntity,
     onDelete: () -> Unit,
-    onUpdate: (TransactionEntity) -> Unit,
-    cardName: String? = null
+    onUpdate: (TransactionEntity, String?, String?) -> Unit,
+    cardName: String? = null,
+    wallets: List<com.fintrack.app.data.WalletRow> = emptyList(),
+    cards: List<com.fintrack.app.data.CreditCardRow> = emptyList(),
+    initialWalletId: String? = null,
+    initialCardId: String? = null
 ) {
     var showOptions by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -451,8 +469,15 @@ private fun TransactionItem(
     if (showEdit) {
         EditTransactionDialog(
             transaction = transaction,
+            wallets = wallets,
+            cards = cards,
+            initialWalletId = initialWalletId,
+            initialCardId = initialCardId,
             onDismiss = { showEdit = false },
-            onSave = { updated -> showEdit = false; onUpdate(updated) }
+            onSave = { updated, walletId, cardId ->
+                showEdit = false
+                onUpdate(updated, walletId, cardId)
+            }
         )
     }
 
@@ -511,14 +536,21 @@ private fun TransactionItem(
 private fun EditTransactionDialog(
     transaction: TransactionEntity,
     onDismiss: () -> Unit,
-    onSave: (TransactionEntity) -> Unit
+    onSave: (TransactionEntity, String?, String?) -> Unit,
+    wallets: List<com.fintrack.app.data.WalletRow> = emptyList(),
+    cards: List<com.fintrack.app.data.CreditCardRow> = emptyList(),
+    initialWalletId: String? = null,
+    initialCardId: String? = null
 ) {
     var amount by remember(transaction) { mutableStateOf(String.format("%.2f", transaction.amount)) }
     var type by remember(transaction) { mutableStateOf(if (transaction.isIncomeType()) "INCOME" else "EXPENSE") }
     var category by remember(transaction) { mutableStateOf(transaction.category) }
     var description by remember(transaction) { mutableStateOf(transaction.description) }
     var merchant by remember(transaction) { mutableStateOf(transaction.merchant.orEmpty()) }
-    val categories = listOf("Comida", "Transporte", "Servicios", "Ocio", "Otros")
+    var walletId by remember(transaction) { mutableStateOf(initialWalletId) }
+    var cardId by remember(transaction) { mutableStateOf(initialCardId) }
+    val isIncome = type == "INCOME"
+    val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -529,7 +561,12 @@ private fun EditTransactionDialog(
                     listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
                         FilterChip(
                             selected = type == t,
-                            onClick = { type = t },
+                            onClick = {
+                                type = t
+                                category = com.fintrack.app.domain.TransactionCategories
+                                    .defaultFor(t == "INCOME")
+                                if (t == "INCOME") cardId = null
+                            },
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
                         )
@@ -571,6 +608,42 @@ private fun EditTransactionDialog(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Billetera", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id,
+                                onClick = { walletId = wallet.id },
+                                label = { Text(wallet.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
+                if (!isIncome && cards.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Tarjeta", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        FilterChip(
+                            selected = cardId == null,
+                            onClick = { cardId = null },
+                            label = { Text("Débito / Efectivo") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        cards.forEach { card ->
+                            FilterChip(
+                                selected = cardId == card.id,
+                                onClick = { cardId = card.id },
+                                label = { Text(card.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -584,7 +657,9 @@ private fun EditTransactionDialog(
                         category = category,
                         description = description,
                         merchant = merchant.ifBlank { null }
-                    )
+                    ),
+                    walletId,
+                    if (type == "INCOME") null else cardId
                 )
             }) { Text("Guardar") }
         },

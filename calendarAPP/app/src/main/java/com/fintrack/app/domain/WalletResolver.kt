@@ -76,4 +76,22 @@ object WalletResolver {
         }
         return net
     }
+
+    /** Neto del día por billetera (cuadra con la lista visible de Inicio). */
+    fun dayNet(
+        transactions: List<TransactionEntity>,
+        day: java.time.LocalDate,
+        wallets: List<Wallet>,
+        overrides: Map<String, String>
+    ): Map<String, Double> {
+        val net = mutableMapOf<String, Double>()
+        transactions.forEach { tx ->
+            val txDay = Instant.ofEpochMilli(tx.timestamp).atZone(ZoneOffset.UTC).toLocalDate()
+            if (txDay != day) return@forEach
+            val walletId = resolve(tx, wallets, overrides)
+            val signed = if (tx.isIncome()) tx.amount else -tx.amount
+            net[walletId] = (net[walletId] ?: 0.0) + signed
+        }
+        return net
+    }
 }

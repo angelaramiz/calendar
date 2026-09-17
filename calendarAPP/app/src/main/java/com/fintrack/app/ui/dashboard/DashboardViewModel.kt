@@ -49,6 +49,8 @@ data class DashboardUiState(
     val unlocking: Boolean = false,
     /** Billeteras disponibles (locales). */
     val wallets: List<WalletRow> = emptyList(),
+    /** Overrides tx:<id> -> walletId (para prellenar la edición). */
+    val walletOverrides: Map<String, String> = emptyMap(),
     /** Neto del mes por billetera. */
     val walletTotals: Map<String, Double> = emptyMap(),
     /** Filtro por billetera (null = todas). */
@@ -280,8 +282,12 @@ class DashboardViewModel(
                 // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia
                 // sola y todo lo anterior vive en Calendario/Presupuesto.
                 val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
-                val month = java.time.YearMonth.now(java.time.ZoneOffset.UTC)
-                val todays = transactions.onDayUtc(today)
+                val todaysAll = transactions.onDayUtc(today)
+                // Neto diario por billetera (incluye crédito: cuadra con la lista).
+                val dailyTotals = WalletResolver.dayNet(
+                    todaysAll, today, resolverWallets, overrides
+                )
+                val todays = todaysAll
                     .filter { selectedWalletMatches(it, resolverWallets, overrides) }
                 // Gastos con tag de tarjeta: se registran pero no se aplican
                 // al balance del momento (se pagan al corte).
@@ -298,9 +304,8 @@ class DashboardViewModel(
                     totalExpenses = expenses,
                     recentTransactions = todays,
                     wallets = wallets,
-                    walletTotals = WalletResolver.monthNet(
-                        transactions, month, resolverWallets, overrides
-                    ),
+                    walletOverrides = overrides,
+                    walletTotals = dailyTotals,
                     lastWalletId = lastWallet,
                     cards = cards,
                     cardCharges = cardCharges,
@@ -388,8 +393,20 @@ class DashboardViewModel(
         }
     }
 
-    fun updateTransaction(id: String, transaction: TransactionEntity) {
+    fun updateTransaction(
+        id: String,
+        transaction: TransactionEntity,
+        walletId: String? = null,
+        cardId: String? = null
+    ) {
         viewModelScope.launch {
+            // Los tags son locales: se aplican de inmediato, con o sin red.
+            walletId?.let { runCatching { walletStore.setOverride("tx:$id", it) } }
+            if (transaction.isIncomeType()) {
+                runCatching { creditCardStore.setCharge("tx:$id", null) }
+            } else {
+                runCatching { creditCardStore.setCharge("tx:$id", cardId) }
+            }
             val uid = authRepository.ensureSession()
             if (uid == null) {
                 enqueueOp(
@@ -401,6 +418,7 @@ class DashboardViewModel(
                     isLoading = false,
                     updateMessage = "Sin conexión: se modificará al entrar."
                 )
+                loadDashboard(silent = true)
                 return@launch
             }
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)

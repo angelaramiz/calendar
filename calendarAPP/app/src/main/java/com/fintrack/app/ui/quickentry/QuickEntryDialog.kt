@@ -10,8 +10,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.TransactionCategories
+import com.fintrack.app.domain.WalletResolver
 
 /**
  * Registro rápido como ventana (AlertDialog), no pantalla completa.
@@ -20,13 +22,21 @@ import com.fintrack.app.domain.TransactionCategories
  */
 @Composable
 fun QuickEntryDialog(
-    onSave: (TransactionEntity) -> Unit,
-    onCancel: () -> Unit
+    onSave: (TransactionEntity, String?) -> Unit,
+    onCancel: () -> Unit,
+    wallets: List<WalletRow> = emptyList(),
+    initialWalletId: String? = null
 ) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("EXPENSE") }
     var category by remember { mutableStateOf(TransactionCategories.defaultFor(false)) }
     var description by remember { mutableStateOf("") }
+    var walletId by remember(wallets, initialWalletId) {
+        mutableStateOf(
+            initialWalletId?.takeIf { id -> wallets.any { it.id == id } }
+                ?: WalletResolver.EFECTIVO_ID
+        )
+    }
     val isIncome = type == "INCOME"
     val categories = TransactionCategories.forType(isIncome)
     val title = if (isIncome) "Ingreso rápido" else "Gasto rápido"
@@ -88,6 +98,22 @@ fun QuickEntryDialog(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Billetera", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id,
+                                onClick = { walletId = wallet.id },
+                                label = { Text(wallet.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -103,7 +129,8 @@ fun QuickEntryDialog(
                             description = description,
                             timestamp = System.currentTimeMillis(),
                             source = "MANUAL"
-                        )
+                        ),
+                        walletId
                     )
                 },
                 enabled = valid

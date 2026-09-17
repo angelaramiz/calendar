@@ -12,7 +12,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.TransactionCategories
+import com.fintrack.app.domain.WalletResolver
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -33,15 +35,23 @@ fun AddMovementDialog(
         title: String,
         category: String,
         amount: Double,
-        description: String
+        description: String,
+        walletId: String?
     ) -> Unit,
-    isSaving: Boolean = false
+    isSaving: Boolean = false,
+    wallets: List<WalletRow> = emptyList()
 ) {
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
     var title by remember(date) { mutableStateOf("") }
     var category by remember(date) { mutableStateOf(TransactionCategories.defaultFor(false)) }
     var description by remember(date) { mutableStateOf("") }
+    var walletId by remember(date, wallets) {
+        mutableStateOf(
+            wallets.firstOrNull { it.id == WalletResolver.EFECTIVO_ID }?.id
+                ?: wallets.firstOrNull()?.id
+        )
+    }
     var currentDate by remember(date) { mutableStateOf(date) }
     var showPicker by remember { mutableStateOf(false) }
     val categories = TransactionCategories.forType(isIncome)
@@ -125,6 +135,22 @@ fun AddMovementDialog(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Billetera", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id,
+                                onClick = { walletId = wallet.id },
+                                label = { Text(wallet.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -132,7 +158,7 @@ fun AddMovementDialog(
                 onClick = {
                     val value = amount.toDoubleOrNull() ?: return@TextButton
                     if (value <= 0) return@TextButton
-                    onSave(currentDate, isIncome, title, category, value, description)
+                    onSave(currentDate, isIncome, title, category, value, description, walletId)
                 },
                 enabled = valid
             ) { Text(if (isSaving) "Guardando…" else "Guardar") }

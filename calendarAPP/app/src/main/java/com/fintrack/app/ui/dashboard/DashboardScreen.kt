@@ -198,6 +198,18 @@ fun DashboardScreen(
                 Text("Transacciones de hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             }
 
+            // Billeteras: neto del mes + filtro de la lista.
+            if (uiState.wallets.isNotEmpty()) {
+                item {
+                    WalletFilterRow(
+                        wallets = uiState.wallets,
+                        totals = uiState.walletTotals,
+                        selectedId = uiState.selectedWalletId,
+                        onSelect = { viewModel.selectWallet(it) }
+                    )
+                }
+            }
+
             if (uiState.recentTransactions.isEmpty()) {
                 item {
                     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
@@ -253,6 +265,32 @@ fun DashboardScreen(
             }
 
             item { Spacer(modifier = Modifier.height(80.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun WalletFilterRow(
+    wallets: List<com.fintrack.app.data.WalletRow>,
+    totals: Map<String, Double>,
+    selectedId: String?,
+    onSelect: (String?) -> Unit
+) {
+    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        FilterChip(
+            selected = selectedId == null,
+            onClick = { onSelect(null) },
+            label = { Text("Todas") },
+            modifier = Modifier.padding(end = 4.dp)
+        )
+        wallets.forEach { wallet ->
+            val net = totals[wallet.id] ?: 0.0
+            FilterChip(
+                selected = selectedId == wallet.id,
+                onClick = { onSelect(if (selectedId == wallet.id) null else wallet.id) },
+                label = { Text("${wallet.name} · $${String.format("%.0f", net)}") },
+                modifier = Modifier.padding(end = 4.dp)
+            )
         }
     }
 }

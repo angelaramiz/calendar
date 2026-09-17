@@ -3,9 +3,22 @@ package com.fintrack.app.ui.dashboard
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.CredentialStore
+import com.fintrack.app.data.PendingOp
+import com.fintrack.app.data.PendingOpCodec
+import com.fintrack.app.data.PendingOpKind
+import com.fintrack.app.data.PendingOpStore
+import com.fintrack.app.data.PendingOpSync
 import com.fintrack.app.data.PendingTx
 import com.fintrack.app.data.PendingTxStore
+import com.fintrack.app.data.TxIdPayload
+import com.fintrack.app.data.TxInsertPayload
+import com.fintrack.app.data.TxUpdatePayload
+import com.fintrack.app.data.WalletRow
+import com.fintrack.app.data.WalletStore
+import com.fintrack.app.data.toResolver
 import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.domain.WalletResolver
+import com.fintrack.app.domain.isRecoverableError
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.data.repository.OtaUpdateInfo
@@ -18,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.KSerializer
 
 data class DashboardUiState(
     val currentBalance: Double = 0.0,
@@ -31,6 +45,14 @@ data class DashboardUiState(
     val canUnlockWithBiometrics: Boolean = false,
     /** Entrando con huella (evita doble tap). */
     val unlocking: Boolean = false,
+    /** Billeteras disponibles (locales). */
+    val wallets: List<WalletRow> = emptyList(),
+    /** Neto del mes por billetera. */
+    val walletTotals: Map<String, Double> = emptyMap(),
+    /** Filtro por billetera (null = todas). */
+    val selectedWalletId: String? = null,
+    /** Última billetera usada en registro manual. */
+    val lastWalletId: String? = null,
     val updateAvailable: OtaUpdateInfo? = null,
     val updateMessage: String? = null,
     /** Progreso 0..100 mientras descarga (null = sin descarga activa). */
@@ -44,7 +66,10 @@ class DashboardViewModel(
     private val authRepository: AuthRepository,
     private val otaUpdateRepository: OtaUpdateRepository,
     private val credentialStore: CredentialStore,
-    private val pendingTxStore: PendingTxStore
+    private val pendingTxStore: PendingTxStore,
+    private val pendingOpStore: PendingOpStore,
+    private val walletStore: WalletStore,
+    private val opSync: PendingOpSync
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -183,25 +208,32 @@ class DashboardViewModel(
     }
 
     /**
-     * Sube la cola local de detecciones (guardadas sin sesión) y la vacía.
+     * Sube la cola local de detecciones y la bandeja de operaciones manuales.
      * Se llama al abrir la app y tras cada login/desbloqueo.
      */
     fun syncPending() {
         viewModelScope.launch {
             val uid = authRepository.ensureSession() ?: return@launch
+            var syncedTx = 0
             val queued = runCatching { pendingTxStore.snapshot() }.getOrNull()
-                ?: return@launch
-            if (queued.isEmpty()) return@launch
-            val synced = mutableListOf<PendingTx>()
-            for (item in queued) {
-                runCatching {
-                    transactionRepository.insertTransaction(uid, item.tx)
-                }.onSuccess { synced.add(item) }.onFailure { break }
+                ?: emptyList()
+            if (queued.isNotEmpty()) {
+                val synced = mutableListOf<PendingTx>()
+                for (item in queued) {
+                    runCatching {
+                        transactionRepository.insertTransaction(uid, item.tx)
+                    }.onSuccess { synced.add(item) }.onFailure { break }
+                }
+                if (synced.isNotEmpty()) {
+                    runCatching { pendingTxStore.removeAll(synced) }
+                    syncedTx = synced.size
+                }
             }
-            if (synced.isNotEmpty()) {
-                runCatching { pendingTxStore.removeAll(synced) }
+            val syncedOps = runCatching { opSync.sync(uid) }.getOrDefault(0)
+            val total = syncedTx + syncedOps
+            if (total > 0) {
                 _uiState.value = _uiState.value.copy(
-                    updateMessage = "${synced.size} movimiento(s) del teléfono sincronizados."
+                    updateMessage = "$total movimiento(s) del teléfono sincronizados."
                 )
                 loadDashboard()
             }
@@ -224,10 +256,20 @@ class DashboardViewModel(
             }
             try {
                 val transactions = transactionRepository.getTransactions(userId)
+                val wallets = runCatching {
+                    walletStore.ensureDefaults()
+                    walletStore.snapshot()
+                }.getOrDefault(emptyList())
+                val overrides = runCatching { walletStore.overridesSnapshot() }
+                    .getOrDefault(emptyMap())
+                val lastWallet = runCatching { walletStore.lastSnapshot() }.getOrNull()
+                val resolverWallets = wallets.map { it.toResolver() }
                 // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia
                 // sola y todo lo anterior vive en Calendario/Presupuesto.
                 val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+                val month = java.time.YearMonth.now(java.time.ZoneOffset.UTC)
                 val todays = transactions.onDayUtc(today)
+                    .filter { selectedWalletMatches(it, resolverWallets, overrides) }
                 val income = todays.filter { it.isIncomeType() }.sumOf { it.amount }
                 val expenses = todays.filter { !it.isIncomeType() }.sumOf { it.amount }
 
@@ -236,6 +278,11 @@ class DashboardViewModel(
                     totalIncome = income,
                     totalExpenses = expenses,
                     recentTransactions = todays,
+                    wallets = wallets,
+                    walletTotals = WalletResolver.monthNet(
+                        transactions, month, resolverWallets, overrides
+                    ),
+                    lastWalletId = lastWallet,
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -244,56 +291,145 @@ class DashboardViewModel(
         }
     }
 
-    fun addTransaction(transaction: TransactionEntity) {
-        if (userId.isEmpty()) {
-            _uiState.value = _uiState.value.copy(
-                needsLogin = true,
-                error = "Inicia sesión para guardar transacciones."
-            )
-            return
-        }
+    fun addTransaction(transaction: TransactionEntity, walletId: String? = null) {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-            try {
-                transactionRepository.insertTransaction(userId, transaction)
-                loadDashboard()
-            } catch (e: Exception) {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                enqueueOp(
+                    PendingOpKind.TX_INSERT,
+                    TxInsertPayload.serializer(),
+                    TxInsertPayload(transaction, walletId)
+                )
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "No se pudo guardar: ${e.message?.take(150)}"
+                    updateMessage = "Sin conexión: se guardará al entrar."
                 )
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                val saved = transactionRepository.insertTransaction(uid, transaction)
+                walletId?.let { runCatching { walletStore.setOverride("tx:${saved.id}", it) } }
+                runCatching { walletStore.setLast(walletId ?: WalletResolver.EFECTIVO_ID) }
+                loadDashboard()
+            } catch (e: Exception) {
+                if (isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.TX_INSERT,
+                        TxInsertPayload.serializer(),
+                        TxInsertPayload(transaction, walletId)
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        updateMessage = "Sin conexión: se guardará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "No se pudo guardar: ${e.message?.take(150)}"
+                    )
+                }
             }
         }
     }
 
     fun deleteTransaction(id: String) {
-        if (userId.isEmpty()) return
         viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                _uiState.value = _uiState.value.copy(
+                    updateMessage = "Sin conexión: se eliminará al entrar."
+                )
+                return@launch
+            }
             try {
                 transactionRepository.deleteTransaction(id)
                 loadDashboard()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    error = "No se pudo eliminar: ${e.message?.take(150)}"
-                )
+                if (isRecoverableError(e)) {
+                    enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                    _uiState.value = _uiState.value.copy(
+                        updateMessage = "Sin conexión: se eliminará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "No se pudo eliminar: ${e.message?.take(150)}"
+                    )
+                }
             }
         }
     }
 
     fun updateTransaction(id: String, transaction: TransactionEntity) {
-        if (userId.isEmpty()) return
         viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                enqueueOp(
+                    PendingOpKind.TX_UPDATE,
+                    TxUpdatePayload.serializer(),
+                    TxUpdatePayload(id, transaction)
+                )
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    updateMessage = "Sin conexión: se modificará al entrar."
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
                 transactionRepository.updateTransaction(id, transaction)
                 loadDashboard()
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    error = "No se pudo modificar: ${e.message?.take(150)}"
-                )
+                if (isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.TX_UPDATE,
+                        TxUpdatePayload.serializer(),
+                        TxUpdatePayload(id, transaction)
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        updateMessage = "Sin conexión: se modificará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "No se pudo modificar: ${e.message?.take(150)}"
+                    )
+                }
             }
         }
+    }
+
+    /** Filtro por billetera (null = todas) + recarga. */
+    fun selectWallet(walletId: String?) {
+        _uiState.value = _uiState.value.copy(selectedWalletId = walletId)
+        loadDashboard(silent = true)
+    }
+
+    private suspend fun <T> enqueueOp(
+        kind: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        payload: T
+    ) {
+        runCatching {
+            pendingOpStore.enqueue(
+                PendingOp(
+                    id = "op-${System.currentTimeMillis()}-${(0..9999).random()}",
+                    kind = kind,
+                    payload = PendingOpCodec.json.encodeToString(serializer, payload)
+                )
+            )
+        }
+    }
+
+    private fun selectedWalletMatches(
+        tx: TransactionEntity,
+        wallets: List<WalletResolver.Wallet>,
+        overrides: Map<String, String>
+    ): Boolean {
+        val selected = _uiState.value.selectedWalletId ?: return true
+        return WalletResolver.resolve(tx, wallets, overrides) == selected
     }
 }
 

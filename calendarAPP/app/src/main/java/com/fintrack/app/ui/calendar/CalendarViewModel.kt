@@ -2,6 +2,15 @@ package com.fintrack.app.ui.calendar
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.MovConfirmPayload
+import com.fintrack.app.data.MovInsertPayload
+import com.fintrack.app.data.PatternOpPayload
+import com.fintrack.app.data.PendingOp
+import com.fintrack.app.data.PendingOpCodec
+import com.fintrack.app.data.PendingOpKind
+import com.fintrack.app.data.PendingOpStore
+import com.fintrack.app.data.WalletRow
+import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.MovementRow
@@ -52,7 +61,9 @@ data class CalendarUiState(
     /** Patrón en edición (null = creando uno nuevo). */
     val patternEditTarget: Pattern? = null,
     val isSaving: Boolean = false,
-    val needsLogin: Boolean = false
+    val needsLogin: Boolean = false,
+    /** Billeteras para el selector del formulario. */
+    val wallets: List<WalletRow> = emptyList()
 )
 
 private fun MovementRow.isIncomeRow(): Boolean =
@@ -65,7 +76,9 @@ private fun TransactionEntity.isIncomeTx(): Boolean =
 class CalendarViewModel(
     private val patternRepository: PatternRepository,
     private val transactionRepository: TransactionRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val pendingOpStore: PendingOpStore,
+    private val walletStore: WalletStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -75,6 +88,13 @@ class CalendarViewModel(
 
     init {
         loadMonth(YearMonth.now())
+        viewModelScope.launch {
+            val wallets = runCatching {
+                walletStore.ensureDefaults()
+                walletStore.snapshot()
+            }.getOrDefault(emptyList())
+            _uiState.value = _uiState.value.copy(wallets = wallets)
+        }
     }
 
     fun loadMonth(yearMonth: YearMonth) {
@@ -220,9 +240,35 @@ class CalendarViewModel(
             _uiState.value = _uiState.value.copy(error = validationError)
             return
         }
-        if (userId.isEmpty() || startDate == null) return
+        if (startDate == null) return
         val editTarget = _uiState.value.patternEditTarget
         viewModelScope.launch {
+            // Sin sesión: a la bandeja (se sube al entrar).
+            if (authRepository.ensureSession() == null || userId.isEmpty()) {
+                enqueueOp(
+                    if (editTarget != null) PendingOpKind.PATTERN_UPDATE
+                    else PendingOpKind.PATTERN_INSERT,
+                    PatternOpPayload.serializer(),
+                    PatternOpPayload(
+                        patternId = editTarget?.id,
+                        isIncome = editTarget?.type == "INCOME" || (editTarget == null && isIncome),
+                        name = name.trim(),
+                        description = description.trim(),
+                        category = category.ifBlank { "Otros" },
+                        baseAmount = baseAmount,
+                        frequency = frequency,
+                        startDateIso = startDate.toString(),
+                        endDateIso = endDate?.toString()
+                    )
+                )
+                _uiState.value = _uiState.value.copy(
+                    showPatternDialog = false,
+                    patternEditTarget = null,
+                    isSaving = false,
+                    error = "Sin conexión: el recurrente se guardará al entrar."
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
             try {
                 if (editTarget != null) {
@@ -258,7 +304,32 @@ class CalendarViewModel(
                 )
                 loadMonth(YearMonth.from(startDate))
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        if (editTarget != null) PendingOpKind.PATTERN_UPDATE
+                        else PendingOpKind.PATTERN_INSERT,
+                        PatternOpPayload.serializer(),
+                        PatternOpPayload(
+                            patternId = editTarget?.id,
+                            isIncome = editTarget?.type == "INCOME" || (editTarget == null && isIncome),
+                            name = name.trim(),
+                            description = description.trim(),
+                            category = category.ifBlank { "Otros" },
+                            baseAmount = baseAmount,
+                            frequency = frequency,
+                            startDateIso = startDate.toString(),
+                            endDateIso = endDate?.toString()
+                        )
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        showPatternDialog = false,
+                        patternEditTarget = null,
+                        isSaving = false,
+                        error = "Sin conexión: el recurrente se guardará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                }
             }
         }
     }
@@ -266,8 +337,25 @@ class CalendarViewModel(
     /** Desactiva el recurrente en edición: no se proyecta más, se conserva el historial. */
     fun deactivatePattern() {
         val target = _uiState.value.patternEditTarget ?: return
-        if (userId.isEmpty()) return
+        val payload = PatternOpPayload(
+            patternId = target.id,
+            isIncome = target.type == "INCOME"
+        )
         viewModelScope.launch {
+            if (authRepository.ensureSession() == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.PATTERN_DEACTIVATE,
+                    PatternOpPayload.serializer(),
+                    payload
+                )
+                _uiState.value = _uiState.value.copy(
+                    showPatternDialog = false,
+                    patternEditTarget = null,
+                    isSaving = false,
+                    error = "Sin conexión: la baja se guardará al entrar."
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
             try {
                 patternRepository.deactivatePattern(
@@ -281,7 +369,21 @@ class CalendarViewModel(
                 )
                 loadMonth(_uiState.value.yearMonth)
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.PATTERN_DEACTIVATE,
+                        PatternOpPayload.serializer(),
+                        payload
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        showPatternDialog = false,
+                        patternEditTarget = null,
+                        isSaving = false,
+                        error = "Sin conexión: la baja se guardará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                }
             }
         }
     }
@@ -292,21 +394,48 @@ class CalendarViewModel(
         title: String,
         category: String,
         amount: Double,
-        description: String
+        description: String,
+        walletId: String? = null
     ) {
-        if (userId.isEmpty() || amount <= 0.0) return
+        if (amount <= 0.0) return
+        val cleanTitle = title.ifBlank { category }
+        val cleanCategory = category.ifBlank { "Otros" }
         viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.MOV_INSERT,
+                    MovInsertPayload.serializer(),
+                    MovInsertPayload(
+                        dateIso = date.toString(),
+                        isIncome = isIncome,
+                        title = cleanTitle,
+                        description = description,
+                        category = cleanCategory,
+                        amount = amount,
+                        walletId = walletId
+                    )
+                )
+                _uiState.value = _uiState.value.copy(
+                    addTarget = null,
+                    isSaving = false,
+                    selectedDate = date,
+                    error = "Sin conexión: el movimiento se guardará al entrar."
+                )
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(isSaving = true, error = null)
             try {
-                patternRepository.addManualMovement(
+                val saved = patternRepository.addManualMovement(
                     userId = userId,
                     dateIso = date.toString(),
                     isIncome = isIncome,
-                    title = title.ifBlank { category },
+                    title = cleanTitle,
                     description = description,
-                    category = category.ifBlank { "Otros" },
+                    category = cleanCategory,
                     amount = amount
                 )
+                walletId?.let { runCatching { walletStore.setOverride("mov:${saved.id}", it) } }
                 _uiState.value = _uiState.value.copy(
                     addTarget = null,
                     isSaving = false,
@@ -314,14 +443,57 @@ class CalendarViewModel(
                 )
                 loadMonth(YearMonth.from(date))
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.MOV_INSERT,
+                        MovInsertPayload.serializer(),
+                        MovInsertPayload(
+                            dateIso = date.toString(),
+                            isIncome = isIncome,
+                            title = cleanTitle,
+                            description = description,
+                            category = cleanCategory,
+                            amount = amount,
+                            walletId = walletId
+                        )
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        addTarget = null,
+                        isSaving = false,
+                        selectedDate = date,
+                        error = "Sin conexión: el movimiento se guardará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                }
             }
         }
     }
 
     fun confirmOccurrence(occurrence: Occurrence, actualAmount: Double) {
-        if (userId.isEmpty()) return
+        val pattern = occurrence.pattern
         viewModelScope.launch {
+            if (authRepository.ensureSession() == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.MOV_CONFIRM,
+                    MovConfirmPayload.serializer(),
+                    MovConfirmPayload(
+                        patternId = pattern.id,
+                        isIncome = pattern.type == "INCOME",
+                        name = pattern.name,
+                        description = pattern.description,
+                        category = pattern.category,
+                        baseAmount = pattern.baseAmount,
+                        actualAmount = actualAmount,
+                        dateIso = occurrence.date.toString()
+                    )
+                )
+                _uiState.value = _uiState.value.copy(
+                    confirmTarget = null,
+                    error = "Sin conexión: la confirmación se guardará al entrar."
+                )
+                return@launch
+            }
             try {
                 patternRepository.confirmOccurrence(
                     userId, occurrence, actualAmount, occurrence.date.toString()
@@ -329,11 +501,48 @@ class CalendarViewModel(
                 _uiState.value = _uiState.value.copy(confirmTarget = null)
                 loadMonth(_uiState.value.yearMonth)
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    confirmTarget = null,
-                    error = e.message
-                )
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.MOV_CONFIRM,
+                        MovConfirmPayload.serializer(),
+                        MovConfirmPayload(
+                            patternId = pattern.id,
+                            isIncome = pattern.type == "INCOME",
+                            name = pattern.name,
+                            description = pattern.description,
+                            category = pattern.category,
+                            baseAmount = pattern.baseAmount,
+                            actualAmount = actualAmount,
+                            dateIso = occurrence.date.toString()
+                        )
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        confirmTarget = null,
+                        error = "Sin conexión: la confirmación se guardará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        confirmTarget = null,
+                        error = e.message
+                    )
+                }
             }
+        }
+    }
+
+    private suspend fun <T> enqueueOp(
+        kind: String,
+        serializer: kotlinx.serialization.KSerializer<T>,
+        payload: T
+    ) {
+        runCatching {
+            pendingOpStore.enqueue(
+                PendingOp(
+                    id = "op-${System.currentTimeMillis()}-${(0..9999).random()}",
+                    kind = kind,
+                    payload = PendingOpCodec.json.encodeToString(serializer, payload)
+                )
+            )
         }
     }
 }

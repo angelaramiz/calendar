@@ -1,9 +1,13 @@
 package com.fintrack.app.di
 
+import com.fintrack.app.data.BudgetCapsStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.FlowStore
 import com.fintrack.app.data.GoalStore
+import com.fintrack.app.data.PendingOpStore
+import com.fintrack.app.data.PendingOpSync
 import com.fintrack.app.data.PendingTxStore
+import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.PatternRepository
@@ -26,9 +30,13 @@ val appModule = module {
     single { GoalStore(androidContext()) }
     single { PendingTxStore(androidContext()) }
     single { CredentialStore(androidContext()) }
-    viewModel { DashboardViewModel(get(), get(), get(), get(), get()) }
+    single { PendingOpStore(androidContext()) }
+    single { WalletStore(androidContext()) }
+    single { BudgetCapsStore(androidContext()) }
+    single { PendingOpSync(get(), get(), get(), get()) }
+    viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AuthViewModel(get(), get()) }
-    viewModel { CalendarViewModel(get(), get(), get()) }
+    viewModel { CalendarViewModel(get(), get(), get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get(), get()) }
-    viewModel { BudgetViewModel(get(), get(), get(), get()) }
+    viewModel { BudgetViewModel(get(), get(), get(), get(), get()) }
 }

@@ -99,16 +99,19 @@ object BudgetPlanner {
 
     fun buildShortTerm(
         transactions: List<TransactionEntity>,
-        month: YearMonth
+        month: YearMonth,
+        customCaps: Map<String, Double> = emptyMap()
     ): ShortTermReport {
         val income = monthIncome(transactions, month)
         val spent = spentByCategory(transactions, month)
         val caps = categoryCaps(income)
-        val categories = (caps.keys + spent.keys).sorted()
+        val categories = (caps.keys + spent.keys + customCaps.keys).sorted()
         val items = categories.map { category ->
+            val custom = customCaps[category]?.takeIf { it > 0.0 }
             CategoryBudget(
                 category = category,
-                cap = if (income <= 0.0) 0.0 else (caps[category] ?: income * DEFAULT_CAP_RATIO),
+                cap = custom
+                    ?: if (income <= 0.0) 0.0 else (caps[category] ?: income * DEFAULT_CAP_RATIO),
                 spent = spent[category] ?: 0.0
             )
         }

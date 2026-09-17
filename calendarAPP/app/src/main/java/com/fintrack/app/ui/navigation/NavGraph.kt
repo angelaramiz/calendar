@@ -3,6 +3,8 @@ package com.fintrack.app.ui.navigation
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -111,9 +113,12 @@ fun FinTrackNavGraph(
         dialog(Routes.QUICK_ENTRY) {
             val dashboardViewModel: DashboardViewModel =
                 koinViewModel(viewModelStoreOwner = activity)
+            val dashState by dashboardViewModel.uiState.collectAsState()
             QuickEntryDialog(
-                onSave = { transaction ->
-                    dashboardViewModel.addTransaction(transaction)
+                wallets = dashState.wallets,
+                initialWalletId = dashState.lastWalletId,
+                onSave = { transaction, walletId ->
+                    dashboardViewModel.addTransaction(transaction, walletId)
                     navController.popBackStack()
                 },
                 onCancel = { navController.popBackStack() }

@@ -43,6 +43,48 @@ class BudgetPlannerTest {
     )
 
     @Test
+    fun tope_personalizado_reemplaza_al_automatico() {
+        val month = YearMonth.of(2026, 9)
+        val transactions = listOf(
+            tx("INCOME", "Sueldo", 10_000.0, LocalDate.of(2026, 9, 1)),
+            tx("EXPENSE", "Comida", 1_000.0, LocalDate.of(2026, 9, 5))
+        )
+        val report = BudgetPlanner.buildShortTerm(
+            transactions, month, mapOf("Comida" to 800.0)
+        )
+        val comida = report.items.first { it.category == "Comida" }
+        assertEquals(800.0, comida.cap, 0.01)
+        assertTrue(comida.overCap)
+    }
+
+    @Test
+    fun tope_personalizado_cero_o_negativo_no_aplica() {
+        val month = YearMonth.of(2026, 9)
+        val transactions = listOf(
+            tx("INCOME", "Sueldo", 10_000.0, LocalDate.of(2026, 9, 1))
+        )
+        val report = BudgetPlanner.buildShortTerm(
+            transactions, month, mapOf("Comida" to 0.0)
+        )
+        val comida = report.items.first { it.category == "Comida" }
+        assertEquals(2_500.0, comida.cap, 0.01)
+    }
+
+    @Test
+    fun tope_personalizado_crea_categoria_sin_gasto() {
+        val month = YearMonth.of(2026, 9)
+        val transactions = listOf(
+            tx("INCOME", "Sueldo", 10_000.0, LocalDate.of(2026, 9, 1))
+        )
+        val report = BudgetPlanner.buildShortTerm(
+            transactions, month, mapOf("Vivienda" to 3_000.0)
+        )
+        val vivienda = report.items.first { it.category == "Vivienda" }
+        assertEquals(3_000.0, vivienda.cap, 0.01)
+        assertEquals(0.0, vivienda.spent, 0.01)
+    }
+
+    @Test
     fun topes_por_categoria_aplican_porcentajes_del_ingreso() {
         val caps = BudgetPlanner.categoryCaps(10_000.0)
 

@@ -16,7 +16,8 @@ class TransactionRepository {
         db.from("fintrack_transactions").select {
             filter { eq("user_id", userId) }
             order("timestamp", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
-            limit(50)
+            // Ventana amplia: suscripciones (6 meses) y promedios la necesitan.
+            limit(200)
         }.decodeList<TransactionEntity>()
     }
 

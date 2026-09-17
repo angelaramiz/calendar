@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -76,6 +79,13 @@ fun BudgetScreen(
     viewModel: BudgetViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    uiState.info?.let { info ->
+        LaunchedEffect(info) {
+            kotlinx.coroutines.delay(5000)
+            viewModel.clearInfo()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -148,6 +158,18 @@ fun BudgetScreen(
                 }
             }
 
+            uiState.info?.let { info ->
+                item {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                        Text(
+                            text = info,
+                            modifier = Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
+            }
+
             item {
                 SectionHeader(title = "Corto plazo", subtitle = "Este mes")
             }
@@ -168,6 +190,27 @@ fun BudgetScreen(
                         }
                     }
                 }
+            }
+
+            item {
+                SectionHeader(title = "Topes del mes", subtitle = "Límites por categoría")
+            }
+            item {
+                CapEditorCard(
+                    items = uiState.shortTerm?.items ?: emptyList(),
+                    customCaps = uiState.customCaps,
+                    onSetCap = { category, cap -> viewModel.setCap(category, cap) }
+                )
+            }
+
+            item {
+                SectionHeader(title = "Suscripciones", subtitle = "Cargos repetidos")
+            }
+            item {
+                SubscriptionCard(
+                    subscriptions = uiState.subscriptions,
+                    onCreate = { viewModel.createSubscriptionPattern(it) }
+                )
             }
 
             item {
@@ -340,6 +383,140 @@ fun BudgetScreen(
             }
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun CapEditorCard(
+    items: List<CategoryBudget>,
+    customCaps: Map<String, Double>,
+    onSetCap: (String, Double) -> Unit
+) {
+    var editing by remember { mutableStateOf<String?>(null) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                "Toca Definir para poner tu propio tope; sin tope se usa el automático según tu ingreso.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (items.isEmpty()) {
+                Text("Sin movimientos este mes.")
+            } else {
+                items.forEach { item ->
+                    val custom = customCaps[item.category]
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(item.category, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (custom != null) "Tope propio: ${formatMoney(custom)}"
+                                else "Tope auto: ${formatMoney(item.cap)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(onClick = { editing = item.category }) {
+                            Text("Definir")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    editing?.let { category ->
+        CapEditDialog(
+            category = category,
+            currentCap = customCaps[category],
+            onDismiss = { editing = null },
+            onSave = { cap ->
+                onSetCap(category, cap)
+                editing = null
+            }
+        )
+    }
+}
+
+@Composable
+private fun CapEditDialog(
+    category: String,
+    currentCap: Double?,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var capText by remember(category) {
+        mutableStateOf(currentCap?.let { formatMoney(it) } ?: "")
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Tope de $category") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = capText,
+                    onValueChange = { raw ->
+                        capText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                    },
+                    label = { Text("Tope mensual") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                if (currentCap != null) {
+                    Text(
+                        "Tope actual: ${formatMoney(currentCap)} (vacía y guarda para volver al automático).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val cap = capText.replace(".", "").replace(",", "").toDoubleOrNull() ?: 0.0
+                onSave(cap)
+            }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+@Composable
+private fun SubscriptionCard(
+    subscriptions: List<com.fintrack.app.domain.SubscriptionCandidate>,
+    onCreate: (com.fintrack.app.domain.SubscriptionCandidate) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (subscriptions.isEmpty()) {
+                Text("Sin suscripciones detectadas. Aparecen con 3+ cobros iguales del mismo comercio.")
+            } else {
+                subscriptions.forEach { sub ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(sub.merchant, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${formatMoney(sub.amount)} al mes · ${sub.months.size} meses · " +
+                                    "próximo ${sub.nextExpected.dayOfMonth}/${sub.nextExpected.monthValue}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Button(onClick = { onCreate(sub) }) {
+                            Text("Crear recurrente")
+                        }
+                    }
+                }
+            }
         }
     }
 }

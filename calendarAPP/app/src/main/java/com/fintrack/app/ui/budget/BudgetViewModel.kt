@@ -2,6 +2,7 @@ package com.fintrack.app.ui.budget
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.BudgetCapsStore
 import com.fintrack.app.data.GoalStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.PatternRepository
@@ -16,6 +17,8 @@ import com.fintrack.app.domain.GoalPlanner
 import com.fintrack.app.domain.SavingsGoal
 import com.fintrack.app.domain.MonthProjection
 import com.fintrack.app.domain.ShortTermReport
+import com.fintrack.app.domain.SubscriptionCandidate
+import com.fintrack.app.domain.SubscriptionDetector
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +34,11 @@ data class BudgetUiState(
     val goalEvaluation: GoalEvaluation? = null,
     val goals: List<SavingsGoal> = emptyList(),
     val selectedGoalId: String? = null,
+    /** Topes mensuales definidos por el usuario (reemplazan los automáticos). */
+    val customCaps: Map<String, Double> = emptyMap(),
+    /** Suscripciones detectadas (cargos repetidos sin patrón). */
+    val subscriptions: List<SubscriptionCandidate> = emptyList(),
+    val info: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val needsLogin: Boolean = false
@@ -40,7 +48,8 @@ class BudgetViewModel(
     private val transactionRepository: TransactionRepository,
     private val patternRepository: PatternRepository,
     private val authRepository: AuthRepository,
-    private val goalStore: GoalStore
+    private val goalStore: GoalStore,
+    private val capsStore: BudgetCapsStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BudgetUiState())
@@ -87,12 +96,17 @@ class BudgetViewModel(
             _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
             try {
                 val month = YearMonth.now()
+                val caps = runCatching { capsStore.snapshot() }.getOrDefault(emptyMap())
+                _uiState.value = _uiState.value.copy(customCaps = caps)
                 val transactions = transactionRepository.getTransactions(userId)
                 val patterns =
                     patternRepository.getIncomePatterns(userId).mapNotNull { it.toDomain("INCOME") } +
                         patternRepository.getExpensePatterns(userId).mapNotNull { it.toDomain("EXPENSE") }
-                val shortTerm = BudgetPlanner.buildShortTerm(transactions, month)
+                val shortTerm = BudgetPlanner.buildShortTerm(
+                    transactions, month, _uiState.value.customCaps
+                )
                 val mediumTerm = BudgetPlanner.buildMediumTerm(patterns, transactions, month)
+                val subscriptions = SubscriptionDetector.detect(transactions, patterns, month)
                 val evaluation = BudgetPlanner.evaluateGoal(
                     _uiState.value.goalAmount,
                     _uiState.value.goalMonths,
@@ -102,6 +116,7 @@ class BudgetViewModel(
                     currentMonth = month,
                     shortTerm = shortTerm,
                     mediumTerm = mediumTerm,
+                    subscriptions = subscriptions,
                     goalEvaluation = evaluation,
                     isLoading = false
                 )
@@ -127,6 +142,44 @@ class BudgetViewModel(
 
     fun clearError() {
         _uiState.value = _uiState.value.copy(error = null)
+    }
+
+    fun clearInfo() {
+        _uiState.value = _uiState.value.copy(info = null)
+    }
+
+    /** Define el tope mensual de una categoría (<=0 lo devuelve al automático). */
+    fun setCap(category: String, cap: Double) {
+        viewModelScope.launch {
+            runCatching { capsStore.setCap(category, cap) }
+            loadBudget()
+        }
+    }
+
+    /** Convierte una suscripción detectada en recurrente mensual de gasto. */
+    fun createSubscriptionPattern(candidate: SubscriptionCandidate) {
+        if (userId.isEmpty()) return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, info = null)
+            try {
+                patternRepository.insertPattern(
+                    userId = userId,
+                    isIncome = false,
+                    name = candidate.merchant,
+                    description = "Detectada automáticamente",
+                    category = candidate.category,
+                    baseAmount = candidate.amount,
+                    frequency = "monthly",
+                    startDateIso = candidate.nextExpected.toString()
+                )
+                _uiState.value = _uiState.value.copy(
+                    info = "${candidate.merchant} ahora es recurrente mensual."
+                )
+                loadBudget()
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+            }
+        }
     }
 
     val selectedGoal: SavingsGoal?

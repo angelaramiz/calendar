@@ -268,6 +268,23 @@ private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(it, style = MaterialTheme.typography.bodyMedium)
             }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Recordatorios diarios", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "Revisión de vencimientos, pagos y eventos (~8:00). " +
+                    "Solo avisa a 3, 1 y 0 días: si nada vence pronto, callarse es lo correcto. " +
+                    "Pruébalo ahora:",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                runCatching {
+                    com.fintrack.app.data.service.RemindersWorker.runNow(
+                        context.applicationContext
+                    )
+                }
+            }) { Text("Probar recordatorios") }
         }
     }
 }

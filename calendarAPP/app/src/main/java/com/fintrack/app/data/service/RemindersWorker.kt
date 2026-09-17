@@ -111,9 +111,18 @@ class RemindersWorker(appContext: Context, params: WorkerParameters) :
         private const val WORK_NAME = "fintrack_daily_reminders"
         private val REMIND_DAYS = setOf(3, 1, 0)
 
+        /**
+         * Lanza una revisión inmediata (botón Probar): ejecuta la misma
+         * lógica sin esperar a las 8:00. Si algo vence en 3/1/0 días (o hay
+         * eventos hoy), el aviso sale en segundos.
+         */
+        fun runNow(context: Context) {
+            val request = androidx.work.OneTimeWorkRequestBuilder<RemindersWorker>().build()
+            WorkManager.getInstance(context).enqueue(request)
+        }
+
         /** Programa la revisión diaria (~8:00). Idempotente. */
-        fun schedule(context: Context) {
-            val now = java.time.ZonedDateTime.now()
+        fun schedule(context: Context) {            val now = java.time.ZonedDateTime.now()
             var next = now.toLocalDate().atTime(8, 0).atZone(now.zone)
             if (!next.isAfter(now)) next = next.plusDays(1)
             val delayMin = ChronoUnit.MINUTES.between(now, next)

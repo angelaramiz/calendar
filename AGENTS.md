@@ -53,6 +53,12 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
 - OTA flow: `OtaUpdateRepository.checkForUpdate()` compares remote `versionCode` vs `BuildConfig.VERSION_CODE`; `DashboardViewModel` exposes `updateAvailable`; `DashboardScreen` shows dialog; `OtaInstaller` downloads via `DownloadManager` and installs via `FileProvider` (`res/xml/file_paths.xml`, authorities `${applicationId}.fileprovider`). Requires `REQUEST_INSTALL_PACKAGES` + user granting "install unknown apps".
 - Permissions UX: `MainActivity` requests `POST_NOTIFICATIONS` at launch (Android 13+); `ui/permissions/PermissionsScreen.kt` (route `permissions`, gear icon in dashboard TopAppBar) deep-links to notification settings and `ACTION_NOTIFICATION_LISTENER_SETTINGS`.
 
+## Preview en emulador (`.opencode/tools/preview.ts`)
+
+- Custom tool `preview` (OpenCode): `status` | `boot` (AVD `Medium_Phone_API_35`) | `install` (usa `calendarWeb/calendarfinance.apk`) | `launch` | `screenshot` (guarda `.opencode/preview.png`, leer con `read` para ver) | `tap x y`.
+- Capturas vía `screencap` en el dispositivo + `pull` (nunca `exec-out` redirigido en PowerShell: corrompe el PNG a UTF-16).
+- El emulador queda corriendo para verlo en vivo; el agente opera con `tap`.
+
 ## Release pipeline (`calendarAPP/scripts/release.ps1`)
 
 - Run from repo root: `.\calendarAPP\scripts\release.ps1 [-Version x.y.z] [-SkipBuild]`. Without `-Version` it prompts.

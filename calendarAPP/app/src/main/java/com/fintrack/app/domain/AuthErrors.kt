@@ -31,6 +31,8 @@ fun authActionFor(rawMessage: String): AuthAction {
         "network" in msg || "timeout" in msg || "unable to resolve" in msg ||
             "unknownhost" in msg || "connect" in msg || "socket" in msg ||
             "ssl" in msg -> AuthAction.RETRY
+        "rate" in msg && "limit" in msg || "too many requests" in msg ||
+            "429" in msg -> AuthAction.RETRY
         else -> AuthAction.NONE
     }
 }
@@ -56,6 +58,9 @@ fun friendlyAuthMessage(rawMessage: String): String {
             "unknownhost" in msg || "connect" in msg || "socket" in msg ||
             "ssl" in msg ->
             "Sin conexión. Revisa tu internet e intenta de nuevo."
+        "rate" in msg && "limit" in msg || "too many requests" in msg ||
+            "429" in msg ->
+            "Demasiados intentos seguidos. Espera unos minutos e intenta de nuevo."
         else -> "No se pudo completar: ${rawMessage.take(120)}"
     }
 }

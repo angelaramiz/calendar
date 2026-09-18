@@ -88,6 +88,19 @@ class AuthErrorsTest {
     }
 
     @Test
+    fun limite_de_envios_ofrece_reintentar_con_mensaje_claro() {
+        // Caso real visto en pantalla: el crudo trae hasta URL y headers.
+        val raw = "over_email_send_rate_limit email rate limit exceeded: " +
+            "over_email_send_rate_limit URL: https://ug.../auth/v1/signup Heade"
+        assertEquals(AuthAction.RETRY, authActionFor(raw))
+        assertEquals(
+            "Demasiados intentos seguidos. Espera unos minutos e intenta de nuevo.",
+            friendlyAuthMessage(raw)
+        )
+        assertEquals(AuthAction.RETRY, authActionFor("429 Too Many Requests"))
+    }
+
+    @Test
     fun error_desconocido_se_muestra_recortado_sin_accion() {
         assertEquals(AuthAction.NONE, authActionFor("Something odd happened"))
         assertEquals(

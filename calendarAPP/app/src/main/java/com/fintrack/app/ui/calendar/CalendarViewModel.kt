@@ -219,12 +219,12 @@ class CalendarViewModel(
             val nextCutoff = com.fintrack.app.domain.CreditCardPlanner
                 .nextCutoff(card.cutoffDay, from)
             val payment = com.fintrack.app.domain.CreditCardPlanner
-                .paymentForCutoff(nextCutoff, card.paymentDay)
+                .paymentFor(nextCutoff, card.paymentDay, card.graceDays)
             add(payment, "Pagar ${card.displayName} (límite ${payment.dayOfMonth})")
             val prevCutoff = com.fintrack.app.domain.CreditCardPlanner
                 .lastCutoff(card.cutoffDay, from)
             val prevPayment = com.fintrack.app.domain.CreditCardPlanner
-                .paymentForCutoff(prevCutoff, card.paymentDay)
+                .paymentFor(prevCutoff, card.paymentDay, card.graceDays)
             if (prevPayment != payment) {
                 add(prevPayment, "Pagar ${card.displayName} (límite ${prevPayment.dayOfMonth})")
             }
@@ -608,11 +608,11 @@ class CalendarViewModel(
         }
     }
 
-    /** Alta de billetera propia + recarga de la lista. */
-    fun addWallet(name: String) {
+    /** Alta de billetera propia (con terminación de débito opcional) + recarga. */
+    fun addWallet(name: String, last4: String = "") {
         if (name.isBlank()) return
         viewModelScope.launch {
-            runCatching { walletStore.addWallet(name) }
+            runCatching { walletStore.addWallet(name, last4) }
             val wallets = runCatching {
                 walletStore.ensureDefaults()
                 walletStore.snapshot()

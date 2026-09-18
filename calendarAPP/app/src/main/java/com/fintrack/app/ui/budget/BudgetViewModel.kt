@@ -186,20 +186,31 @@ class BudgetViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    /** Crea o actualiza una tarjeta (corte y pago por día del mes 1-31). */
-    fun saveCard(id: String?, name: String, cutoffDay: Int, paymentDay: Int, last4: String = "") {
+    /** Crea o actualiza una tarjeta (día fijo de pago o plazo de N días tipo Plata). */
+    fun saveCard(
+        id: String?,
+        name: String,
+        cutoffDay: Int,
+        paymentDay: Int,
+        last4: String = "",
+        graceDays: Int = 0
+    ) {
         val cleanName = name.trim().ifBlank { "Mi tarjeta" }
+        val grace = graceDays.coerceIn(0, 90)
         val card = CreditCardRow(
             id = id ?: "card-${System.currentTimeMillis()}",
             name = cleanName,
             cutoffDay = cutoffDay.coerceIn(1, 31),
             paymentDay = paymentDay.coerceIn(1, 31),
-            last4 = last4.filter { it.isDigit() }.take(4)
+            last4 = last4.filter { it.isDigit() }.take(4),
+            graceDays = grace
         )
         viewModelScope.launch {
             runCatching { creditCardStore.upsertCard(card) }
+            val terms = if (grace > 0) "pago +$grace días"
+            else "pago día ${card.paymentDay}"
             _uiState.value = _uiState.value.copy(
-                info = "Tarjeta ${card.name} guardada (corte día ${card.cutoffDay}, pago día ${card.paymentDay})."
+                info = "Tarjeta ${card.displayName} guardada (corte día ${card.cutoffDay}, $terms)."
             )
             loadBudget()
         }

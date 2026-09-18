@@ -306,7 +306,7 @@ private fun WalletFilterRow(
             FilterChip(
                 selected = selectedId == wallet.id,
                 onClick = { onSelect(if (selectedId == wallet.id) null else wallet.id) },
-                label = { Text("${wallet.name} · $${String.format("%.0f", net)}") },
+                label = { Text("${wallet.displayName} · $${String.format("%.0f", net)}") },
                 modifier = Modifier.padding(end = 4.dp)
             )
         }
@@ -617,7 +617,7 @@ private fun EditTransactionDialog(
                             FilterChip(
                                 selected = walletId == wallet.id,
                                 onClick = { walletId = wallet.id },
-                                label = { Text(wallet.name) },
+                                label = { Text(wallet.displayName) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }

@@ -224,8 +224,8 @@ fun BudgetScreen(
                     payments = uiState.cardPayments,
                     transactions = uiState.allTransactions,
                     movements = uiState.recentMovements,
-                    onSave = { id, name, cutoff, payment, last4 ->
-                        viewModel.saveCard(id, name, cutoff, payment, last4)
+                    onSave = { id, name, cutoff, payment, last4, grace ->
+                        viewModel.saveCard(id, name, cutoff, payment, last4, grace)
                     },
                     onDelete = { viewModel.deleteCard(it) },
                     onUntag = { viewModel.untagCharge(it) },
@@ -563,7 +563,7 @@ private fun CreditCardsCard(
     payments: List<com.fintrack.app.data.CardPayment>,
     transactions: List<com.fintrack.app.data.model.TransactionEntity>,
     movements: List<com.fintrack.app.data.repository.MovementRow>,
-    onSave: (String?, String, Int, Int, String) -> Unit,
+    onSave: (String?, String, Int, Int, String, Int) -> Unit,
     onDelete: (String) -> Unit,
     onUntag: (String) -> Unit,
     onPay: (String, String, Double) -> Unit
@@ -608,7 +608,8 @@ private fun CreditCardsCard(
                         }
                     val summary = com.fintrack.app.domain.CreditCardPlanner.summarize(
                         card.id, card.cutoffDay, card.paymentDay,
-                        all.map { it.third }, today, cardPayments
+                        all.map { it.third }, today, cardPayments,
+                        graceDays = card.graceDays
                     )
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
@@ -619,7 +620,10 @@ private fun CreditCardsCard(
                             Column {
                                 Text(card.displayName, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    "Corte día ${card.cutoffDay} · Pago día ${card.paymentDay}",
+                                    if (card.usesGrace)
+                                        "Corte día ${card.cutoffDay} · Pago +${card.graceDays} días"
+                                    else
+                                        "Corte día ${card.cutoffDay} · Pago día ${card.paymentDay}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -678,8 +682,8 @@ private fun CreditCardsCard(
         CardEditDialog(
             existing = null,
             onDismiss = { adding = false },
-            onSave = { _, name, cutoff, payment, last4 ->
-                onSave(null, name, cutoff, payment, last4)
+            onSave = { _, name, cutoff, payment, last4, grace ->
+                onSave(null, name, cutoff, payment, last4, grace)
                 adding = false
             },
             onDelete = null
@@ -689,10 +693,9 @@ private fun CreditCardsCard(
         CardEditDialog(
             existing = card,
             onDismiss = { editing = null },
-            onSave = { id, name, cutoff, payment, last4 ->
-                onSave(id, name, cutoff, payment, last4)
-                editing = null
-            },
+                    onSave = { id, name, cutoff, payment, last4, grace ->
+                        onSave(id, name, cutoff, payment, last4, grace)
+                    },
             onDelete = { onDelete(card.id); editing = null }
         )
     }
@@ -919,7 +922,7 @@ private fun txLabel(tx: com.fintrack.app.data.model.TransactionEntity): String =
 private fun CardEditDialog(
     existing: com.fintrack.app.data.CreditCardRow?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, Int, Int, String) -> Unit,
+    onSave: (String?, String, Int, Int, String, Int) -> Unit,
     onDelete: (() -> Unit)?
 ) {
     var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
@@ -927,12 +930,19 @@ private fun CardEditDialog(
     var cutoffText by remember(existing) {
         mutableStateOf(existing?.cutoffDay?.toString() ?: "")
     }
+    var useGrace by remember(existing) {
+        mutableStateOf((existing?.graceDays ?: 0) > 0)
+    }
     var paymentText by remember(existing) {
         mutableStateOf(existing?.paymentDay?.toString() ?: "")
     }
+    var graceText by remember(existing) {
+        mutableStateOf(existing?.graceDays?.takeIf { it > 0 }?.toString() ?: "30")
+    }
     val valid = name.isNotBlank() &&
         (cutoffText.toIntOrNull() in 1..31) &&
-        (paymentText.toIntOrNull() in 1..31)
+        (if (useGrace) (graceText.toIntOrNull() in 1..90)
+        else (paymentText.toIntOrNull() in 1..31))
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Nueva tarjeta" else "Editar tarjeta") },
@@ -941,7 +951,7 @@ private fun CardEditDialog(
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Nombre / banco (ej. Nu)") },
+                    label = { Text("Nombre / banco (ej. Plata)") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -961,14 +971,44 @@ private fun CardEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
-                OutlinedTextField(
-                    value = paymentText,
-                    onValueChange = { paymentText = it.filter { c -> c.isDigit() }.take(2) },
-                    label = { Text("Día de pago (1-31)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !useGrace,
+                        onClick = { useGrace = false },
+                        label = { Text("Día fijo") }
+                    )
+                    FilterChip(
+                        selected = useGrace,
+                        onClick = { useGrace = true },
+                        label = { Text("+ N días (Plata)") }
+                    )
+                }
+                if (useGrace) {
+                    OutlinedTextField(
+                        value = graceText,
+                        onValueChange = { graceText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Días después del corte (1-90)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Text(
+                        "Plata usa 30: del primer día del periodo al corte " +
+                            "son ~30 días y del corte al pago otros 30 " +
+                            "(~60 días totales).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = paymentText,
+                        onValueChange = { paymentText = it.filter { c -> c.isDigit() }.take(2) },
+                        label = { Text("Día de pago (1-31)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                }
             }
         },
         confirmButton = {
@@ -978,7 +1018,8 @@ private fun CardEditDialog(
                         existing?.id, name,
                         cutoffText.toIntOrNull() ?: 1,
                         paymentText.toIntOrNull() ?: 1,
-                        last4Text
+                        last4Text,
+                        if (useGrace) (graceText.toIntOrNull() ?: 30) else 0
                     )
                 },
                 enabled = valid

@@ -5,6 +5,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -13,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -418,6 +420,7 @@ private fun WalletsSection() {
     val store = remember { WalletStore(context.applicationContext) }
     val wallets by store.wallets.collectAsState(initial = emptyList())
     var newName by remember { mutableStateOf("") }
+    var newLast4 by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         runCatching { store.ensureDefaults() }
@@ -427,8 +430,9 @@ private fun WalletsSection() {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Mis billeteras", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Las fijas vienen por defecto; agrega las tuyas (Banorte, BBVA, etc.) " +
-                    "para elegirlas al registrar.",
+                "Efectivo viene por defecto. Agrega las tuyas con su terminación " +
+                    "(ej. Mercado Pago •1234) y quita las fijas que no uses: " +
+                    "ya no vuelven a aparecer.",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -439,18 +443,16 @@ private fun WalletsSection() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(wallet.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(wallet.displayName, style = MaterialTheme.typography.bodyMedium)
                         Text(
                             if (wallet.custom) "Propia" else "Fija",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    if (wallet.custom) {
-                        TextButton(onClick = {
-                            scope.launch { store.deleteWallet(wallet.id) }
-                        }) { Text("Quitar") }
-                    }
+                    TextButton(onClick = {
+                        scope.launch { store.deleteWallet(wallet.id) }
+                    }) { Text("Quitar") }
                 }
             }
 
@@ -460,16 +462,27 @@ private fun WalletsSection() {
                     value = newName,
                     onValueChange = { newName = it },
                     label = { Text("Nueva billetera") },
-                    placeholder = { Text("Banorte, BBVA…") },
+                    placeholder = { Text("Mercado Pago…") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                OutlinedTextField(
+                    value = newLast4,
+                    onValueChange = { newLast4 = it.filter { c -> c.isDigit() }.take(4) },
+                    label = { Text("Term.") },
+                    placeholder = { Text("1234") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.weight(0.5f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = {
                     scope.launch {
                         if (newName.isNotBlank()) {
-                            store.addWallet(newName)
+                            store.addWallet(newName, newLast4)
                             newName = ""
+                            newLast4 = ""
                         }
                     }
                 }) { Text("Añadir") }

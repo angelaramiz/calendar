@@ -29,7 +29,7 @@ fun QuickEntryDialog(
     wallets: List<WalletRow> = emptyList(),
     initialWalletId: String? = null,
     cards: List<CreditCardRow> = emptyList(),
-    onAddWallet: (String) -> Unit = {}
+    onAddWallet: (String, String) -> Unit = { _, _ -> }
 ) {
     var amount by remember { mutableStateOf("") }
     var type by remember { mutableStateOf("EXPENSE") }
@@ -117,7 +117,7 @@ fun QuickEntryDialog(
                             FilterChip(
                                 selected = walletId == wallet.id,
                                 onClick = { walletId = wallet.id },
-                                label = { Text(wallet.name) },
+                                label = { Text(wallet.displayName) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }
@@ -185,8 +185,8 @@ fun QuickEntryDialog(
     if (showNewWallet) {
         NewWalletDialog(
             onDismiss = { showNewWallet = false },
-            onSave = { name ->
-                onAddWallet(name)
+            onSave = { name, last4 ->
+                onAddWallet(name, last4)
                 showNewWallet = false
             }
         )

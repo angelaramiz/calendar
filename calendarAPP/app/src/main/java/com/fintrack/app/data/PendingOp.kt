@@ -117,7 +117,15 @@ object PendingOpCodec {
         else runCatching { json.decodeFromString(capsSerializer, raw) }.getOrNull() ?: emptyMap()
 
     private val stringsSerializer = MapSerializer(String.serializer(), String.serializer())
+    private val stringListSerializer = ListSerializer(String.serializer())
 
+    fun encodeStringList(list: List<String>): String =
+        json.encodeToString(stringListSerializer, list.distinct())
+
+    fun decodeStringList(raw: String?): List<String> =
+        if (raw.isNullOrBlank()) emptyList()
+        else runCatching { json.decodeFromString(stringListSerializer, raw) }.getOrNull()
+            ?: emptyList()
     fun encodeStrings(map: Map<String, String>): String =
         json.encodeToString(stringsSerializer, map)
 

@@ -44,7 +44,7 @@ fun AddMovementDialog(
     isSaving: Boolean = false,
     wallets: List<WalletRow> = emptyList(),
     cards: List<CreditCardRow> = emptyList(),
-    onAddWallet: (String) -> Unit = {}
+    onAddWallet: (String, String) -> Unit = { _, _ -> }
 ) {
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
@@ -153,7 +153,7 @@ fun AddMovementDialog(
                             FilterChip(
                                 selected = walletId == wallet.id,
                                 onClick = { walletId = wallet.id },
-                                label = { Text(wallet.name) },
+                                label = { Text(wallet.displayName) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
                         }
@@ -213,8 +213,8 @@ fun AddMovementDialog(
     if (showNewWallet) {
         NewWalletDialog(
             onDismiss = { showNewWallet = false },
-            onSave = { name ->
-                onAddWallet(name)
+            onSave = { name, last4 ->
+                onAddWallet(name, last4)
                 showNewWallet = false
             }
         )

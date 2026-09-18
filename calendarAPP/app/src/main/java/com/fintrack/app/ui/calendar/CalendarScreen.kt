@@ -68,7 +68,7 @@ fun CalendarScreen(
             isSaving = uiState.isSaving,
             wallets = uiState.wallets,
             cards = uiState.cards,
-            onAddWallet = { viewModel.addWallet(it) },
+            onAddWallet = { name, last4 -> viewModel.addWallet(name, last4) },
             onDismiss = { viewModel.dismissAddMovement() },
             onSave = { date, isIncome, title, category, amount, description, walletId, cardId ->
                 viewModel.saveManualMovement(

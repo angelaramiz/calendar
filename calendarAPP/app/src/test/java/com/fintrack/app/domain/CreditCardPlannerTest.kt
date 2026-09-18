@@ -17,6 +17,42 @@ class CreditCardPlannerTest {
     }
 
     @Test
+    fun plazo_plata_30_dias_despues_del_corte() {
+        // Corte 15 ene + 30 días = 14 feb (≈60 días de financiamiento total).
+        assertEquals(
+            LocalDate.of(2026, 2, 14),
+            CreditCardPlanner.paymentForCutoffGrace(LocalDate.of(2026, 1, 15), 30)
+        )
+        assertEquals(
+            LocalDate.of(2026, 2, 14),
+            CreditCardPlanner.paymentFor(LocalDate.of(2026, 1, 15), 1, 30)
+        )
+    }
+
+    @Test
+    fun dia_fijo_sin_cambio_con_grace_cero() {
+        assertEquals(
+            LocalDate.of(2026, 2, 1),
+            CreditCardPlanner.paymentFor(LocalDate.of(2026, 1, 15), 1, 0)
+        )
+    }
+
+    @Test
+    fun summarize_con_plata_usa_grace() {
+        val summary = CreditCardPlanner.summarize(
+            cardId = "plata",
+            cutoffDay = 15,
+            paymentDay = 1,
+            charges = listOf(LocalDate.of(2026, 1, 20) to 1000.0),
+            today = LocalDate.of(2026, 1, 20),
+            graceDays = 30
+        )
+        // Último corte 15 ene → próximo corte 15 feb → pago 15 feb + 30 = 17 mar.
+        assertEquals(LocalDate.of(2026, 3, 17), summary.nextPayment)
+        assertEquals(1000.0, summary.periodCharges, 0.001)
+    }
+
+    @Test
     fun corte_y_pago_del_mes_actual() {
         // Corte día 10, pago día 30; hoy 12 sep: periodo 10 sep -> 10 oct.
         val today = LocalDate.of(2026, 9, 12)

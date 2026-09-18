@@ -22,10 +22,17 @@ data class CreditCardRow(
     /** Día de pago (1-31). */
     val paymentDay: Int,
     /** Últimos 4 dígitos (ej. "1234"), para identificarla. */
-    val last4: String = ""
+    val last4: String = "",
+    /**
+     * Plazo especial tipo Plata: días después del corte para pagar.
+     * 0 = día fijo del mes ([paymentDay]).
+     */
+    val graceDays: Int = 0
 ) {
     /** "Nu •1234" o solo "Nu" si no hay terminación. */
     val displayName: String get() = if (last4.isBlank()) name else "$name •$last4"
+    /** true si usa plazo de N días (ej. Plata 30) en vez de día fijo. */
+    val usesGrace: Boolean get() = graceDays > 0
 }
 
 /**

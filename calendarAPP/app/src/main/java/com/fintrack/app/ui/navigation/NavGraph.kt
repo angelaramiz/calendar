@@ -118,7 +118,7 @@ fun FinTrackNavGraph(
                 wallets = dashState.wallets,
                 initialWalletId = dashState.lastWalletId,
                 cards = dashState.cards,
-                onAddWallet = { dashboardViewModel.addWallet(it) },
+                onAddWallet = { name, last4 -> dashboardViewModel.addWallet(name, last4) },
                 onSave = { transaction, walletId, cardId ->
                     dashboardViewModel.addTransaction(transaction, walletId, cardId)
                     navController.popBackStack()

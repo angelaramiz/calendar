@@ -452,11 +452,11 @@ class DashboardViewModel(
         loadDashboard(silent = true)
     }
 
-    /** Alta de billetera propia + recarga de la lista. */
-    fun addWallet(name: String) {
+    /** Alta de billetera propia (con terminación de débito opcional) + recarga. */
+    fun addWallet(name: String, last4: String = "") {
         if (name.isBlank()) return
         viewModelScope.launch {
-            runCatching { walletStore.addWallet(name) }
+            runCatching { walletStore.addWallet(name, last4) }
             val wallets = runCatching {
                 walletStore.ensureDefaults()
                 walletStore.snapshot()

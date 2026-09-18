@@ -71,8 +71,7 @@ class WalletResolverTest {
     }
 
     @Test
-    fun dayNet_solo_cuenta_el_dia_pedido() {
-        val now = YearMonth.now(ZoneOffset.UTC)
+    fun dayNet_solo_cuenta_el_dia_pedido() {        val now = YearMonth.now(ZoneOffset.UTC)
         val todayTs = now.atDay(10).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val yesterdayTs = now.atDay(9).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val txs = listOf(
@@ -85,5 +84,25 @@ class WalletResolverTest {
             txs, now.atDay(10), wallets, emptyMap()
         )
         assertEquals(-500.0, day["nu"] ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun displayName_con_y_sin_terminacion_debito() {
+        assertEquals(
+            "Mercado Pago •1234",
+            com.fintrack.app.data.WalletRow("w1", "Mercado Pago", custom = true, last4 = "1234").displayName
+        )
+        assertEquals(
+            "Efectivo",
+            com.fintrack.app.data.WalletRow("efectivo", "Efectivo").displayName
+        )
+    }
+
+    @Test
+    fun codec_listas_ida_y_vuelta() {
+        val hidden = listOf("azteca")
+        val raw = com.fintrack.app.data.PendingOpCodec.encodeStringList(hidden)
+        assertEquals(hidden, com.fintrack.app.data.PendingOpCodec.decodeStringList(raw))
+        assertEquals(emptyList<String>(), com.fintrack.app.data.PendingOpCodec.decodeStringList(null))
     }
 }

@@ -58,7 +58,7 @@ object ReminderCheck {
         val payments = runCatching { cardStore.paymentsSnapshot() }.getOrDefault(emptyList())
         val cardsWithDays = cards.mapNotNull { card ->
             val nextCutoff = CreditCardPlanner.nextCutoff(card.cutoffDay, today)
-            val nextPayment = CreditCardPlanner.paymentForCutoff(nextCutoff, card.paymentDay)
+            val nextPayment = CreditCardPlanner.paymentFor(nextCutoff, card.paymentDay, card.graceDays)
             val alreadyPaid = payments.any {
                 it.cardId == card.id && it.statementCutoffIso == nextCutoff.toString()
             }

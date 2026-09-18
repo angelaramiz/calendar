@@ -301,7 +301,12 @@ private fun WalletFilterRow(
             label = { Text("Todas") },
             modifier = Modifier.padding(end = 4.dp)
         )
-        wallets.forEach { wallet ->
+        // Solo Efectivo + propias + fijas con movimiento del mes: las fijas
+        // en $0 que no se usan no estorban (siguen en Mis billeteras).
+        wallets.filter { wallet ->
+            wallet.id == com.fintrack.app.domain.WalletResolver.EFECTIVO_ID || wallet.custom ||
+                (totals[wallet.id] ?: 0.0) != 0.0 || wallet.id == selectedId
+        }.forEach { wallet ->
             val net = totals[wallet.id] ?: 0.0
             FilterChip(
                 selected = selectedId == wallet.id,

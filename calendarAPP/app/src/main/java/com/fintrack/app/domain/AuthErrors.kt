@@ -30,7 +30,7 @@ fun authActionFor(rawMessage: String): AuthAction {
         "invalid login credentials" in msg -> AuthAction.FORGOT_PASSWORD
         "network" in msg || "timeout" in msg || "unable to resolve" in msg ||
             "unknownhost" in msg || "connect" in msg || "socket" in msg ||
-            "ssl" in msg -> AuthAction.RETRY
+            "ssl" in msg || ("http" in msg && "fail" in msg) -> AuthAction.RETRY
         "rate" in msg && "limit" in msg || "too many requests" in msg ||
             "429" in msg -> AuthAction.RETRY
         else -> AuthAction.NONE
@@ -56,7 +56,7 @@ fun friendlyAuthMessage(rawMessage: String): String {
             "Ese correo no es válido. Revísalo e intenta de nuevo."
         "network" in msg || "timeout" in msg || "unable to resolve" in msg ||
             "unknownhost" in msg || "connect" in msg || "socket" in msg ||
-            "ssl" in msg ->
+            "ssl" in msg || ("http" in msg && "fail" in msg) ->
             "Sin conexión. Revisa tu internet e intenta de nuevo."
         "rate" in msg && "limit" in msg || "too many requests" in msg ||
             "429" in msg ->

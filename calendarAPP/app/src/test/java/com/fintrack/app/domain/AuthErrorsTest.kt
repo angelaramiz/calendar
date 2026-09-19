@@ -101,6 +101,18 @@ class AuthErrorsTest {
     }
 
     @Test
+    fun fallo_http_de_ktor_con_url_es_sin_conexion() {
+        // Caso real en teléfono: Ktor pega la URL y el mensaje se cortaba.
+        val raw = "HTTP request to https://ugtlxnrwfipoctckuvfd.supabase.co" +
+            "/auth/v1/token?grant_type=password (POST) failed with message: E"
+        assertEquals(AuthAction.RETRY, authActionFor(raw))
+        assertEquals(
+            "Sin conexión. Revisa tu internet e intenta de nuevo.",
+            friendlyAuthMessage(raw)
+        )
+    }
+
+    @Test
     fun error_desconocido_se_muestra_recortado_sin_accion() {
         assertEquals(AuthAction.NONE, authActionFor("Something odd happened"))
         assertEquals(

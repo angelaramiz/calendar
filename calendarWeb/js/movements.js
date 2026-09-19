@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // MOVEMENTS CRUD
@@ -44,7 +45,7 @@ export async function getMovements(filters = {}) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements:', error);
+        logger.error('Error fetching movements:', error);
         throw error;
     }
 }
@@ -63,7 +64,7 @@ export async function getMovementById(id) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error fetching movement:', error);
+        logger.error('Error fetching movement:', error);
         throw error;
     }
 }
@@ -104,7 +105,7 @@ export async function createMovement(movementData) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error creating movement:', error);
+        logger.error('Error creating movement:', error);
         throw error;
     }
 }
@@ -149,7 +150,7 @@ export async function confirmPatternOccurrence(occurrence, adjustedAmount = null
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error confirming pattern occurrence:', error);
+        logger.error('Error confirming pattern occurrence:', error);
         throw error;
     }
 }
@@ -184,7 +185,7 @@ export async function updateMovement(id, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating movement:', error);
+        logger.error('Error updating movement:', error);
         throw error;
     }
 }
@@ -208,7 +209,7 @@ export async function deleteMovement(id, hard = false) {
         }
         return true;
     } catch (error) {
-        console.error('Error deleting movement:', error);
+        logger.error('Error deleting movement:', error);
         throw error;
     }
 }
@@ -233,7 +234,7 @@ export async function getMovementsForDateRange(startDate, endDate) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements for date range:', error);
+        logger.error('Error fetching movements for date range:', error);
         throw error;
     }
 }
@@ -253,7 +254,7 @@ export async function getMovementsForDate(date) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements for date:', error);
+        logger.error('Error fetching movements for date:', error);
         throw error;
     }
 }
@@ -276,7 +277,7 @@ export async function getMovementsByLoan(loanId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements by loan:', error);
+        logger.error('Error fetching movements by loan:', error);
         throw error;
     }
 }
@@ -295,7 +296,7 @@ export async function getMovementsByIncomePattern(patternId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements by income pattern:', error);
+        logger.error('Error fetching movements by income pattern:', error);
         throw error;
     }
 }
@@ -314,7 +315,7 @@ export async function getMovementsByExpensePattern(patternId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching movements by expense pattern:', error);
+        logger.error('Error fetching movements by expense pattern:', error);
         throw error;
     }
 }
@@ -343,7 +344,7 @@ export async function getMovementTotals(startDate, endDate) {
         totals.balance = totals.income - totals.expense;
         return totals;
     } catch (error) {
-        console.error('Error calculating movement totals:', error);
+        logger.error('Error calculating movement totals:', error);
         throw error;
     }
 }
@@ -371,7 +372,7 @@ export async function getTotalsByCategory(startDate, endDate, type = null) {
 
         return Object.values(byCategory).sort((a, b) => b.total - a.total);
     } catch (error) {
-        console.error('Error calculating totals by category:', error);
+        logger.error('Error calculating totals by category:', error);
         throw error;
     }
 }

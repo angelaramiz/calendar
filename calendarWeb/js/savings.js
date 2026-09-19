@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // SAVINGS PATTERNS CRUD
@@ -28,7 +29,7 @@ export async function getSavingsPatterns(activeOnly = false) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching savings patterns:', error);
+        logger.error('Error fetching savings patterns:', error);
         throw error;
     }
 }
@@ -60,7 +61,7 @@ export async function getSavingsPatternById(id) {
         pattern.income_sources = sources || [];
         return pattern;
     } catch (error) {
-        console.error('Error fetching savings pattern:', error);
+        logger.error('Error fetching savings pattern:', error);
         throw error;
     }
 }
@@ -113,7 +114,7 @@ export async function getSavingsPatternsWithSources(activeOnly = false) {
 
         return patterns;
     } catch (error) {
-        console.error('Error fetching savings patterns with sources:', error);
+        logger.error('Error fetching savings patterns with sources:', error);
         throw error;
     }
 }
@@ -135,7 +136,7 @@ export async function createSavingsPattern(patternData) {
             : null;
         
         if (patternData.allocation_type === 'percent' && allocationValue > 1) {
-            console.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
+            logger.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
             allocationValue = allocationValue / 100;
         }
 
@@ -173,7 +174,7 @@ export async function createSavingsPattern(patternData) {
 
         return await getSavingsPatternById(createdPattern.id);
     } catch (error) {
-        console.error('Error creating savings pattern:', error);
+        logger.error('Error creating savings pattern:', error);
         throw error;
     }
 }
@@ -220,7 +221,7 @@ export async function updateSavingsPattern(id, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating savings pattern:', error);
+        logger.error('Error updating savings pattern:', error);
         throw error;
     }
 }
@@ -242,7 +243,7 @@ export async function deleteSavingsPattern(id, hard = false) {
         }
         return true;
     } catch (error) {
-        console.error('Error deleting savings pattern:', error);
+        logger.error('Error deleting savings pattern:', error);
         throw error;
     }
 }
@@ -269,7 +270,7 @@ export async function assignIncomeSourcestoSavingsPattern(savingsPatternId, inco
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error assigning income sources to savings pattern:', error);
+        logger.error('Error assigning income sources to savings pattern:', error);
         throw error;
     }
 }
@@ -292,7 +293,7 @@ export async function replaceSavingsPatternIncomeSources(savingsPatternId, incom
 
         return true;
     } catch (error) {
-        console.error('Error replacing savings pattern income sources:', error);
+        logger.error('Error replacing savings pattern income sources:', error);
         throw error;
     }
 }
@@ -317,7 +318,7 @@ export async function getSavingsTransactions(savingsPatternId, limit = 50) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching savings transactions:', error);
+        logger.error('Error fetching savings transactions:', error);
         throw error;
     }
 }
@@ -399,7 +400,7 @@ export async function createSavingsDeposit(savingsPatternId, amount, notes = nul
             new_balance: parseFloat(pattern.current_balance) + depositAmount
         };
     } catch (error) {
-        console.error('Error creating savings deposit:', error);
+        logger.error('Error creating savings deposit:', error);
         throw error;
     }
 }
@@ -486,7 +487,7 @@ export async function createSavingsWithdrawal(savingsPatternId, amount, notes = 
             new_balance: newBalance
         };
     } catch (error) {
-        console.error('Error creating savings withdrawal:', error);
+        logger.error('Error creating savings withdrawal:', error);
         throw error;
     }
 }
@@ -534,7 +535,7 @@ export async function getSavingsSummary() {
             patterns: patternsSummary
         };
     } catch (error) {
-        console.error('Error getting savings summary:', error);
+        logger.error('Error getting savings summary:', error);
         throw error;
     }
 }
@@ -612,7 +613,7 @@ export async function getSavingsLinkedToIncome(incomePatternId) {
                 }
             }));
     } catch (error) {
-        console.error('Error fetching savings linked to income:', error);
+        logger.error('Error fetching savings linked to income:', error);
         throw error;
     }
 }
@@ -673,7 +674,7 @@ export async function getExpensesLinkedToIncome(incomePatternId) {
                 }
             }));
     } catch (error) {
-        console.error('Error fetching expenses linked to income:', error);
+        logger.error('Error fetching expenses linked to income:', error);
         throw error;
     }
 }
@@ -737,7 +738,7 @@ export async function getSavingsSuggestionsForIncome(incomePatternId, confirmedA
             remainingAfterExpenses: confirmedAmount - totalExpenses
         };
     } catch (error) {
-        console.error('Error getting savings suggestions:', error);
+        logger.error('Error getting savings suggestions:', error);
         throw error;
     }
 }
@@ -782,7 +783,7 @@ export async function getRemainderSavingsSuggestion(incomePatternId, expenseAmou
             }))
         };
     } catch (error) {
-        console.error('Error getting remainder savings suggestion:', error);
+        logger.error('Error getting remainder savings suggestion:', error);
         throw error;
     }
 }

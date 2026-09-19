@@ -6,6 +6,7 @@
 
 // Importar desde CDN
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { logger } from './logger.js';
 
 // Intentar leer desde window.__ENV__ (de js/config.js) o usar placeholders
 const DEFAULT_URL = 'https://YOUR-PROJECT-ref.supabase.co';
@@ -24,7 +25,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // Aviso si siguen los placeholders
 if (SUPABASE_URL === DEFAULT_URL || SUPABASE_ANON_KEY === DEFAULT_ANON_KEY) {
-  console.warn('⚠️ Configura tus credenciales de Supabase. Crea js/config.js desde js/config.example.js o edita js/supabase-client.js');
+  logger.warn('⚠️ Configura tus credenciales de Supabase. Crea js/config.js desde js/config.example.js o edita js/supabase-client.js');
 }
 
 // Exportar configuración actual

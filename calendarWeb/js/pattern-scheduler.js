@@ -8,6 +8,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // UTILIDADES DE FECHAS
@@ -78,7 +79,7 @@ function addYears(date, yearsToAdd) {
  */
 function toISODateString(date) {
     if (!(date instanceof Date) || isNaN(date.getTime())) {
-        console.error('toISODateString recibió una fecha inválida:', date);
+        logger.error('toISODateString recibió una fecha inválida:', date);
         throw new Error(`Fecha inválida: ${date}`);
     }
     return date.toISOString().slice(0, 10);
@@ -235,7 +236,7 @@ export function generateOccurrencesForPattern(pattern, rangeStart, rangeEnd) {
         case 'yearly':
             return generateYearlyOccurrences(pattern, rangeStart, rangeEnd);
         default:
-            console.warn(`Frecuencia desconocida: ${frequency}`);
+            logger.warn(`Frecuencia desconocida: ${frequency}`);
             return [];
     }
 }
@@ -262,7 +263,7 @@ async function getIncomePatterns(userId, rangeStart, rangeEnd) {
         .or(`end_date.is.null,end_date.gte.${startISO}`);
     
     if (error) {
-        console.error('Error al obtener income_patterns:', error);
+        logger.error('Error al obtener income_patterns:', error);
         return [];
     }
     
@@ -287,7 +288,7 @@ async function getExpensePatterns(userId, rangeStart, rangeEnd) {
         .or(`end_date.is.null,end_date.gte.${startISO}`);
     
     if (error) {
-        console.error('Error al obtener expense_patterns:', error);
+        logger.error('Error al obtener expense_patterns:', error);
         return [];
     }
     
@@ -312,7 +313,7 @@ async function getMovements(userId, rangeStart, rangeEnd) {
         .lte('date', endISO);
     
     if (error) {
-        console.error('Error al obtener movements:', error);
+        logger.error('Error al obtener movements:', error);
         return [];
     }
     
@@ -336,7 +337,7 @@ async function getPlansWithTargetDate(userId, rangeStart, rangeEnd) {
         .lte('target_date', endISO);
     
     if (error) {
-        console.error('Error al obtener plans:', error);
+        logger.error('Error al obtener plans:', error);
         return [];
     }
     
@@ -362,7 +363,7 @@ async function getScheduledSavingsPatterns(userId, rangeStart, rangeEnd) {
         .or(`end_date.is.null,end_date.gte.${startISO}`);
     
     if (error) {
-        console.error('Error al obtener scheduled savings_patterns:', error);
+        logger.error('Error al obtener scheduled savings_patterns:', error);
         return [];
     }
     
@@ -647,7 +648,7 @@ export async function getCalendarDataForMonth(userId, year, month) {
         return days;
         
     } catch (error) {
-        console.error('Error en getCalendarDataForMonth:', error);
+        logger.error('Error en getCalendarDataForMonth:', error);
         return {};
     }
 }
@@ -704,11 +705,11 @@ export async function confirmPatternOccurrence(patternId, patternType, date, act
             throw new Error(`Error al crear movement: ${movementError.message}`);
         }
         
-        console.log('✅ Ocurrencia confirmada:', movement);
+        logger.debug('✅ Ocurrencia confirmada:', movement);
         return movement;
         
     } catch (error) {
-        console.error('Error al confirmar ocurrencia:', error);
+        logger.error('Error al confirmar ocurrencia:', error);
         throw error;
     }
 }

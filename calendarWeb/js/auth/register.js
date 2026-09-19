@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../supabase-client.js';
+import { logger } from '../logger.js';
 
 // DOM Elements
 const registerForm = document.getElementById('register-form');
@@ -91,7 +92,7 @@ async function checkUsernameAvailability(username) {
             usernameInput.setCustomValidity('');
         }
     } catch (err) {
-        console.error('Error checking username:', err);
+        logger.error('Error checking username:', err);
     }
 }
 
@@ -299,7 +300,7 @@ async function handleRegister(e) {
         }
 
     } catch (err) {
-        console.error('Registration error:', err);
+        logger.error('Registration error:', err);
         showError('Error al crear la cuenta. Por favor intenta nuevamente.');
         setLoading(false);
     }
@@ -316,7 +317,7 @@ async function upsertProfile(id, username, name, email) {
             settings: { theme: 'light', notifications: true, language: 'es' },
             password_hash: 'SUPABASE_AUTH'
         }, { onConflict: 'id' });
-    if (profileError) console.warn('No se pudo crear/actualizar perfil en users:', profileError.message);
+    if (profileError) logger.warn('No se pudo crear/actualizar perfil en users:', profileError.message);
 }
 
 /**

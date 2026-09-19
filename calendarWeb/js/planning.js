@@ -6,6 +6,7 @@
 
 import { supabase } from './supabase-client.js';
 import { getExpensePatterns } from './patterns.js';
+import { logger } from './logger.js';
 
 // ==================== LOGGING ====================
 
@@ -13,12 +14,12 @@ const DEBUG = true; // TEMPORALMENTE TRUE PARA DEBUG - cambiar a false en produc
 
 function logInfo(module, action, data) {
   if (DEBUG) {
-    console.log(`[PLANNING:${module}] ${action}`, data);
+    logger.debug(`[PLANNING:${module}] ${action}`, data);
   }
 }
 
 function logError(module, action, error, context = {}) {
-  console.error(`[PLANNING:${module}] ERROR in ${action}:`, {
+  logger.error(`[PLANNING:${module}] ERROR in ${action}:`, {
     error: error.message || error,
     code: error.code,
     details: error.details,
@@ -28,7 +29,7 @@ function logError(module, action, error, context = {}) {
 }
 
 function logWarning(module, action, message, data = {}) {
-  console.warn(`[PLANNING:${module}] WARNING in ${action}: ${message}`, data);
+  logger.warn(`[PLANNING:${module}] WARNING in ${action}: ${message}`, data);
 }
 
 // ==================== ENVELOPES (APARTADOS) ====================
@@ -515,7 +516,7 @@ async function updateGoalProgress(goalId) {
  * V2: No existe goal_funding, retornar array vacío
  */
 export async function getGoalFundings(goalId) {
-  console.warn('getGoalFundings está deshabilitado - no existe goal_funding en V2');
+  logger.warn('getGoalFundings está deshabilitado - no existe goal_funding en V2');
   return [];
 }
 
@@ -895,12 +896,7 @@ export function getDaysUntilTarget(targetDate) {
 /**
  * Formato de moneda
  */
-export function formatCurrency(amount) {
-  return new Intl.NumberFormat('es-MX', {
-    style: 'currency',
-    currency: 'MXN'
-  }).format(amount);
-}
+// formatCurrency() vive en balance.js (fuente unica, se importa donde se necesite).
 
 // ==================== VINCULACIÓN CON INGRESOS ====================
 // NOTA V2: Estas funciones están deprecadas. En V2, movements no tiene campos

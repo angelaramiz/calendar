@@ -1,3 +1,5 @@
+import { logger } from './logger.js';
+
 /**
  * financial-dashboard.js
  * Dashboard de Análisis Financiero - Interfaz de Usuario
@@ -641,7 +643,7 @@ class FinancialDashboard {
     async init() {
         this.container = document.getElementById(this.containerId);
         if (!this.container) {
-            console.error(`Container #${this.containerId} not found`);
+            logger.error(`Container #${this.containerId} not found`);
             return false;
         }
         
@@ -666,7 +668,7 @@ class FinancialDashboard {
             this.initialized = true;
             return true;
         } catch (error) {
-            console.error('Error initializing financial dashboard:', error);
+            logger.error('Error initializing financial dashboard:', error);
             this.container.innerHTML = this.renderError(error);
             return false;
         }
@@ -1069,7 +1071,7 @@ class FinancialDashboard {
             this.render();
             this.setupEvents();
         } catch (error) {
-            console.error('Error refreshing analysis:', error);
+            logger.error('Error refreshing analysis:', error);
         } finally {
             const btn = document.getElementById('fd-refresh');
             if (btn) {
@@ -1261,7 +1263,7 @@ class ExpenseLinkingModal {
                     });
                 }
             } catch (error) {
-                console.error('Error linking expense:', error);
+                logger.error('Error linking expense:', error);
             }
         }
         

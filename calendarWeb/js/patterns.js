@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // INCOME PATTERNS
@@ -40,7 +41,7 @@ export async function getIncomePatterns(userId = null, activeOnly = false) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching income patterns:', error);
+        logger.error('Error fetching income patterns:', error);
         throw error;
     }
 }
@@ -59,7 +60,7 @@ export async function getIncomePatternById(id) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error fetching income pattern:', error);
+        logger.error('Error fetching income pattern:', error);
         throw error;
     }
 }
@@ -99,7 +100,7 @@ export async function createIncomePattern(patternData) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error creating income pattern:', error);
+        logger.error('Error creating income pattern:', error);
         throw error;
     }
 }
@@ -137,7 +138,7 @@ export async function updateIncomePattern(id, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating income pattern:', error);
+        logger.error('Error updating income pattern:', error);
         throw error;
     }
 }
@@ -161,7 +162,7 @@ export async function deleteIncomePattern(id, hard = false) {
         }
         return true;
     } catch (error) {
-        console.error('Error deleting income pattern:', error);
+        logger.error('Error deleting income pattern:', error);
         throw error;
     }
 }
@@ -175,16 +176,16 @@ export async function deleteIncomePattern(id, hard = false) {
  */
 export async function getExpensePatterns(userId = null, activeOnly = false) {
     try {
-        console.log('[PATTERNS] getExpensePatterns START', { userId, activeOnly });
+        logger.debug('[PATTERNS] getExpensePatterns START', { userId, activeOnly });
         
         // Si no se proporciona userId, obtenerlo del usuario autenticado
         if (!userId) {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 userId = user.id;
-                console.log('[PATTERNS] Got userId from auth:', userId);
+                logger.debug('[PATTERNS] Got userId from auth:', userId);
             } else {
-                console.warn('[PATTERNS] No user authenticated');
+                logger.warn('[PATTERNS] No user authenticated');
             }
         }
 
@@ -196,26 +197,26 @@ export async function getExpensePatterns(userId = null, activeOnly = false) {
         // Filtrar por usuario si se tiene el userId
         if (userId) {
             query = query.eq('user_id', userId);
-            console.log('[PATTERNS] Added user_id filter:', userId);
+            logger.debug('[PATTERNS] Added user_id filter:', userId);
         }
 
         if (activeOnly) {
             query = query.eq('active', true);
-            console.log('[PATTERNS] Added active filter');
+            logger.debug('[PATTERNS] Added active filter');
         }
 
-        console.log('[PATTERNS] Executing query...');
+        logger.debug('[PATTERNS] Executing query...');
         const { data, error } = await query;
         
         if (error) {
-            console.error('[PATTERNS] Supabase error:', error);
+            logger.error('[PATTERNS] Supabase error:', error);
             throw error;
         }
         
-        console.log('[PATTERNS] getExpensePatterns SUCCESS, found:', data?.length || 0, data);
+        logger.debug('[PATTERNS] getExpensePatterns SUCCESS, found:', data?.length || 0, data);
         return data || [];
     } catch (error) {
-        console.error('[PATTERNS] getExpensePatterns ERROR:', error);
+        logger.error('[PATTERNS] getExpensePatterns ERROR:', error);
         throw error;
     }
 }
@@ -234,7 +235,7 @@ export async function getExpensePatternById(id) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error fetching expense pattern:', error);
+        logger.error('Error fetching expense pattern:', error);
         throw error;
     }
 }
@@ -274,7 +275,7 @@ export async function createExpensePattern(patternData) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error creating expense pattern:', error);
+        logger.error('Error creating expense pattern:', error);
         throw error;
     }
 }
@@ -312,7 +313,7 @@ export async function updateExpensePattern(id, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating expense pattern:', error);
+        logger.error('Error updating expense pattern:', error);
         throw error;
     }
 }
@@ -336,7 +337,7 @@ export async function deleteExpensePattern(id, hard = false) {
         }
         return true;
     } catch (error) {
-        console.error('Error deleting expense pattern:', error);
+        logger.error('Error deleting expense pattern:', error);
         throw error;
     }
 }
@@ -372,7 +373,7 @@ export async function getExpensePatternWithSources(id) {
         pattern.income_sources = sources || [];
         return pattern;
     } catch (error) {
-        console.error('Error fetching expense pattern with sources:', error);
+        logger.error('Error fetching expense pattern with sources:', error);
         throw error;
     }
 }
@@ -422,7 +423,7 @@ export async function getExpensePatternsWithSources(activeOnly = false) {
 
         return patterns;
     } catch (error) {
-        console.error('Error fetching expense patterns with sources:', error);
+        logger.error('Error fetching expense patterns with sources:', error);
         throw error;
     }
 }
@@ -452,7 +453,7 @@ export async function assignIncomeSourcesToExpensePattern(expensePatternId, sour
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error assigning income sources to expense pattern:', error);
+        logger.error('Error assigning income sources to expense pattern:', error);
         throw error;
     }
 }
@@ -478,7 +479,7 @@ export async function updateExpensePatternIncomeSource(sourceId, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating expense pattern income source:', error);
+        logger.error('Error updating expense pattern income source:', error);
         throw error;
     }
 }
@@ -496,7 +497,7 @@ export async function removeExpensePatternIncomeSource(sourceId) {
         if (error) throw error;
         return true;
     } catch (error) {
-        console.error('Error removing expense pattern income source:', error);
+        logger.error('Error removing expense pattern income source:', error);
         throw error;
     }
 }
@@ -519,7 +520,7 @@ export async function replaceExpensePatternIncomeSources(expensePatternId, newSo
 
         return true;
     } catch (error) {
-        console.error('Error replacing expense pattern income sources:', error);
+        logger.error('Error replacing expense pattern income sources:', error);
         throw error;
     }
 }
@@ -540,7 +541,7 @@ export async function getExpensePatternIncomeSources(expensePatternId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching expense pattern income sources:', error);
+        logger.error('Error fetching expense pattern income sources:', error);
         throw error;
     }
 }
@@ -622,7 +623,7 @@ export async function calculateExpensePatternCoverage(expensePatternId) {
             sources_breakdown: sourcesBreakdown
         };
     } catch (error) {
-        console.error('Error calculating expense pattern coverage:', error);
+        logger.error('Error calculating expense pattern coverage:', error);
         throw error;
     }
 }
@@ -663,7 +664,7 @@ function validateIncomeSources(sources) {
 
         // Auto-convertir porcentaje a decimal si es necesario
         if (source.allocation_type === 'percent' && value > 1) {
-            console.warn(`allocation_value (${value}) parece estar en formato porcentaje, convirtiendo a decimal`);
+            logger.warn(`allocation_value (${value}) parece estar en formato porcentaje, convirtiendo a decimal`);
             source.allocation_value = value / 100;
         }
     }
@@ -726,7 +727,7 @@ export async function getIncomeCategories() {
         const categories = [...new Set(data.map(item => item.category))];
         return categories;
     } catch (error) {
-        console.error('Error fetching income categories:', error);
+        logger.error('Error fetching income categories:', error);
         return [];
     }
 }
@@ -747,7 +748,7 @@ export async function getExpenseCategories() {
         const categories = [...new Set(data.map(item => item.category))];
         return categories;
     } catch (error) {
-        console.error('Error fetching expense categories:', error);
+        logger.error('Error fetching expense categories:', error);
         return [];
     }
 }

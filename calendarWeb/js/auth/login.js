@@ -5,6 +5,7 @@
 
 import { supabase } from '../supabase-client.js';
 import { isPlatformAuthenticatorAvailable, enableBiometricLogin, authenticateWithBiometrics } from './webauthn.js';
+import { logger } from '../logger.js';
 
 // DOM Elements
 const loginForm = document.getElementById('login-form');
@@ -41,7 +42,7 @@ async function initLogin() {
             biometricLoginBtn.addEventListener('click', handleBiometricLogin);
         }
     } catch (e) {
-        console.warn('Biometric check failed:', e);
+        logger.warn('Biometric check failed:', e);
     }
 }
 
@@ -86,7 +87,7 @@ async function checkExistingSession() {
             localStorage.removeItem('calendar_session');
         }
     } catch (err) {
-        console.error('Error checking session:', err);
+        logger.error('Error checking session:', err);
         localStorage.removeItem('calendar_session');
     }
 }
@@ -219,7 +220,7 @@ async function handleLogin(e) {
     const ensuredProfile = await ensureUserProfile(signInData.user, profile);
     await handleSuccessfulLogin({ id: signInData.user.id, username: ensuredProfile.username, name: ensuredProfile.name || ensuredProfile.username });
     } catch (err) {
-        console.error('Login error:', err);
+        logger.error('Login error:', err);
         showError('Error al iniciar sesión. Por favor intenta nuevamente.');
         setLoading(false);
     }
@@ -275,7 +276,7 @@ async function handleSuccessfulLogin(user) {
         localStorage.removeItem('events');
         localStorage.removeItem(`events:${user.id}`);
     } catch (e) {
-        console.warn('Aviso: no se pudo migrar configuraciones:', e);
+        logger.warn('Aviso: no se pudo migrar configuraciones:', e);
     }
 
     // Handle remember me
@@ -289,7 +290,7 @@ async function handleSuccessfulLogin(user) {
     try {
         await enableBiometricLogin(user.id, user.username, user.email);
     } catch (e) {
-        console.warn('Biometric registration info:', e);
+        logger.warn('Biometric registration info:', e);
     }
 
     // Show success message
@@ -386,7 +387,7 @@ async function ensureUserProfile(authUser, fallbackProfile) {
         .select('username, name')
         .single();
     if (upErr) {
-        console.warn('No se pudo asegurar perfil en users:', upErr.message);
+        logger.warn('No se pudo asegurar perfil en users:', upErr.message);
         return { username: username || email, name };
     }
     return upserted;

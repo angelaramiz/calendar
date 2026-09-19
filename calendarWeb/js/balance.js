@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // BALANCE DE MOVIMIENTOS CONFIRMADOS
@@ -46,7 +47,7 @@ export async function getConfirmedBalanceSummary() {
 
         return result;
     } catch (error) {
-        console.error('Error fetching confirmed balance summary:', error);
+        logger.error('Error fetching confirmed balance summary:', error);
         throw error;
     }
 }
@@ -105,7 +106,7 @@ export async function getMonthlyConfirmedBalance(year = null, limit = 12) {
 
         return result;
     } catch (error) {
-        console.error('Error fetching monthly confirmed balance:', error);
+        logger.error('Error fetching monthly confirmed balance:', error);
         throw error;
     }
 }
@@ -150,7 +151,7 @@ export async function getConfirmedBalanceForDateRange(startDate, endDate) {
         result.balance = result.total_income - result.total_expenses;
         return result;
     } catch (error) {
-        console.error('Error fetching confirmed balance for date range:', error);
+        logger.error('Error fetching confirmed balance for date range:', error);
         throw error;
     }
 }
@@ -239,7 +240,7 @@ export async function getIncomePatternAllocations() {
 
         return result;
     } catch (error) {
-        console.error('Error fetching income pattern allocations:', error);
+        logger.error('Error fetching income pattern allocations:', error);
         return [];
     }
 }
@@ -252,7 +253,7 @@ export async function getIncomePatternAllocation(incomePatternId) {
         const allocations = await getIncomePatternAllocations();
         return allocations.find(a => a.income_pattern_id === incomePatternId) || null;
     } catch (error) {
-        console.error('Error fetching income pattern allocation:', error);
+        logger.error('Error fetching income pattern allocation:', error);
         return null;
     }
 }
@@ -295,7 +296,7 @@ export async function calculateAvailablePercentage(incomePatternId) {
             }
         };
     } catch (error) {
-        console.error('Error calculating available percentage:', error);
+        logger.error('Error calculating available percentage:', error);
         throw error;
     }
 }
@@ -371,7 +372,7 @@ export async function suggestAllocation(incomePatternId, desiredAmount = null) {
             availability
         };
     } catch (error) {
-        console.error('Error suggesting allocation:', error);
+        logger.error('Error suggesting allocation:', error);
         throw error;
     }
 }
@@ -461,7 +462,7 @@ export async function calculateOptimalTargetDate(targetAmount, incomeSources, pr
             total_expected: monthlyContribution * adjustedMonths
         };
     } catch (error) {
-        console.error('Error calculating optimal target date:', error);
+        logger.error('Error calculating optimal target date:', error);
         throw error;
     }
 }
@@ -554,7 +555,7 @@ export async function recalculateAllocationsByPriority() {
             income_remaining: incomeAllocations
         };
     } catch (error) {
-        console.error('Error recalculating allocations:', error);
+        logger.error('Error recalculating allocations:', error);
         throw error;
     }
 }
@@ -571,6 +572,20 @@ export function formatCurrency(amount, currency = 'MXN') {
         style: 'currency',
         currency: currency
     }).format(amount);
+}
+
+/**
+ * Formatea un monto en MXN sin centavos (pesos cerrados).
+ * Fuente unica para financial-engine.js y smart-financial-assistant.js:
+ * mismo output que sus copias locales eliminadas.
+ */
+export function formatCurrencyWhole(amount) {
+    return new Intl.NumberFormat('es-MX', {
+        style: 'currency',
+        currency: 'MXN',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount || 0);
 }
 
 /**

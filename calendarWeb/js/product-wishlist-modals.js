@@ -5,6 +5,7 @@
 
 import * as ProductWishlist from './product-wishlist.js';
 import './components/product-wishlist-form.js';
+import { logger } from './logger.js';
 
 let currentUserId = null;
 
@@ -252,7 +253,7 @@ function renderCompletedTab(completed) {
 // ==================== MODAL PARA AGREGAR PRODUCTO ====================
 
 export async function openAddProductModal() {
-    console.log('[ProductWishlistModals] Opening add product modal...');
+    logger.debug('[ProductWishlistModals] Opening add product modal...');
     
     await Swal.fire({
         title: '🛒 Agregar Producto en Línea',
@@ -265,7 +266,7 @@ export async function openAddProductModal() {
             popup: 'product-form-popup'
         },
         didOpen: () => {
-            console.log('[ProductWishlistModals] Modal opened, form element:', document.querySelector('product-wishlist-form'));
+            logger.debug('[ProductWishlistModals] Modal opened, form element:', document.querySelector('product-wishlist-form'));
             const form = document.querySelector('product-wishlist-form');
             form?.addEventListener('product-created', async () => {
                 Swal.close();
@@ -275,7 +276,7 @@ export async function openAddProductModal() {
         }
     });
     
-    console.log('[ProductWishlistModals] Modal closed');
+    logger.debug('[ProductWishlistModals] Modal closed');
 }
 
 // ==================== MODAL PARA VER DETALLES ====================
@@ -1440,7 +1441,7 @@ function checkProductAlerts(products) {
                                 showConfirmButton: false
                             });
                         } catch (error) {
-                            console.error('Error recalculating date:', error);
+                            logger.error('Error recalculating date:', error);
                             await Swal.fire({
                                 title: '⚠️ Error',
                                 text: 'No se pudo recalcular la fecha. Verifica la configuración del producto.',

@@ -7,6 +7,7 @@
 import { supabase } from './supabase-client.js';
 import { captchaSolver } from './captcha-solver.js';
 import { getIncomePatterns } from './patterns.js';
+import { logger } from './logger.js';
 
 // ==================== CONFIGURACIÓN ====================
 
@@ -21,11 +22,11 @@ const SCRAPER_API_URL = window.SCRAPER_API_URL ||
 const DEBUG = false; // USAR VARIABLES DE ENTORNO EN PRODUCCIÓN
 
 function logInfo(action, data) {
-    if (DEBUG) console.log(`[PRODUCT-WISHLIST] ${action}`, data);
+    if (DEBUG) logger.debug(`[PRODUCT-WISHLIST] ${action}`, data);
 }
 
 function logError(action, error, context = {}) {
-    console.error(`[PRODUCT-WISHLIST] ERROR in ${action}:`, { error: error.message || error, context });
+    logger.error(`[PRODUCT-WISHLIST] ERROR in ${action}:`, { error: error.message || error, context });
 }
 
 // ==================== SCRAPING ====================
@@ -110,7 +111,7 @@ async function fetchProductImage(url, productName = 'Producto') {
         completeImageToast(toastId, false);
         return '';
     } catch (error) {
-        console.warn('[fetchProductImage] Error:', error);
+        logger.warn('[fetchProductImage] Error:', error);
         completeImageToast(toastId, false);
         return '';
     }
@@ -195,7 +196,7 @@ export async function scrapeProduct(url, retryWithCaptcha = true) {
                 detail: { url, imageUrl } 
             }));
         }).catch(err => {
-            console.warn('No se pudo cargar la imagen:', err);
+            logger.warn('No se pudo cargar la imagen:', err);
             product.imageLoading = false;
         });
 
@@ -230,7 +231,7 @@ export async function scrapeProduct(url, retryWithCaptcha = true) {
                             detail: { url, imageUrl } 
                         }));
                     }).catch(err => {
-                        console.warn('No se pudo cargar la imagen:', err);
+                        logger.warn('No se pudo cargar la imagen:', err);
                         productData.imageLoading = false;
                     });
                 }
@@ -1054,12 +1055,7 @@ export async function getProductWishlistDashboard(userId) {
  * @param {number} amount - Monto
  * @returns {string} - Monto formateado
  */
-export function formatCurrency(amount) {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: 'MXN'
-    }).format(amount || 0);
-}
+// formatCurrency() vive en balance.js (fuente unica, se importa donde se necesite).
 
 /**
  * Obtiene sugerencias de contribuciones para productos vinculados a un patrón de ingreso

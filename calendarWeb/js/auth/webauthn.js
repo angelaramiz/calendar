@@ -1,3 +1,5 @@
+import { logger } from '../logger.js';
+
 /**
  * WEBAUTHN / BIOMETRIC AUTH MODULE FOR WEBSITES
  * Permite la autenticación con huella dactilar, FaceID, o Windows Hello usando WebAuthn.
@@ -63,7 +65,7 @@ export async function enableBiometricLogin(userId, username, email) {
             return { success: true };
         }
     } catch (err) {
-        console.warn('Biometric registration skipped or canceled:', err);
+        logger.warn('Biometric registration skipped or canceled:', err);
         // Sin credential real no se guarda nada: volver a intentar tras login con contraseña
         localStorage.removeItem('calendar_biometric_session');
         return { success: false, error: 'Registro biométrico cancelado o no disponible' };
@@ -103,7 +105,7 @@ export async function authenticateWithBiometrics() {
             }
             throw new Error('No se pudo verificar la huella dactilar.');
         } catch (e) {
-            console.warn('WebAuthn assertion failed:', e);
+            logger.warn('WebAuthn assertion failed:', e);
             throw new Error('No se pudo verificar la huella dactilar.');
         }
     }

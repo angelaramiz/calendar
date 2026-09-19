@@ -17,6 +17,7 @@ import { openPlanningModal, setUserId } from './planning-modals.js';
 import { getConfirmedBalanceSummary, formatCurrency } from './balance.js';
 import { initPriceMonitor } from './product-price-monitor.js';
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // Current user session
 let currentUser = null;
@@ -44,7 +45,7 @@ async function loadAppDownloadLink() {
             }
         }
     } catch (e) {
-        console.warn('No se pudo cargar el enlace de descarga de la app:', e);
+        logger.warn('No se pudo cargar el enlace de descarga de la app:', e);
     }
 }
 
@@ -73,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // porque calendar.render() ya lo hace automáticamente
     
     // Inicializar sistema de notificaciones (async)
-    initNotificationSystem().catch(err => console.error('Error initializing notifications:', err));
+    initNotificationSystem().catch(err => logger.error('Error initializing notifications:', err));
     
     // Inicializar monitoreo de precios de productos (async)
     initPriceMonitor();
@@ -193,7 +194,7 @@ function initUserSession() {
         // Mostrar toast de bienvenida
         showWelcomeToasts();
     } catch (err) {
-        console.error('Error initializing session:', err);
+        logger.error('Error initializing session:', err);
         window.location.href = '../index.html';
     }
 }
@@ -338,7 +339,7 @@ async function showWelcomeToasts() {
             }, 1000);
         }
     } catch (err) {
-        console.error('Error showing welcome toasts:', err);
+        logger.error('Error showing welcome toasts:', err);
     }
 }
 
@@ -352,7 +353,7 @@ async function openQuickAccessPanel() {
         // Obtener datos en paralelo
         const userId = currentUser?.userId;
         if (!userId) {
-            console.error('No user ID found');
+            logger.error('No user ID found');
             return;
         }
         
@@ -608,7 +609,7 @@ async function openQuickAccessPanel() {
         });
         
     } catch (err) {
-        console.error('Error opening quick access panel:', err);
+        logger.error('Error opening quick access panel:', err);
         Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -652,7 +653,7 @@ async function openFinancialAnalysisModal() {
                     window.showExpenseLinkingModal = showExpenseLinkingModal;
                     
                 } catch (error) {
-                    console.error('Error loading financial analysis:', error);
+                    logger.error('Error loading financial analysis:', error);
                     const container = Swal.getHtmlContainer();
                     container.innerHTML = `
                         <div style="padding: 40px; text-align: center;">
@@ -669,7 +670,7 @@ async function openFinancialAnalysisModal() {
         });
         
     } catch (err) {
-        console.error('Error opening financial analysis:', err);
+        logger.error('Error opening financial analysis:', err);
         Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -732,7 +733,7 @@ async function updateBalanceIndicator() {
             balancePill.classList.add('negative');
         }
     } catch (err) {
-        console.error('Error updating balance indicator:', err);
+        logger.error('Error updating balance indicator:', err);
         balanceValueEl.textContent = '$0.00';
     }
 }

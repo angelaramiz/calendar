@@ -5,6 +5,7 @@
  */
 
 import { getMovements } from './movements.js';
+import { logger } from './logger.js';
 
 function formatMoney(n) { return (Number(n || 0)).toFixed(2); }
 
@@ -51,7 +52,7 @@ export async function computeDailyStats(todayISO) {
         
         return { acc, netConfirmed, netPending };
     } catch (error) {
-        console.error('Error computing daily stats:', error);
+        logger.error('Error computing daily stats:', error);
         return { acc: emptyAcc(), netConfirmed: 0, netPending: 0 };
     }
 }
@@ -104,7 +105,7 @@ export async function computeWeeklyStatsForMonth(year, monthIndex) {
         
         return result;
     } catch (error) {
-        console.error('Error computing weekly stats:', error);
+        logger.error('Error computing weekly stats:', error);
         return [];
     }
 }
@@ -132,7 +133,7 @@ export async function computeMonthlyFutureStats(year, monthIndex, fromDateISO) {
         
         return acc;
     } catch (error) {
-        console.error('Error computing monthly stats:', error);
+        logger.error('Error computing monthly stats:', error);
         return emptyAcc();
     }
 }
@@ -176,7 +177,7 @@ export async function computeAnnualStatsGroup(year, groupSize) {
         
         return groups;
     } catch (error) {
-        console.error('Error computing annual stats:', error);
+        logger.error('Error computing annual stats:', error);
         return [];
     }
 }

@@ -14,7 +14,8 @@
 import { supabase } from './supabase-client.js';
 import { getIncomePatterns, getExpensePatterns } from './patterns.js';
 import { getPlans } from './plans-v2.js';
-import { getConfirmedBalanceSummary, getMonthlyConfirmedBalance } from './balance.js';
+import { getConfirmedBalanceSummary, getMonthlyConfirmedBalance, formatCurrencyWhole } from './balance.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // CONSTANTES Y CONFIGURACIÓN
@@ -124,7 +125,7 @@ export async function analyzeIncome() {
         
         return analysis;
     } catch (error) {
-        console.error('Error analyzing income:', error);
+        logger.error('Error analyzing income:', error);
         throw error;
     }
 }
@@ -296,7 +297,7 @@ export async function analyzeExpenses() {
         
         return analysis;
     } catch (error) {
-        console.error('Error analyzing expenses:', error);
+        logger.error('Error analyzing expenses:', error);
         throw error;
     }
 }
@@ -356,7 +357,7 @@ export async function getFullFinancialAnalysis() {
         
         return analysis;
     } catch (error) {
-        console.error('Error in full financial analysis:', error);
+        logger.error('Error in full financial analysis:', error);
         throw error;
     }
 }
@@ -483,7 +484,7 @@ function calculateOptimalAllocations(income, expenses) {
         suggestions.push({
             type: 'warning',
             category: 'necessities',
-            message: `Tus gastos esenciales (${formatCurrency(current.necessities)}) superan el ideal (${formatCurrency(ideal.necessities)}).`,
+            message: `Tus gastos esenciales (${formatCurrencyWhole(current.necessities)}) superan el ideal (${formatCurrencyWhole(ideal.necessities)}).`,
             action: 'Considera renegociar contratos o buscar alternativas más económicas.'
         });
     }
@@ -492,7 +493,7 @@ function calculateOptimalAllocations(income, expenses) {
         suggestions.push({
             type: 'info',
             category: 'wants',
-            message: `Gastas ${formatCurrency(current.wants)} en deseos, ${formatCurrency(current.wants - ideal.wants)} más del ideal.`,
+            message: `Gastas ${formatCurrencyWhole(current.wants)} en deseos, ${formatCurrencyWhole(current.wants - ideal.wants)} más del ideal.`,
             action: 'Revisa suscripciones y gastos no esenciales que puedas reducir.'
         });
     }
@@ -501,7 +502,7 @@ function calculateOptimalAllocations(income, expenses) {
         suggestions.push({
             type: 'critical',
             category: 'savings',
-            message: `Tu ahorro actual (${formatCurrency(current.savings)}) está ${formatCurrency(ideal.savings - current.savings)} por debajo del ideal.`,
+            message: `Tu ahorro actual (${formatCurrencyWhole(current.savings)}) está ${formatCurrencyWhole(ideal.savings - current.savings)} por debajo del ideal.`,
             action: 'Prioriza aumentar tu tasa de ahorro antes de nuevos gastos.'
         });
     }
@@ -634,7 +635,7 @@ function generateRecommendations(analysis) {
             priority: 'critical',
             icon: '🚨',
             title: 'Déficit mensual detectado',
-            message: `Tus gastos superan tus ingresos por ${formatCurrency(Math.abs(balance.monthly))} al mes.`,
+            message: `Tus gastos superan tus ingresos por ${formatCurrencyWhole(Math.abs(balance.monthly))} al mes.`,
             actions: [
                 'Revisa y reduce gastos no esenciales',
                 'Busca fuentes adicionales de ingreso',
@@ -652,7 +653,7 @@ function generateRecommendations(analysis) {
             title: 'Aumenta tu tasa de ahorro',
             message: `Tu tasa de ahorro es ${ratios.savingsRate.toFixed(1)}%. Se recomienda al menos 20%.`,
             actions: [
-                `Intenta ahorrar ${formatCurrency(income.totals.monthly * 0.2 - (income.totals.monthly - expenses.totals.monthly))} más al mes`,
+                `Intenta ahorrar ${formatCurrencyWhole(income.totals.monthly * 0.2 - (income.totals.monthly - expenses.totals.monthly))} más al mes`,
                 'Automatiza transferencias a ahorro',
                 'Revisa suscripciones innecesarias'
             ],
@@ -713,7 +714,7 @@ function generateRecommendations(analysis) {
             priority: 'low',
             icon: '🎭',
             title: 'Gastos discrecionales elevados',
-            message: `Gastas ${formatCurrency(allocations.current.wants)} en deseos. Lo ideal sería ${formatCurrency(allocations.ideal.wants)}.`,
+            message: `Gastas ${formatCurrencyWhole(allocations.current.wants)} en deseos. Lo ideal sería ${formatCurrencyWhole(allocations.ideal.wants)}.`,
             actions: [
                 'Implementa la regla de 24 horas antes de compras no esenciales',
                 'Establece un presupuesto semanal para entretenimiento',
@@ -894,7 +895,7 @@ export async function linkExpenseToIncomes(expensePatternId, allocations) {
         
         return true;
     } catch (error) {
-        console.error('Error linking expense to incomes:', error);
+        logger.error('Error linking expense to incomes:', error);
         throw error;
     }
 }
@@ -903,14 +904,7 @@ export async function linkExpenseToIncomes(expensePatternId, allocations) {
 // UTILIDADES
 // ============================================================================
 
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: 'MXN',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount || 0);
-}
+// formatCurrencyWhole() se importa de balance.js (fuente unica).
 
 function formatDate(dateStr) {
     if (!dateStr) return 'Sin fecha';
@@ -928,7 +922,9 @@ function formatDate(dateStr) {
 export {
     calculateMonthlyEquivalent,
     categorizeExpense,
-    formatCurrency,
+    // formatCurrency se mantiene como alias del compartido (mismo output,
+    // 0 decimales) para no romper a financial-dashboard.js.
+    formatCurrencyWhole as formatCurrency,
     formatDate,
     RECOMMENDED_ALLOCATIONS,
     CATEGORY_GROUPS,

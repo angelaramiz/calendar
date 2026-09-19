@@ -5,6 +5,7 @@
  */
 
 import { supabase } from './supabase-client.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // PLANS CRUD
@@ -40,7 +41,7 @@ export async function getPlans(filters = {}) {
             remaining_amount: Math.max(0, plan.target_amount - plan.current_amount)
         }));
     } catch (error) {
-        console.error('Error fetching plans:', error);
+        logger.error('Error fetching plans:', error);
         throw error;
     }
 }
@@ -69,7 +70,7 @@ export async function getPlanById(id) {
             .eq('plan_id', id);
 
         if (sourcesError) {
-            console.warn('Error loading income sources:', sourcesError);
+            logger.warn('Error loading income sources:', sourcesError);
         }
 
         // Calcular progreso
@@ -84,7 +85,7 @@ export async function getPlanById(id) {
             remaining_amount: Math.max(0, plan.target_amount - plan.current_amount)
         };
     } catch (error) {
-        console.error('Error fetching plan by ID:', error);
+        logger.error('Error fetching plan by ID:', error);
         throw error;
     }
 }
@@ -129,7 +130,7 @@ export async function createPlan(planData) {
 
         return await getPlanById(createdPlan.id);
     } catch (error) {
-        console.error('Error creating plan:', error);
+        logger.error('Error creating plan:', error);
         throw error;
     }
 }
@@ -173,7 +174,7 @@ export async function updatePlan(id, updates) {
 
         return await getPlanById(id);
     } catch (error) {
-        console.error('Error updating plan:', error);
+        logger.error('Error updating plan:', error);
         throw error;
     }
 }
@@ -191,7 +192,7 @@ export async function deletePlan(id) {
         if (error) throw error;
         return true;
     } catch (error) {
-        console.error('Error deleting plan:', error);
+        logger.error('Error deleting plan:', error);
         throw error;
     }
 }
@@ -213,7 +214,7 @@ export async function assignIncomeSources(planId, sources) {
             
             // Validar que percent esté en formato decimal (0-1)
             if (allocationType === 'percent' && allocationValue > 1) {
-                console.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
+                logger.warn(`allocation_value (${allocationValue}) parece estar en formato porcentaje, convirtiendo a decimal`);
                 allocationValue = allocationValue / 100;
             }
             
@@ -234,7 +235,7 @@ export async function assignIncomeSources(planId, sources) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error assigning income sources:', error);
+        logger.error('Error assigning income sources:', error);
         throw error;
     }
 }
@@ -255,7 +256,7 @@ export async function getPlanIncomeSources(planId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching plan income sources:', error);
+        logger.error('Error fetching plan income sources:', error);
         throw error;
     }
 }
@@ -274,7 +275,7 @@ export async function removeIncomeSource(planId, incomePatternId) {
         if (error) throw error;
         return true;
     } catch (error) {
-        console.error('Error removing income source:', error);
+        logger.error('Error removing income source:', error);
         throw error;
     }
 }
@@ -308,7 +309,7 @@ export async function contributeToPlan(planId, amount, description = 'Contribuci
 
         return await getPlanById(planId);
     } catch (error) {
-        console.error('Error contributing to plan:', error);
+        logger.error('Error contributing to plan:', error);
         throw error;
     }
 }
@@ -342,7 +343,7 @@ export async function withdrawFromPlan(planId, amount, description = 'Retiro') {
 
         return await getPlanById(planId);
     } catch (error) {
-        console.error('Error withdrawing from plan:', error);
+        logger.error('Error withdrawing from plan:', error);
         throw error;
     }
 }
@@ -449,7 +450,7 @@ export async function recalculatePlanDates(planId, extraContribution = 0) {
                 newTargetDate = estimatedDate.toISOString().slice(0, 10);
                 monthlyContribution = historicalMonthlyRate;
                 calculationMethod = 'historical';
-                console.log(`📊 Recálculo histórico: ${currentAmount} en ${monthsElapsed.toFixed(2)} meses = ${historicalMonthlyRate.toFixed(2)}/mes, faltan ${remaining}, estimados ${monthsNeeded} meses más`);
+                logger.debug(`📊 Recálculo histórico: ${currentAmount} en ${monthsElapsed.toFixed(2)} meses = ${historicalMonthlyRate.toFixed(2)}/mes, faltan ${remaining}, estimados ${monthsNeeded} meses más`);
             } else {
                 newTargetDate = oldTargetDate;
             }
@@ -465,7 +466,7 @@ export async function recalculatePlanDates(planId, extraContribution = 0) {
         } else {
             // Sin datos para calcular, mantener fecha original
             newTargetDate = oldTargetDate;
-            console.log('⚠️ Sin datos para recalcular fecha: no hay fuentes, ni historial, ni contribución extra');
+            logger.debug('⚠️ Sin datos para recalcular fecha: no hay fuentes, ni historial, ni contribución extra');
         }
         
         // Determinar si la fecha cambió significativamente (más de 7 días de diferencia)
@@ -499,7 +500,7 @@ export async function recalculatePlanDates(planId, extraContribution = 0) {
             completed: false
         };
     } catch (error) {
-        console.error('Error recalculating plan dates:', error);
+        logger.error('Error recalculating plan dates:', error);
         return await getPlanById(planId);
     }
 }
@@ -525,7 +526,7 @@ export async function getPlanProgress(planId) {
             target_date: plan.target_date
         };
     } catch (error) {
-        console.error('Error getting plan progress:', error);
+        logger.error('Error getting plan progress:', error);
         throw error;
     }
 }
@@ -552,7 +553,7 @@ export async function getPlansWithTargetInRange(startDate, endDate) {
                 : 0
         }));
     } catch (error) {
-        console.error('Error fetching plans with target in range:', error);
+        logger.error('Error fetching plans with target in range:', error);
         throw error;
     }
 }
@@ -564,7 +565,7 @@ export async function getActivePlans() {
     try {
         return await getPlans({ status: 'active' });
     } catch (error) {
-        console.error('Error fetching active plans:', error);
+        logger.error('Error fetching active plans:', error);
         throw error;
     }
 }
@@ -578,7 +579,7 @@ export async function completePlan(planId) {
             status: 'completed'
         });
     } catch (error) {
-        console.error('Error completing plan:', error);
+        logger.error('Error completing plan:', error);
         throw error;
     }
 }
@@ -590,7 +591,7 @@ export async function pausePlan(planId) {
     try {
         return await updatePlan(planId, { status: 'paused' });
     } catch (error) {
-        console.error('Error pausing plan:', error);
+        logger.error('Error pausing plan:', error);
         throw error;
     }
 }
@@ -602,7 +603,7 @@ export async function resumePlan(planId) {
     try {
         return await updatePlan(planId, { status: 'active' });
     } catch (error) {
-        console.error('Error resuming plan:', error);
+        logger.error('Error resuming plan:', error);
         throw error;
     }
 }
@@ -614,7 +615,7 @@ export async function cancelPlan(planId) {
     try {
         return await updatePlan(planId, { status: 'cancelled' });
     } catch (error) {
-        console.error('Error cancelling plan:', error);
+        logger.error('Error cancelling plan:', error);
         throw error;
     }
 }
@@ -701,7 +702,7 @@ export async function getPlanSuggestionsForIncome(incomePatternId, confirmedAmou
             plans: suggestions.sort((a, b) => b.priority - a.priority) // Ordenar por prioridad
         };
     } catch (error) {
-        console.error('Error getting plan suggestions for income:', error);
+        logger.error('Error getting plan suggestions for income:', error);
         return { hasSuggestions: false, plans: [] };
     }
 }

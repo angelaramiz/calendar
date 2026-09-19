@@ -4,6 +4,7 @@
  */
 
 import { supabase } from '../supabase-client.js';
+import { logger } from '../logger.js';
 
 // DOM Elements
 const recoveryForm = document.getElementById('recovery-form');
@@ -170,7 +171,7 @@ async function handleStep1(e) {
         // Quedarse en esta página; el enlace te traerá de vuelta con sesión temporal
 
     } catch (err) {
-        console.error('Error verifying username:', err);
+        logger.error('Error verifying username:', err);
         showError('Error al verificar el usuario. Por favor intenta nuevamente.');
         setLoadingButton(verifyBtn, false);
     }
@@ -296,7 +297,7 @@ async function handleStep3() {
         await handleSuccessfulReset();
         try { await supabase.auth.signOut(); } catch (_) {}
     } catch (err) {
-        console.error('Error updating password:', err);
+        logger.error('Error updating password:', err);
         const msg = err?.message || '';
         if (msg.includes('password') || msg.includes('Password')) {
             showError('La contraseña no cumple los requisitos. Debe tener: mayuscula, minuscula, numero y caracter especial.');

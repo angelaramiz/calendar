@@ -14,6 +14,8 @@ import { supabase } from './supabase-client.js';
 import { getIncomePatterns, getExpensePatterns } from './patterns.js';
 import { getPlans } from './plans-v2.js';
 import { getSavingsPatterns } from './savings.js';
+import { formatCurrencyWhole } from './balance.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // CACHE Y ESTADO GLOBAL
@@ -125,7 +127,7 @@ export async function loadFinancialState(forceRefresh = false) {
         
         return financialState;
     } catch (error) {
-        console.error('Error loading financial state:', error);
+        logger.error('Error loading financial state:', error);
         return financialState;
     }
 }
@@ -483,8 +485,8 @@ export async function analyzeNewExpense(expenseData) {
             type: 'critical',
             icon: '🚨',
             title: 'Generará déficit mensual',
-            message: `Este gasto de ${formatCurrency(monthlyAmount)}/mes excede tu balance disponible de ${formatCurrency(monthlyBalance)}/mes.`,
-            suggestion: `Reduce el monto a máximo ${formatCurrency(Math.max(0, monthlyBalance * 0.8))}/mes`
+            message: `Este gasto de ${formatCurrencyWhole(monthlyAmount)}/mes excede tu balance disponible de ${formatCurrencyWhole(monthlyBalance)}/mes.`,
+            suggestion: `Reduce el monto a máximo ${formatCurrencyWhole(Math.max(0, monthlyBalance * 0.8))}/mes`
         });
     }
     
@@ -498,7 +500,7 @@ export async function analyzeNewExpense(expenseData) {
             icon: '⚠️',
             title: 'Gasto muy elevado',
             message: `Representa el ${percentOfIncome.toFixed(1)}% de tus ingresos. Lo máximo recomendado es ${SMART_LIMITS.MAX_SINGLE_EXPENSE_PERCENT}%.`,
-            suggestion: `Monto máximo recomendado: ${formatCurrency(monthlyIncome * 0.3)}/mes`
+            suggestion: `Monto máximo recomendado: ${formatCurrencyWhole(monthlyIncome * 0.3)}/mes`
         });
     }
     
@@ -522,7 +524,7 @@ export async function analyzeNewExpense(expenseData) {
             icon: '📊',
             title: `Excede límite de ${getGroupName(group)}`,
             message: `Con este gasto, ${getGroupName(group)} sería ${newGroupPercent.toFixed(1)}% del ingreso. El límite ideal es ${groupLimit}%.`,
-            suggestion: `Espacio disponible en ${getGroupName(group)}: ${formatCurrency(Math.max(0, (monthlyIncome * groupLimit / 100) - currentGroupTotal))}/mes`
+            suggestion: `Espacio disponible en ${getGroupName(group)}: ${formatCurrencyWhole(Math.max(0, (monthlyIncome * groupLimit / 100) - currentGroupTotal))}/mes`
         });
     }
     
@@ -602,8 +604,8 @@ export async function analyzeNewExpense(expenseData) {
             bySavings: maxBySavings
         },
         message: shouldSuggestReduction 
-            ? `Considera reducir a ${formatCurrency(optimalMax)}/mes para mantener finanzas saludables`
-            : `Tu monto de ${formatCurrency(monthlyAmount)}/mes está dentro del rango óptimo`
+            ? `Considera reducir a ${formatCurrencyWhole(optimalMax)}/mes para mantener finanzas saludables`
+            : `Tu monto de ${formatCurrencyWhole(monthlyAmount)}/mes está dentro del rango óptimo`
     };
     
     // ==================== FUENTES DE INGRESO RECOMENDADAS ====================
@@ -652,7 +654,7 @@ export async function analyzeNewExpense(expenseData) {
                 type: 'info',
                 icon: '💡',
                 title: 'Fuentes insuficientes',
-                message: `Faltarían ${formatCurrency(remaining)}/mes por asignar a fuentes de ingreso específicas.`
+                message: `Faltarían ${formatCurrencyWhole(remaining)}/mes por asignar a fuentes de ingreso específicas.`
             });
         }
     }
@@ -794,7 +796,7 @@ export async function analyzeNewPlan(planData) {
             type: 'critical',
             icon: '🚨',
             title: 'Meta no alcanzable en el plazo',
-            message: `Necesitas ${formatCurrency(requiredMonthly)}/mes pero solo tienes ${formatCurrency(monthlyBalance)}/mes disponible.`,
+            message: `Necesitas ${formatCurrencyWhole(requiredMonthly)}/mes pero solo tienes ${formatCurrencyWhole(monthlyBalance)}/mes disponible.`,
             suggestion: `Extiende la fecha meta o reduce el objetivo`
         });
     }
@@ -824,7 +826,7 @@ export async function analyzeNewPlan(planData) {
             type: 'info',
             icon: '🎯',
             title: 'Múltiples metas activas',
-            message: `Ya tienes metas que requieren ${formatCurrency(totalPlansMonthly)}/mes. Considera priorizar.`
+            message: `Ya tienes metas que requieren ${formatCurrencyWhole(totalPlansMonthly)}/mes. Considera priorizar.`
         });
     }
     
@@ -854,9 +856,9 @@ export async function analyzeNewPlan(planData) {
         optimalDate: optimalDate.toISOString().split('T')[0],
         message: targetDate 
             ? requiredMonthly <= adjustedContribution
-                ? `✅ Meta alcanzable con ${formatCurrency(requiredMonthly)}/mes`
+                ? `✅ Meta alcanzable con ${formatCurrencyWhole(requiredMonthly)}/mes`
                 : `⚠️ Fecha sugerida: ${formatDate(optimalDate)} (${optimalMonths} meses)`
-            : `Sugerimos ${formatCurrency(adjustedContribution)}/mes para alcanzar en ${optimalMonths} meses`
+            : `Sugerimos ${formatCurrencyWhole(adjustedContribution)}/mes para alcanzar en ${optimalMonths} meses`
     };
     
     // ==================== FUENTES RECOMENDADAS ====================
@@ -883,7 +885,7 @@ export async function analyzeNewPlan(planData) {
         if (totalAvailable < requiredMonthly) {
             analysis.suggestions.push({
                 icon: '💰',
-                text: `Disponible para metas: ${formatCurrency(totalAvailable)}/mes de ${formatCurrency(requiredMonthly)}/mes necesarios`
+                text: `Disponible para metas: ${formatCurrencyWhole(totalAvailable)}/mes de ${formatCurrencyWhole(requiredMonthly)}/mes necesarios`
             });
         }
     }
@@ -951,7 +953,7 @@ export async function analyzeNewSavings(savingsData) {
             type: 'info',
             icon: '🛡️',
             title: 'Considera priorizar fondo de emergencia',
-            message: `Aún no tienes ${SMART_LIMITS.MIN_EMERGENCY_FUND_MONTHS} meses de gastos ahorrados (${formatCurrency(emergencyFundNeeded)}).`,
+            message: `Aún no tienes ${SMART_LIMITS.MIN_EMERGENCY_FUND_MONTHS} meses de gastos ahorrados (${formatCurrencyWhole(emergencyFundNeeded)}).`,
             suggestion: 'Se recomienda tener un fondo de emergencia antes de otros ahorros'
         });
     }
@@ -965,7 +967,7 @@ export async function analyzeNewSavings(savingsData) {
             type: 'critical',
             icon: '🚨',
             title: 'Contribución excede balance',
-            message: `No puedes aportar ${formatCurrency(monthly)}/mes con un balance de ${formatCurrency(monthlyBalance)}/mes`
+            message: `No puedes aportar ${formatCurrencyWhole(monthly)}/mes con un balance de ${formatCurrencyWhole(monthlyBalance)}/mes`
         });
     } else if (monthly > monthlyBalance * 0.5) {
         analysis.feasibility.score -= 15;
@@ -1024,10 +1026,10 @@ export async function analyzeNewSavings(savingsData) {
         minimum: monthlyBalance * 0.1,
         maximum: monthlyBalance * 0.5,
         message: monthly === 0 
-            ? `Sugerimos aportar ${formatCurrency(availableForNew)}/mes`
+            ? `Sugerimos aportar ${formatCurrencyWhole(availableForNew)}/mes`
             : monthly <= availableForNew
                 ? `✅ Contribución dentro del rango óptimo`
-                : `Máximo recomendado: ${formatCurrency(availableForNew)}/mes`
+                : `Máximo recomendado: ${formatCurrencyWhole(availableForNew)}/mes`
     };
     
     // ==================== SUGERENCIAS ====================
@@ -1035,7 +1037,7 @@ export async function analyzeNewSavings(savingsData) {
     if (purpose === 'emergencia' && target < emergencyFundNeeded) {
         analysis.suggestions.push({
             icon: '🎯',
-            text: `Aumenta la meta a ${formatCurrency(emergencyFundNeeded)} (${SMART_LIMITS.MIN_EMERGENCY_FUND_MONTHS} meses de gastos)`
+            text: `Aumenta la meta a ${formatCurrencyWhole(emergencyFundNeeded)} (${SMART_LIMITS.MIN_EMERGENCY_FUND_MONTHS} meses de gastos)`
         });
     }
     
@@ -1117,7 +1119,7 @@ export function generateAnalysisPanel(analysis, type = 'expense') {
                     <div style="text-align: right;">
                         <div style="font-size: 11px; color: #dc2626;">⚠️ Sugerido máximo</div>
                         <div style="font-weight: 700; color: #dc2626;">
-                            ${formatCurrency(optimalAmount.suggested)}/mes
+                            ${formatCurrencyWhole(optimalAmount.suggested)}/mes
                         </div>
                     </div>
                 ` : `
@@ -1167,12 +1169,12 @@ export function generateAnalysisPanel(analysis, type = 'expense') {
                 ">
                     <div style="text-align: center;">
                         <div style="font-size: 11px; color: #6b7280;">Balance actual</div>
-                        <div style="font-weight: 600; color: #059669;">${formatCurrency(impact.currentBalance)}</div>
+                        <div style="font-weight: 600; color: #059669;">${formatCurrencyWhole(impact.currentBalance)}</div>
                     </div>
                     <div style="text-align: center;">
                         <div style="font-size: 11px; color: #6b7280;">Nuevo balance</div>
                         <div style="font-weight: 600; color: ${impact.newBalance >= 0 ? '#059669' : '#dc2626'};">
-                            ${formatCurrency(impact.newBalance)}
+                            ${formatCurrencyWhole(impact.newBalance)}
                         </div>
                     </div>
                     <div style="text-align: center;">
@@ -1202,7 +1204,7 @@ export function generateAnalysisPanel(analysis, type = 'expense') {
                         ">
                             <span style="font-size: 13px;">${src.name}</span>
                             <span style="font-weight: 500; color: #059669;">
-                                ${formatCurrency(src.suggestedAllocation)}
+                                ${formatCurrencyWhole(src.suggestedAllocation)}
                                 <span style="font-size: 11px; color: #6b7280;">
                                     (${src.percentOfSource.toFixed(0)}%)
                                 </span>
@@ -1262,7 +1264,7 @@ export function generateQuickInsight(analysis) {
                 </span>
                 ${impact ? `
                     <span style="color: #6b7280; margin-left: 8px;">
-                        | Balance: ${formatCurrency(impact.newBalance)}/mes
+                        | Balance: ${formatCurrencyWhole(impact.newBalance)}/mes
                     </span>
                 ` : ''}
             </div>
@@ -1274,14 +1276,7 @@ export function generateQuickInsight(analysis) {
 // UTILIDADES
 // ============================================================================
 
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('es-MX', {
-        style: 'currency',
-        currency: 'MXN',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount || 0);
-}
+// formatCurrencyWhole() se importa de balance.js (fuente unica).
 
 function formatDate(date) {
     if (!date) return '';
@@ -1333,7 +1328,7 @@ export function updateAnalysisPanel(analysis, type = 'expense') {
     const content = document.getElementById('analysis-content');
     
     if (!panel || !content) {
-        console.warn('Panel de análisis no encontrado en el DOM');
+        logger.warn('Panel de análisis no encontrado en el DOM');
         return;
     }
     
@@ -1385,13 +1380,13 @@ function buildExpenseAnalysisHTML(analysis, colors) {
                 <div style="padding: 8px; background: white; border-radius: 8px; text-align: center;">
                     <div style="font-size: 0.75rem; color: #6b7280;">Balance Actual</div>
                     <div style="font-weight: 600; color: ${analysis.currentBalance >= 0 ? '#10b981' : '#ef4444'};">
-                        ${formatCurrency(analysis.currentBalance)}
+                        ${formatCurrencyWhole(analysis.currentBalance)}
                     </div>
                 </div>
                 <div style="padding: 8px; background: white; border-radius: 8px; text-align: center;">
                     <div style="font-size: 0.75rem; color: #6b7280;">Balance Proyectado</div>
                     <div style="font-weight: 600; color: ${analysis.projectedBalance >= 0 ? '#10b981' : '#ef4444'};">
-                        ${formatCurrency(analysis.projectedBalance)}
+                        ${formatCurrencyWhole(analysis.projectedBalance)}
                     </div>
                 </div>
             </div>
@@ -1445,7 +1440,7 @@ function buildPlanAnalysisHTML(analysis, colors) {
                 <div style="padding: 8px; background: white; border-radius: 8px; text-align: center;">
                     <div style="font-size: 0.75rem; color: #6b7280;">Ahorro mensual sugerido</div>
                     <div style="font-weight: 600; color: #10b981;">
-                        ${formatCurrency(analysis.suggestedMonthlySaving)}
+                        ${formatCurrencyWhole(analysis.suggestedMonthlySaving)}
                     </div>
                 </div>
             </div>
@@ -1461,7 +1456,7 @@ function buildPlanAnalysisHTML(analysis, colors) {
                     </div>
                     ${!analysis.canMeetDeadline ? `
                         <div style="font-size: 0.75rem; color: #6b7280; margin-top: 4px;">
-                            Para cumplir la fecha necesitas ahorrar ${formatCurrency(analysis.requiredMonthlySaving)}/mes
+                            Para cumplir la fecha necesitas ahorrar ${formatCurrencyWhole(analysis.requiredMonthlySaving)}/mes
                         </div>
                     ` : ''}
                 </div>
@@ -1526,7 +1521,7 @@ function buildSavingsAnalysisHTML(analysis, colors) {
                 <div style="display: flex; justify-content: space-between;">
                     <span style="font-size: 0.8rem; color: #6b7280;">Balance mensual restante</span>
                     <span style="font-weight: 600; color: ${analysis.remainingBalance >= 0 ? '#10b981' : '#ef4444'};">
-                        ${formatCurrency(analysis.remainingBalance)}
+                        ${formatCurrencyWhole(analysis.remainingBalance)}
                     </span>
                 </div>
             </div>
@@ -1562,13 +1557,13 @@ function buildMovementAnalysisHTML(analysis, colors) {
                 <div style="padding: 8px; background: white; border-radius: 8px; text-align: center;">
                     <div style="font-size: 0.75rem; color: #6b7280;">Balance Antes</div>
                     <div style="font-weight: 600; color: #1f2937;">
-                        ${formatCurrency(analysis.balanceBefore)}
+                        ${formatCurrencyWhole(analysis.balanceBefore)}
                     </div>
                 </div>
                 <div style="padding: 8px; background: white; border-radius: 8px; text-align: center;">
                     <div style="font-size: 0.75rem; color: #6b7280;">Balance Después</div>
                     <div style="font-weight: 600; color: ${analysis.balanceAfter >= 0 ? '#10b981' : '#ef4444'};">
-                        ${formatCurrency(analysis.balanceAfter)}
+                        ${formatCurrencyWhole(analysis.balanceAfter)}
                     </div>
                 </div>
             </div>
@@ -1592,7 +1587,8 @@ function buildMovementAnalysisHTML(analysis, colors) {
 export {
     toMonthlyAmount,
     classifyCategory,
-    formatCurrency as formatMoney,
+    // formatMoney se mantiene como alias del compartido (mismo output).
+    formatCurrencyWhole as formatMoney,
     SMART_LIMITS,
     CATEGORY_CLASSIFICATION
 };

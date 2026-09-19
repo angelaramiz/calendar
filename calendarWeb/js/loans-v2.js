@@ -8,6 +8,7 @@
 
 import { supabase } from './supabase-client.js';
 import { createMovement } from './movements.js';
+import { logger } from './logger.js';
 
 // ============================================================================
 // LOANS CRUD
@@ -37,7 +38,7 @@ export async function getLoans(filters = {}) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching loans:', error);
+        logger.error('Error fetching loans:', error);
         throw error;
     }
 }
@@ -63,7 +64,7 @@ export async function getLoanById(id) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error fetching loan:', error);
+        logger.error('Error fetching loan:', error);
         throw error;
     }
 }
@@ -125,13 +126,13 @@ export async function createLoan(loanData) {
                     confirmed: true
                 });
             } catch (movError) {
-                console.warn('No se pudo crear movement de origen:', movError);
+                logger.warn('No se pudo crear movement de origen:', movError);
             }
         }
 
         return data;
     } catch (error) {
-        console.error('Error creating loan:', error);
+        logger.error('Error creating loan:', error);
         throw error;
     }
 }
@@ -162,7 +163,7 @@ export async function updateLoan(id, updates) {
         if (error) throw error;
         return data;
     } catch (error) {
-        console.error('Error updating loan:', error);
+        logger.error('Error updating loan:', error);
         throw error;
     }
 }
@@ -180,7 +181,7 @@ export async function deleteLoan(id) {
         if (error) throw error;
         return true;
     } catch (error) {
-        console.error('Error deleting loan:', error);
+        logger.error('Error deleting loan:', error);
         throw error;
     }
 }
@@ -235,7 +236,7 @@ export async function registerLoanPayment(loanId, paymentData) {
             }
         };
     } catch (error) {
-        console.error('Error registering loan payment:', error);
+        logger.error('Error registering loan payment:', error);
         throw error;
     }
 }
@@ -254,7 +255,7 @@ export async function getLoanPayments(loanId) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching loan payments:', error);
+        logger.error('Error fetching loan payments:', error);
         throw error;
     }
 }
@@ -300,7 +301,7 @@ export async function getLoansSummary() {
 
         return summary;
     } catch (error) {
-        console.error('Error getting loans summary:', error);
+        logger.error('Error getting loans summary:', error);
         throw error;
     }
 }
@@ -326,7 +327,7 @@ export async function getUpcomingDueLoans(daysAhead = 30) {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching upcoming due loans:', error);
+        logger.error('Error fetching upcoming due loans:', error);
         throw error;
     }
 }
@@ -349,7 +350,7 @@ export async function getOverdueLoans() {
         if (error) throw error;
         return data || [];
     } catch (error) {
-        console.error('Error fetching overdue loans:', error);
+        logger.error('Error fetching overdue loans:', error);
         throw error;
     }
 }
@@ -443,7 +444,7 @@ export async function getLoanProgress(loanId) {
             is_complete: remainingAmount <= 0 || loan.status === 'paid'
         };
     } catch (error) {
-        console.error('Error getting loan progress:', error);
+        logger.error('Error getting loan progress:', error);
         throw error;
     }
 }

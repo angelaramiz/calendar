@@ -5,6 +5,7 @@
  */
 
 import * as ProductWishlist from '../product-wishlist.js';
+import { logger } from '../logger.js';
 
 class ProductWishlistForm extends HTMLElement {
     constructor() {
@@ -22,7 +23,7 @@ class ProductWishlistForm extends HTMLElement {
             this.render();
             this.attachEvents();
         } catch (error) {
-            console.error('[ProductWishlistForm] Error in connectedCallback:', error);
+            logger.error('[ProductWishlistForm] Error in connectedCallback:', error);
         }
     }
 
@@ -58,7 +59,7 @@ class ProductWishlistForm extends HTMLElement {
                 this.showStep('step-review');
             }
         } catch (error) {
-            console.error('Error loading product:', error);
+            logger.error('Error loading product:', error);
         }
     }
 
@@ -935,10 +936,10 @@ class ProductWishlistForm extends HTMLElement {
                             .eq('id', this.savedProductId);
                         
                         if (error) {
-                            console.error('Error updating product image:', error);
+                            logger.error('Error updating product image:', error);
                         }
                     } catch (err) {
-                        console.error('Error updating product image:', err);
+                        logger.error('Error updating product image:', err);
                     }
                 }
             }
@@ -1313,7 +1314,7 @@ class ProductWishlistForm extends HTMLElement {
                 });
             }
         } catch (error) {
-            console.error('Error loading incomes:', error);
+            logger.error('Error loading incomes:', error);
             incomeList.innerHTML = '<div class="error-message">Error al cargar ingresos</div>';
         }
 
@@ -1361,7 +1362,7 @@ class ProductWishlistForm extends HTMLElement {
             this.renderPlanOptions(result.options);
             this.showStep('step-plan');
         } catch (error) {
-            console.error('Error analyzing options:', error);
+            logger.error('Error analyzing options:', error);
             Swal.fire('Error', 'No se pudieron calcular las opciones de planificación', 'error');
         }
     }
@@ -1608,7 +1609,7 @@ class ProductWishlistForm extends HTMLElement {
             }));
 
         } catch (error) {
-            console.error('Error creating product:', error);
+            logger.error('Error creating product:', error);
             Swal.fire('Error', error.message || 'No se pudo crear el producto', 'error');
         } finally {
             btn.querySelector('.btn-text').style.display = 'inline';

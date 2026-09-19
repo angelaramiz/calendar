@@ -13,6 +13,7 @@ import { createPlan } from './plans-v2.js';
 import { getConfirmedBalanceSummary, getIncomePatternAllocations, calculateAvailablePercentage, formatCurrency } from './balance.js';
 import { getSavingsPatterns, getSavingsSummary, createSavingsDeposit, createSavingsWithdrawal, getSavingsPatternById, createSavingsPattern, getSavingsSuggestionsForIncome, getRemainderSavingsSuggestion } from './savings.js';
 import { analyzeNewExpense, analyzeNewPlan, analyzeNewSavings, generateAnalysisPanel, generateQuickInsight, loadFinancialState } from './smart-financial-assistant.js';
+import { logger } from './logger.js';
 
 // SweetAlert2 está disponible globalmente desde index.html
 const Swal = window.Swal;
@@ -101,7 +102,7 @@ export async function showConfirmProjectedDialog(projectionData, onConfirmed) {
         }
     });
 
-    console.log('Result from Swal:', result);
+    logger.debug('Result from Swal:', result);
 
     if (result.isConfirmed) {
         const formValues = result.value;
@@ -156,7 +157,7 @@ export async function showConfirmProjectedDialog(projectionData, onConfirmed) {
 
             if (onConfirmed) onConfirmed(movement);
         } catch (error) {
-            console.error('Error confirming occurrence:', error);
+            logger.error('Error confirming occurrence:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -165,7 +166,7 @@ export async function showConfirmProjectedDialog(projectionData, onConfirmed) {
         }
     } else if (result.isDenied) {
         // Ver/Editar patrón
-        console.log('Opening pattern details:', projectionData.pattern_id, projectionData.pattern_type);
+        logger.debug('Opening pattern details:', projectionData.pattern_id, projectionData.pattern_type);
         await showPatternDetails(projectionData.pattern_id, projectionData.pattern_type, onConfirmed);
     }
 }
@@ -259,7 +260,7 @@ async function promptSavingsAfterIncomeConfirmation(incomePatternId, confirmedAm
                     );
                     successCount++;
                 } catch (e) {
-                    console.error(`Error depositing to ${deposit.name}:`, e);
+                    logger.error(`Error depositing to ${deposit.name}:`, e);
                 }
             }
 
@@ -277,7 +278,7 @@ async function promptSavingsAfterIncomeConfirmation(incomePatternId, confirmedAm
             }
         }
     } catch (error) {
-        console.error('Error prompting savings after income:', error);
+        logger.error('Error prompting savings after income:', error);
         // No mostrar error al usuario, es opcional
     }
 }
@@ -395,7 +396,7 @@ async function promptSavingsFromExpenseSurplus(expensePatternId, expectedAmount,
                     showConfirmButton: false
                 });
             } catch (error) {
-                console.error('Error depositing surplus:', error);
+                logger.error('Error depositing surplus:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -404,7 +405,7 @@ async function promptSavingsFromExpenseSurplus(expensePatternId, expectedAmount,
             }
         }
     } catch (error) {
-        console.error('Error prompting savings from expense surplus:', error);
+        logger.error('Error prompting savings from expense surplus:', error);
     }
 }
 
@@ -522,7 +523,7 @@ async function promptPlanContributionsAfterIncomeConfirmation(incomePatternId, c
                         });
                     }
                 } catch (err) {
-                    console.error(`Error contributing to plan ${contrib.plan_id}:`, err);
+                    logger.error(`Error contributing to plan ${contrib.plan_id}:`, err);
                 }
             }
 
@@ -567,7 +568,7 @@ async function promptPlanContributionsAfterIncomeConfirmation(incomePatternId, c
             }
         }
     } catch (error) {
-        console.error('Error prompting plan contributions after income:', error);
+        logger.error('Error prompting plan contributions after income:', error);
         // No mostrar error al usuario, es opcional
     }
 }
@@ -675,7 +676,7 @@ async function promptProductContributionsAfterIncomeConfirmation(incomePatternId
                     
                     successCount++;
                 } catch (err) {
-                    console.error(`Error contributing to product ${contrib.product_id}:`, err);
+                    logger.error(`Error contributing to product ${contrib.product_id}:`, err);
                 }
             }
 
@@ -693,7 +694,7 @@ async function promptProductContributionsAfterIncomeConfirmation(incomePatternId
             }
         }
     } catch (error) {
-        console.error('Error prompting product contributions after income:', error);
+        logger.error('Error prompting product contributions after income:', error);
         // No mostrar error al usuario, es opcional
     }
 }
@@ -801,7 +802,7 @@ export async function showMovementDetails(movementId, onUpdated) {
                     });
                     if (onUpdated) onUpdated();
                 } catch (deleteError) {
-                    console.error('Error deleting movement:', deleteError);
+                    logger.error('Error deleting movement:', deleteError);
                     await Swal.fire({
                         icon: 'error',
                         title: 'Error',
@@ -811,7 +812,7 @@ export async function showMovementDetails(movementId, onUpdated) {
             }
         }
     } catch (error) {
-        console.error('Error showing movement details:', error);
+        logger.error('Error showing movement details:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -910,7 +911,7 @@ async function showEditMovementDialog(movement, onUpdated) {
             });
             if (onUpdated) onUpdated();
         } catch (error) {
-            console.error('Error updating movement:', error);
+            logger.error('Error updating movement:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -1041,7 +1042,7 @@ export async function showLoanDetails(loanId, onUpdated) {
                     });
                     if (onUpdated) onUpdated();
                 } catch (deleteError) {
-                    console.error('Error deleting loan:', deleteError);
+                    logger.error('Error deleting loan:', deleteError);
                     await Swal.fire({
                         icon: 'error',
                         title: 'Error',
@@ -1051,7 +1052,7 @@ export async function showLoanDetails(loanId, onUpdated) {
             }
         }
     } catch (error) {
-        console.error('Error showing loan details:', error);
+        logger.error('Error showing loan details:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -1073,7 +1074,7 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
         try {
             savingsPatterns = await getSavingsPatterns(true);
         } catch (e) {
-            console.error('Error loading savings patterns:', e);
+            logger.error('Error loading savings patterns:', e);
         }
     }
     
@@ -1262,7 +1263,7 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
                         showConfirmButton: true
                     });
                 } catch (savingsError) {
-                    console.error('Error depositing to savings:', savingsError);
+                    logger.error('Error depositing to savings:', savingsError);
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Pago registrado',
@@ -1291,7 +1292,7 @@ async function showRegisterLoanPaymentDialog(loan, onUpdated) {
             
             if (onUpdated) onUpdated();
         } catch (error) {
-            console.error('Error registering payment:', error);
+            logger.error('Error registering payment:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -1452,7 +1453,7 @@ export async function showPlanDetails(planId, onUpdated) {
                     });
                     if (onUpdated) onUpdated();
                 } catch (deleteError) {
-                    console.error('Error deleting plan:', deleteError);
+                    logger.error('Error deleting plan:', deleteError);
                     await Swal.fire({
                         icon: 'error',
                         title: 'Error',
@@ -1462,7 +1463,7 @@ export async function showPlanDetails(planId, onUpdated) {
             }
         }
     } catch (error) {
-        console.error('Error showing plan details:', error);
+        logger.error('Error showing plan details:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -1485,7 +1486,7 @@ async function showAddContributionDialog(plan, onUpdated) {
         const balanceSummary = await getConfirmedBalanceSummary();
         availableBalance = balanceSummary.balance || 0;
     } catch (e) {
-        console.error('Error getting balance:', e);
+        logger.error('Error getting balance:', e);
     }
     
     const { value: formValues } = await Swal.fire({
@@ -1656,7 +1657,7 @@ async function showAddContributionDialog(plan, onUpdated) {
             if (onUpdated) onUpdated();
             
         } catch (error) {
-            console.error('Error adding contribution:', error);
+            logger.error('Error adding contribution:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -1677,7 +1678,7 @@ async function showEditPlanDialog(plan, onUpdated) {
     try {
         incomePatterns = await getIncomePatterns();
     } catch (error) {
-        console.error('Error loading income patterns:', error);
+        logger.error('Error loading income patterns:', error);
     }
     
     // Obtener los income sources actuales del plan
@@ -1955,7 +1956,7 @@ async function showEditPlanDialog(plan, onUpdated) {
             });
             if (onUpdated) onUpdated();
         } catch (error) {
-            console.error('Error updating plan:', error);
+            logger.error('Error updating plan:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -1997,7 +1998,7 @@ export async function showCreateEventDialog(dateISO, onCreated) {
     // Construir lista de eventos existentes
     const existingEvents = [];
     
-    console.log('dayData:', dayData); // Debug
+    logger.debug('dayData:', dayData); // Debug
     
     // Movimientos confirmados
     if (dayData.confirmed_movements && dayData.confirmed_movements.length > 0) {
@@ -2237,14 +2238,14 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
     try {
         savingsPatterns = await getSavingsPatterns(true);
     } catch (e) {
-        console.error('Error loading savings patterns:', e);
+        logger.error('Error loading savings patterns:', e);
     }
     try {
         const { getPlans } = await import('./plans-v2.js');
         const allPlans = await getPlans();
         activePlans = allPlans.filter(p => p.status === 'active' || p.status === 'planned');
     } catch (e) {
-        console.error('Error loading plans:', e);
+        logger.error('Error loading plans:', e);
     }
     
     // Obtener balance disponible para gastos
@@ -2254,7 +2255,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
             const balanceSummary = await getConfirmedBalanceSummary();
             availableBalance = balanceSummary.balance || 0;
         } catch (e) {
-            console.error('Error getting balance:', e);
+            logger.error('Error getting balance:', e);
         }
     }
     
@@ -2668,7 +2669,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         showConfirmButton: false
                     });
                 } catch (savingsError) {
-                    console.error('Error depositing to savings:', savingsError);
+                    logger.error('Error depositing to savings:', savingsError);
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Ingreso creado',
@@ -2735,7 +2736,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         });
                     }
                 } catch (planError) {
-                    console.error('Error adding to plan:', planError);
+                    logger.error('Error adding to plan:', planError);
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Ingreso creado',
@@ -2762,7 +2763,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         showConfirmButton: false
                     });
                 } catch (savingsError) {
-                    console.error('Error withdrawing from savings:', savingsError);
+                    logger.error('Error withdrawing from savings:', savingsError);
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Gasto creado',
@@ -2813,7 +2814,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
                         });
                     }
                 } catch (planError) {
-                    console.error('Error withdrawing from plan:', planError);
+                    logger.error('Error withdrawing from plan:', planError);
                     await Swal.fire({
                         icon: 'warning',
                         title: 'Gasto creado',
@@ -2835,7 +2836,7 @@ async function showCreateMovementDialog(dateISO, type, onCreated) {
 
             if (onCreated) onCreated(movement);
         } catch (error) {
-            console.error('Error creating movement:', error);
+            logger.error('Error creating movement:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -2861,7 +2862,7 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
         try {
             incomePatterns = await getIncomePatterns();
         } catch (e) {
-            console.error('Error loading income patterns:', e);
+            logger.error('Error loading income patterns:', e);
         }
     }
     
@@ -3102,7 +3103,7 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                                     availableHint.textContent = `Disponible: ${percentAvailable.toFixed(1)}%`;
                                 }
                             } catch (e) {
-                                console.error('Error calculating available %:', e);
+                                logger.error('Error calculating available %:', e);
                                 if (availableHint) availableHint.textContent = 'Disponible: 100%';
                             }
                             // Auto-calcular porcentaje sugerido
@@ -3220,7 +3221,7 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                             analysisContainer.appendChild(suggestBtn);
                         }
                     } catch (error) {
-                        console.error('Error in smart analysis:', error);
+                        logger.error('Error in smart analysis:', error);
                         analysisContainer.innerHTML = `
                             <div style="text-align: center; padding: 15px; color: #9ca3af; font-size: 13px;">
                                 <span style="font-size: 18px;">📊</span><br>
@@ -3312,7 +3313,7 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
                 try {
                     await replaceExpensePatternIncomeSources(pattern.id, [formValues.income_source]);
                 } catch (linkError) {
-                    console.error('Error linking income source:', linkError);
+                    logger.error('Error linking income source:', linkError);
                     // Don't fail the whole operation, just warn
                 }
             }
@@ -3340,7 +3341,7 @@ async function showCreatePatternDialog(startDate, type, onCreated) {
 
             if (onCreated) onCreated(pattern);
         } catch (error) {
-            console.error('Error creating pattern:', error);
+            logger.error('Error creating pattern:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -3386,7 +3387,7 @@ async function showCreatePlanDialog(targetDate, onCreated) {
         if (onCreated) onCreated(plan);
         
     } catch (error) {
-        console.error('Error creating plan:', error);
+        logger.error('Error creating plan:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -3644,7 +3645,7 @@ async function showPlanStep2(step1Data) {
     try {
         incomePatterns = await getIncomePatterns();
     } catch (error) {
-        console.error('Error loading income patterns:', error);
+        logger.error('Error loading income patterns:', error);
     }
     
     if (incomePatterns.length === 0) {
@@ -4591,7 +4592,7 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
                                 
                                 if (onUpdated) onUpdated();
                             } catch (error) {
-                                console.error('Error deleting pattern:', error);
+                                logger.error('Error deleting pattern:', error);
                                 await Swal.fire({
                                     icon: 'error',
                                     title: 'Error',
@@ -4608,7 +4609,7 @@ export async function showPatternDetails(patternId, patternType, onUpdated) {
             await showEditPatternDialog(pattern, patternType, onUpdated);
         }
     } catch (error) {
-        console.error('Error showing pattern details:', error);
+        logger.error('Error showing pattern details:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -4631,7 +4632,7 @@ async function showEditPatternDialog(pattern, patternType, onUpdated) {
             currentSources = await getExpensePatternIncomeSources(pattern.id);
             incomePatterns = await getIncomePatterns();
         } catch (e) {
-            console.error('Error loading income sources:', e);
+            logger.error('Error loading income sources:', e);
         }
     }
     
@@ -4868,7 +4869,7 @@ async function showEditPatternDialog(pattern, patternType, onUpdated) {
             
             if (onUpdated) onUpdated();
         } catch (error) {
-            console.error('Error updating pattern:', error);
+            logger.error('Error updating pattern:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -5196,7 +5197,7 @@ export async function showExpensePatternIncomeSourcesDialog(expensePatternId, on
                 
                 if (onUpdated) onUpdated();
             } catch (error) {
-                console.error('Error updating expense pattern income sources:', error);
+                logger.error('Error updating expense pattern income sources:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -5205,7 +5206,7 @@ export async function showExpensePatternIncomeSourcesDialog(expensePatternId, on
             }
         }
     } catch (error) {
-        console.error('Error in showExpensePatternIncomeSourcesDialog:', error);
+        logger.error('Error in showExpensePatternIncomeSourcesDialog:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -5393,7 +5394,7 @@ async function showCreateLoanDialog(dateISO, onCreated) {
             
             if (onCreated) onCreated(loan);
         } catch (error) {
-            console.error('Error creating loan:', error);
+            logger.error('Error creating loan:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -5707,7 +5708,7 @@ export async function showBalanceSummaryDialog() {
             }
         });
     } catch (error) {
-        console.error('Error showing balance summary:', error);
+        logger.error('Error showing balance summary:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -5881,7 +5882,7 @@ export async function showSavingsManagementDialog() {
             await showBalanceSummaryDialog();
         }
     } catch (error) {
-        console.error('Error showing savings management:', error);
+        logger.error('Error showing savings management:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -5979,7 +5980,7 @@ async function showDeleteSavingsDialog(patternId, patternName, currentBalance) {
         
         await showSavingsManagementDialog();
     } catch (error) {
-        console.error('Error deleting savings:', error);
+        logger.error('Error deleting savings:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -6292,7 +6293,7 @@ export async function showCreateSavingsPatternDialog() {
                 
                 await showSavingsManagementDialog();
             } catch (error) {
-                console.error('Error creating savings pattern:', error);
+                logger.error('Error creating savings pattern:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -6301,7 +6302,7 @@ export async function showCreateSavingsPatternDialog() {
             }
         }
     } catch (error) {
-        console.error('Error showing create savings pattern dialog:', error);
+        logger.error('Error showing create savings pattern dialog:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -6473,7 +6474,7 @@ async function showSavingsDepositDialog(patternId) {
                     await showSavingsManagementDialog();
                 }
             } catch (error) {
-                console.error('Error creating deposit:', error);
+                logger.error('Error creating deposit:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -6482,7 +6483,7 @@ async function showSavingsDepositDialog(patternId) {
             }
         }
     } catch (error) {
-        console.error('Error showing deposit dialog:', error);
+        logger.error('Error showing deposit dialog:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',
@@ -6566,7 +6567,7 @@ async function handleGoalCompletion(patternId, patternName, currentBalance, targ
                 
                 await showSavingsManagementDialog();
             } catch (error) {
-                console.error('Error completing savings goal:', error);
+                logger.error('Error completing savings goal:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -6617,7 +6618,7 @@ async function handleGoalCompletion(patternId, patternName, currentBalance, targ
                 
                 await showSavingsManagementDialog();
             } catch (error) {
-                console.error('Error updating target:', error);
+                logger.error('Error updating target:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -6709,7 +6710,7 @@ async function showSavingsWithdrawalDialog(patternId, currentBalance) {
                 
                 await showSavingsManagementDialog();
             } catch (error) {
-                console.error('Error creating withdrawal:', error);
+                logger.error('Error creating withdrawal:', error);
                 await Swal.fire({
                     icon: 'error',
                     title: 'Error',
@@ -6718,7 +6719,7 @@ async function showSavingsWithdrawalDialog(patternId, currentBalance) {
             }
         }
     } catch (error) {
-        console.error('Error showing withdrawal dialog:', error);
+        logger.error('Error showing withdrawal dialog:', error);
         await Swal.fire({
             icon: 'error',
             title: 'Error',

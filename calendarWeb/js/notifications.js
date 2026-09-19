@@ -7,6 +7,7 @@ import { getCalendarDataForMonth } from './pattern-scheduler.js';
 import { getPlans } from './plans-v2.js';
 import { getLoans } from './loans-v2.js';
 import * as ProductWishlist from './product-wishlist.js';
+import { logger } from './logger.js';
 
 /**
  * Configuración de notificaciones guardada en localStorage
@@ -30,7 +31,7 @@ export function loadNotificationSettings() {
         const settings = localStorage.getItem(userScopedKey('notificationSettings'));
         return settings ? JSON.parse(settings) : getDefaultNotificationSettings();
     } catch (e) {
-        console.error('Error al cargar configuración de notificaciones:', e);
+        logger.error('Error al cargar configuración de notificaciones:', e);
         return getDefaultNotificationSettings();
     }
 }
@@ -39,7 +40,7 @@ export function saveNotificationSettings(settings) {
     try {
         localStorage.setItem(userScopedKey('notificationSettings'), JSON.stringify(settings));
     } catch (e) {
-        console.error('Error al guardar configuración de notificaciones:', e);
+        logger.error('Error al guardar configuración de notificaciones:', e);
     }
 }
 
@@ -89,7 +90,7 @@ export function loadEventAlerts() {
         const alerts = localStorage.getItem(userScopedKey('eventAlerts'));
         return alerts ? JSON.parse(alerts) : {};
     } catch (e) {
-        console.error('Error al cargar alertas:', e);
+        logger.error('Error al cargar alertas:', e);
         return {};
     }
 }
@@ -98,7 +99,7 @@ export function saveEventAlerts(alerts) {
     try {
         localStorage.setItem(userScopedKey('eventAlerts'), JSON.stringify(alerts));
     } catch (e) {
-        console.error('Error al guardar alertas:', e);
+        logger.error('Error al guardar alertas:', e);
     }
 }
 
@@ -248,12 +249,12 @@ export async function getPendingAlerts() {
                     }
                 });
             } catch (error) {
-                console.error('Error loading plans for alerts:', error);
+                logger.error('Error loading plans for alerts:', error);
             }
         }
         
     } catch (error) {
-        console.error('Error getting pending alerts:', error);
+        logger.error('Error getting pending alerts:', error);
         return [];
     }
     
@@ -483,7 +484,7 @@ export function displayAlerts(alerts, container = null) {
  */
 export async function requestBrowserNotificationPermission() {
     if (!('Notification' in window)) {
-        console.warn('Este navegador no soporta notificaciones.');
+        logger.warn('Este navegador no soporta notificaciones.');
         return false;
     }
     
@@ -591,7 +592,7 @@ function saveReadAlerts(alerts) {
     try {
         localStorage.setItem(userScopedKey('readAlerts'), JSON.stringify(alerts));
     } catch (e) {
-        console.error('Error al guardar alertas leídas:', e);
+        logger.error('Error al guardar alertas leídas:', e);
     }
 }
 
@@ -647,7 +648,7 @@ export async function checkInactiveProductAlerts(userId) {
 
         return updatedProducts;
     } catch (error) {
-        console.error('Error checking inactive products:', error);
+        logger.error('Error checking inactive products:', error);
         return [];
     }
 }
@@ -668,7 +669,7 @@ export async function getProductsNearCompletion(userId, daysThreshold = 30) {
             p.days_remaining <= daysThreshold
         );
     } catch (error) {
-        console.error('Error getting products near completion:', error);
+        logger.error('Error getting products near completion:', error);
         return [];
     }
 }
@@ -708,7 +709,7 @@ export async function checkProductCompletionAlerts(userId) {
             });
         }
     } catch (error) {
-        console.error('Error checking product completion alerts:', error);
+        logger.error('Error checking product completion alerts:', error);
     }
 }
 

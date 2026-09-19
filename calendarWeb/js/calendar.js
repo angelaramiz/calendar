@@ -5,6 +5,7 @@
 
 import { showConfirmProjectedDialog, showMovementDetails, showLoanDetails, showPlanDetails, showCreateEventDialog } from './calendar-modals-v2.js';
 import { getCalendarDataForMonth } from './pattern-scheduler.js';
+import { logger } from './logger.js';
 
 export class Calendar {
     constructor(containerId) {
@@ -429,7 +430,7 @@ export class Calendar {
     async refreshAllEventIndicators() {
         // Evitar llamadas concurrentes
         if (this._isRefreshing) {
-            console.log('⏩ Skipping duplicate refreshAllEventIndicators call');
+            logger.debug('⏩ Skipping duplicate refreshAllEventIndicators call');
             return;
         }
         this._isRefreshing = true;

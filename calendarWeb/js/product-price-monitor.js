@@ -6,6 +6,7 @@
 
 import { supabase } from './supabase-client.js';
 import { scrapeProduct } from './product-wishlist.js';
+import { logger } from './logger.js';
 
 const MONITOR_STORAGE_KEY = 'product_monitor_last_run';
 const MONITOR_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 horas
@@ -42,7 +43,7 @@ async function getActiveProducts(userId) {
         .order('created_at', { ascending: false });
     
     if (error) {
-        console.error('[ProductMonitor] Error fetching products:', error);
+        logger.error('[ProductMonitor] Error fetching products:', error);
         return [];
     }
     
@@ -64,7 +65,7 @@ async function updateProductPrice(productId, newPrice, availability = 'available
         .eq('id', productId);
     
     if (error) {
-        console.error('[ProductMonitor] Error updating price:', error);
+        logger.error('[ProductMonitor] Error updating price:', error);
         return false;
     }
     
@@ -220,14 +221,14 @@ function showCanBuyNowNotification(product, newPrice) {
  * Monitorear un producto individual
  */
 async function monitorProduct(product) {
-    console.log(`[ProductMonitor] Checking: ${product.name}`);
+    logger.debug(`[ProductMonitor] Checking: ${product.name}`);
     
     try {
         // Hacer scraping del producto
         const scrapedData = await scrapeProduct(product.url);
         
         if (!scrapedData || scrapedData.needsManualInput) {
-            console.warn(`[ProductMonitor] Could not scrape: ${product.name}`);
+            logger.warn(`[ProductMonitor] Could not scrape: ${product.name}`);
             return;
         }
         
@@ -264,7 +265,7 @@ async function monitorProduct(product) {
         }
         
     } catch (error) {
-        console.error(`[ProductMonitor] Error monitoring ${product.name}:`, error);
+        logger.error(`[ProductMonitor] Error monitoring ${product.name}:`, error);
     }
 }
 
@@ -274,22 +275,22 @@ async function monitorProduct(product) {
 export async function runPriceMonitor(userId) {
     // Verificar si ya se ejecutó hoy
     if (!canRunMonitor()) {
-        console.log('[ProductMonitor] Already ran today, skipping...');
+        logger.debug('[ProductMonitor] Already ran today, skipping...');
         return;
     }
     
-    console.log('[ProductMonitor] Starting daily price check...');
+    logger.debug('[ProductMonitor] Starting daily price check...');
     
     // Obtener productos activos
     const products = await getActiveProducts(userId);
     
     if (products.length === 0) {
-        console.log('[ProductMonitor] No products to monitor');
+        logger.debug('[ProductMonitor] No products to monitor');
         markMonitorRun();
         return;
     }
     
-    console.log(`[ProductMonitor] Monitoring ${products.length} products...`);
+    logger.debug(`[ProductMonitor] Monitoring ${products.length} products...`);
     
     // Monitorear cada producto con un pequeño delay para no sobrecargar
     for (let i = 0; i < products.length; i++) {
@@ -304,7 +305,7 @@ export async function runPriceMonitor(userId) {
     // Marcar que ya se ejecutó
     markMonitorRun();
     
-    console.log('[ProductMonitor] Daily check completed');
+    logger.debug('[ProductMonitor] Daily check completed');
 }
 
 /**

@@ -2,7 +2,7 @@
 
 ## 1. Cómo planificar un cambio en la DB
 
-1. Crea la migración en `calendarWeb/docs/migrations/` con el siguiente número: `NN-nombre-corto.sql` (hoy vamos en `05`). Solo `CREATE/ALTER` con `IF NOT EXISTS`; prohibido `DROP/DELETE` fuera de scripts de reset nommbrados.
+1. Crea la migración en `calendarWeb/docs/migrations/` con el siguiente número: `NN-nombre-corto.sql` (hoy vamos en `06`). Solo `CREATE/ALTER` con `IF NOT EXISTS`; prohibido `DROP/DELETE` fuera de scripts de reset nommbrados.
 2. Pruébala en una rama de Supabase o proyecto de staging antes de producción.
 3. Actualiza en el mismo commit: `docs/DATABASE-SCHEMA.md` (tabla/columna/RLS/relación) y, si es tabla usada por las apps, `docs/schema.sql`.
 4. Si el cambio afecta columnas que lee la app (`TransactionEntity`, `PatternRow`, `MovementRow`), actualiza el modelo en ambas plataformas a la vez.

@@ -1,194 +1,109 @@
 package com.fintrack.app.ui.quickentry
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
-import com.fintrack.app.domain.TransactionCategories
-import com.fintrack.app.domain.WalletResolver
-import com.fintrack.app.ui.wallet.NewWalletDialog
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Registro rápido como ventana (AlertDialog), no pantalla completa.
- * Se muestra como destino `dialog` del NavGraph: funciona igual desde
- * el FAB del dashboard, el Tile y el Widget.
+ * Ventana IN: registro rápido dentro de la app (botón "+" de Inicio).
+ * Se muestra como destino `dialog` del NavGraph.
+ *
+ * Persiana desde abajo con el formulario completo en una sola pantalla
+ * ([QuickEntryFullForm]). La variante por pasos ([QuickEntryForm]) con
+ * persiana desde arriba es exclusiva de la ventana OUT del Tile.
  */
 @Composable
 fun QuickEntryDialog(
     onSave: (TransactionEntity, String?, String?) -> Unit,
     onCancel: () -> Unit,
-    wallets: List<WalletRow> = emptyList(),
-    initialWalletId: String? = null,
     cards: List<CreditCardRow> = emptyList(),
-    onAddWallet: (String, String) -> Unit = { _, _ -> }
+    wallets: List<WalletRow> = emptyList(),
+    onCreateWallet: (name: String, last4: String, kind: String) -> Unit = { _, _, _ -> }
 ) {
-    var amount by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf("EXPENSE") }
-    var category by remember { mutableStateOf(TransactionCategories.defaultFor(false)) }
-    var description by remember { mutableStateOf("") }
-    var walletId by remember(wallets, initialWalletId) {
-        mutableStateOf(
-            initialWalletId?.takeIf { id -> wallets.any { it.id == id } }
-                ?: WalletResolver.EFECTIVO_ID
-        )
-    }
-    // Tag de tarjeta de crédito (solo gastos): se registra pero se paga al corte.
-    var cardId by remember { mutableStateOf<String?>(null) }
-    var showNewWallet by remember { mutableStateOf(false) }
-    val isIncome = type == "INCOME"
-    val categories = TransactionCategories.forType(isIncome)
-    val title = if (isIncome) "Ingreso rápido" else "Gasto rápido"
-
-    val amountValue = amount.toDoubleOrNull()
-    val valid = amountValue != null && amountValue > 0
-
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text(title) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
-                        FilterChip(
-                            selected = type == t,
-                            onClick = {
-                                type = t
-                                // Al cambiar de tipo, la categoría anterior ya no
-                                // aplica: se reinicia al default de ese tipo.
-                                category = TransactionCategories.defaultFor(t == "INCOME")
-                                // La tarjeta solo aplica a gastos.
-                                if (t == "INCOME") cardId = null
-                            },
-                            label = { Text(label) },
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Monto") },
-                    leadingIcon = { Text("$") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text("Categoría", style = MaterialTheme.typography.labelLarge)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                    categories.forEach { cat ->
-                        FilterChip(
-                            selected = category == cat,
-                            onClick = { category = cat },
-                            label = { Text(cat) },
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Nota (opcional)") },
-                    maxLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                if (wallets.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Billetera", style = MaterialTheme.typography.labelLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        wallets.forEach { wallet ->
-                            FilterChip(
-                                selected = walletId == wallet.id,
-                                onClick = { walletId = wallet.id },
-                                label = { Text(wallet.displayName) },
-                                modifier = Modifier.padding(end = 4.dp)
-                            )
-                        }
-                        FilterChip(
-                            selected = false,
-                            onClick = { showNewWallet = true },
-                            label = { Text("+ Nueva") },
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-                    }
-                }
-
-                if (!isIncome && cards.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "Pagar con tarjeta (se paga al corte)",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                        FilterChip(
-                            selected = cardId == null,
-                            onClick = { cardId = null },
-                            label = { Text("Débito / Efectivo") },
-                            modifier = Modifier.padding(end = 4.dp)
-                        )
-                        cards.forEach { card ->
-                            FilterChip(
-                                selected = cardId == card.id,
-                                onClick = { cardId = card.id },
-                                label = { Text(card.displayName) },
-                                modifier = Modifier.padding(end = 4.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val value = amount.toDoubleOrNull() ?: return@TextButton
-                    if (value <= 0) return@TextButton
-                    onSave(
-                        TransactionEntity(
-                            amount = value,
-                            type = type,
-                            category = category,
-                            description = description,
-                            timestamp = System.currentTimeMillis(),
-                            source = "MANUAL"
-                        ),
-                        walletId,
-                        if (isIncome) null else cardId
-                    )
-                },
-                enabled = valid
-            ) { Text("Guardar") }
-        },
-        dismissButton = {
-            TextButton(onClick = onCancel) { Text("Cancelar") }
+    val scope = rememberCoroutineScope()
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    fun requestClose() {
+        if (!visible) return
+        visible = false
+        scope.launch {
+            delay(280)
+            onCancel()
         }
-    )
+    }
 
-    if (showNewWallet) {
-        NewWalletDialog(
-            onDismiss = { showNewWallet = false },
-            onSave = { name, last4 ->
-                onAddWallet(name, last4)
-                showNewWallet = false
+    Dialog(
+        onDismissRequest = ::requestClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = ::requestClose
+                ),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            AnimatedVisibility(
+                visible = visible,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(300)
+                ) + fadeIn(animationSpec = tween(200)),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(250)
+                ) + fadeOut(animationSpec = tween(200))
+            ) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {}
+                        ),
+                    shape = RoundedCornerShape(
+                        topStart = 28.dp, topEnd = 28.dp,
+                        bottomStart = 0.dp, bottomEnd = 0.dp
+                    ),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    QuickEntryFullForm(
+                        cards = cards,
+                        wallets = wallets,
+                        onSave = onSave,
+                        onCancel = ::requestClose,
+                        onCreateWallet = onCreateWallet
+                    )
+                }
             }
-        )
+        }
     }
 }

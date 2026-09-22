@@ -92,6 +92,7 @@ fun FlowsScreen(
     onNavigateToDashboard: () -> Unit = {},
     onNavigateToCalendar: () -> Unit = {},
     onNavigateToBudget: () -> Unit = {},
+    onNavigateToAccounts: () -> Unit = {},
     viewModel: FlowsViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -127,7 +128,8 @@ fun FlowsScreen(
                 onDashboard = onNavigateToDashboard,
                 onCalendar = onNavigateToCalendar,
                 onFlows = { },
-                onBudget = onNavigateToBudget
+                onBudget = onNavigateToBudget,
+                onAccounts = onNavigateToAccounts
             )
         }
     ) { padding ->

@@ -3,12 +3,7 @@ package com.fintrack.app.ui.budget
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.BudgetCapsStore
-import com.fintrack.app.data.CardPayment
-import com.fintrack.app.data.CreditCardRow
-import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.GoalStore
-import com.fintrack.app.data.ServiceBillRow
-import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.MovementRow
 import com.fintrack.app.data.remote.AuthRepository
@@ -24,8 +19,7 @@ import com.fintrack.app.domain.GoalPlanner
 import com.fintrack.app.domain.SavingsGoal
 import com.fintrack.app.domain.MonthProjection
 import com.fintrack.app.domain.ShortTermReport
-import com.fintrack.app.domain.SubscriptionCandidate
-import com.fintrack.app.domain.SubscriptionDetector
+import com.fintrack.app.domain.friendlyErrorMessage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,21 +37,10 @@ data class BudgetUiState(
     val selectedGoalId: String? = null,
     /** Topes mensuales definidos por el usuario (reemplazan los automáticos). */
     val customCaps: Map<String, Double> = emptyMap(),
-    /** Suscripciones detectadas (cargos repetidos sin patrón). */
-    val subscriptions: List<SubscriptionCandidate> = emptyList(),
-    /** Tarjetas de crédito (corte y pago por tarjeta). */
-    val cards: List<CreditCardRow> = emptyList(),
-    /** Tag de cargos: "tx:<id>" o "mov:<id>" -> cardId. */
-    val cardCharges: Map<String, String> = emptyMap(),
-    /** Pagos registrados contra cortes. */
-    val cardPayments: List<CardPayment> = emptyList(),
-    /** Pagos de servicios (vencimientos con recordatorio). */
-    val bills: List<ServiceBillRow> = emptyList(),
     /** Movimientos del mes actual y anterior (para cargos a tarjeta). */
     val recentMovements: List<MovementRow> = emptyList(),
     /** Transacciones cargadas (para cargos a tarjeta). */
     val allTransactions: List<TransactionEntity> = emptyList(),
-    val info: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
     val needsLogin: Boolean = false
@@ -68,9 +51,7 @@ class BudgetViewModel(
     private val patternRepository: PatternRepository,
     private val authRepository: AuthRepository,
     private val goalStore: GoalStore,
-    private val capsStore: BudgetCapsStore,
-    private val creditCardStore: CreditCardStore,
-    private val billStore: ServiceBillStore
+    private val capsStore: BudgetCapsStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(BudgetUiState())
@@ -120,13 +101,6 @@ class BudgetViewModel(
                 val caps = runCatching { capsStore.snapshot() }.getOrDefault(emptyMap())
                 _uiState.value = _uiState.value.copy(customCaps = caps)
                 val transactions = transactionRepository.getTransactions(userId)
-                val cards = runCatching { creditCardStore.cardsSnapshot() }
-                    .getOrDefault(emptyList())
-                val cardCharges = runCatching { creditCardStore.chargesSnapshot() }
-                    .getOrDefault(emptyMap())
-                val cardPayments = runCatching { creditCardStore.paymentsSnapshot() }
-                    .getOrDefault(emptyList())
-                val bills = runCatching { billStore.snapshot() }.getOrDefault(emptyList())
                 val prevMonth = month.minusMonths(1)
                 val recentMovements = runCatching {
                     patternRepository.getMovementsForMonth(
@@ -142,7 +116,6 @@ class BudgetViewModel(
                     transactions, month, _uiState.value.customCaps
                 )
                 val mediumTerm = BudgetPlanner.buildMediumTerm(patterns, transactions, month)
-                val subscriptions = SubscriptionDetector.detect(transactions, patterns, month)
                 val evaluation = BudgetPlanner.evaluateGoal(
                     _uiState.value.goalAmount,
                     _uiState.value.goalMonths,
@@ -152,18 +125,16 @@ class BudgetViewModel(
                     currentMonth = month,
                     shortTerm = shortTerm,
                     mediumTerm = mediumTerm,
-                    subscriptions = subscriptions,
-                    cards = cards,
-                    cardCharges = cardCharges,
-                    cardPayments = cardPayments,
-                    bills = bills,
                     recentMovements = recentMovements,
                     allTransactions = transactions,
                     goalEvaluation = evaluation,
                     isLoading = false
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = friendlyErrorMessage(e)
+                )
             }
         }
     }
@@ -186,130 +157,11 @@ class BudgetViewModel(
         _uiState.value = _uiState.value.copy(error = null)
     }
 
-    /** Crea o actualiza una tarjeta (día fijo de pago o plazo de N días tipo Plata). */
-    fun saveCard(
-        id: String?,
-        name: String,
-        cutoffDay: Int,
-        paymentDay: Int,
-        last4: String = "",
-        graceDays: Int = 0
-    ) {
-        val cleanName = name.trim().ifBlank { "Mi tarjeta" }
-        val grace = graceDays.coerceIn(0, 90)
-        val card = CreditCardRow(
-            id = id ?: "card-${System.currentTimeMillis()}",
-            name = cleanName,
-            cutoffDay = cutoffDay.coerceIn(1, 31),
-            paymentDay = paymentDay.coerceIn(1, 31),
-            last4 = last4.filter { it.isDigit() }.take(4),
-            graceDays = grace
-        )
-        viewModelScope.launch {
-            runCatching { creditCardStore.upsertCard(card) }
-            val terms = if (grace > 0) "pago +$grace días"
-            else "pago día ${card.paymentDay}"
-            _uiState.value = _uiState.value.copy(
-                info = "Tarjeta ${card.displayName} guardada (corte día ${card.cutoffDay}, $terms)."
-            )
-            loadBudget()
-        }
-    }
-
-    fun deleteCard(id: String) {
-        viewModelScope.launch {
-            runCatching { creditCardStore.deleteCard(id) }
-            _uiState.value = _uiState.value.copy(info = "Tarjeta eliminada.")
-            loadBudget()
-        }
-    }
-
-    /** Quita el tag de tarjeta a un cargo (vuelve a ser gasto normal). */
-    fun untagCharge(key: String) {
-        viewModelScope.launch {
-            runCatching { creditCardStore.setCharge(key, null) }
-            loadBudget()
-        }
-    }
-
-    /** Registra lo que en realidad se pagó contra el corte indicado. */
-    fun recordCardPayment(cardId: String, statementCutoffIso: String, amount: Double) {
-        if (amount <= 0.0) return
-        viewModelScope.launch {
-            runCatching {
-                creditCardStore.addPayment(
-                    CardPayment(
-                        id = "pay-${System.currentTimeMillis()}",
-                        cardId = cardId,
-                        amount = amount,
-                        dateIso = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString(),
-                        statementCutoffIso = statementCutoffIso
-                    )
-                )
-            }
-            _uiState.value = _uiState.value.copy(info = "Pago registrado.")
-            loadBudget()
-        }
-    }
-
-    /** Alta/edición de pago de servicio (vencimiento + recordatorio). */
-    fun saveBill(id: String?, name: String, estimatedAmount: Double, dueDay: Int, frequency: String) {
-        val cleanName = name.trim().ifBlank { "Servicio" }
-        val bill = ServiceBillRow(
-            id = id ?: "bill-${System.currentTimeMillis()}",
-            name = cleanName,
-            estimatedAmount = if (estimatedAmount < 0.0) 0.0 else estimatedAmount,
-            dueDay = dueDay.coerceIn(1, 31),
-            frequency = if (frequency == "bimonthly") "bimonthly" else "monthly"
-        )
-        viewModelScope.launch {
-            runCatching { billStore.upsert(bill) }
-            _uiState.value = _uiState.value.copy(info = "${bill.name} programado.")
-            loadBudget()
-        }
-    }
-
-    fun deleteBill(id: String) {
-        viewModelScope.launch {
-            runCatching { billStore.delete(id) }
-            loadBudget()
-        }
-    }
-
-    fun clearInfo() {
-        _uiState.value = _uiState.value.copy(info = null)
-    }
-
     /** Define el tope mensual de una categoría (<=0 lo devuelve al automático). */
     fun setCap(category: String, cap: Double) {
         viewModelScope.launch {
             runCatching { capsStore.setCap(category, cap) }
             loadBudget()
-        }
-    }
-
-    /** Convierte una suscripción detectada en recurrente mensual de gasto. */
-    fun createSubscriptionPattern(candidate: SubscriptionCandidate) {        if (userId.isEmpty()) return
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, info = null)
-            try {
-                patternRepository.insertPattern(
-                    userId = userId,
-                    isIncome = false,
-                    name = candidate.merchant,
-                    description = "Detectada automáticamente",
-                    category = candidate.category,
-                    baseAmount = candidate.amount,
-                    frequency = "monthly",
-                    startDateIso = candidate.nextExpected.toString()
-                )
-                _uiState.value = _uiState.value.copy(
-                    info = "${candidate.merchant} ahora es recurrente mensual."
-                )
-                loadBudget()
-            } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
-            }
         }
     }
 

@@ -1,6 +1,7 @@
 package com.fintrack.app.ui.navigation
 
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
@@ -17,7 +18,8 @@ fun FinTrackBottomBar(
     onDashboard: () -> Unit,
     onCalendar: () -> Unit,
     onFlows: () -> Unit,
-    onBudget: () -> Unit
+    onBudget: () -> Unit,
+    onAccounts: () -> Unit = {}
 ) {
     NavigationBar {
         NavigationBarItem(
@@ -43,6 +45,12 @@ fun FinTrackBottomBar(
             onClick = onBudget,
             icon = { Icon(Icons.Default.Savings, "Presupuesto") },
             label = { Text("Presupuesto") }
+        )
+        NavigationBarItem(
+            selected = selected == Routes.ACCOUNTS,
+            onClick = onAccounts,
+            icon = { Icon(Icons.Default.AccountBalanceWallet, "Cuentas") },
+            label = { Text("Cuentas") }
         )
     }
 }

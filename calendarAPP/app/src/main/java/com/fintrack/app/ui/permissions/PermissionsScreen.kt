@@ -3,6 +3,7 @@ package com.fintrack.app.ui.permissions
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,7 +22,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fintrack.app.data.AppFilterStore
-import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.service.TransactionNotificationListener
 import com.fintrack.app.domain.NotificationParser
@@ -141,7 +141,9 @@ fun PermissionsScreen(onBack: () -> Unit) {
 
             AppFilterSection()
 
-            WalletsSection()
+            TileSection()
+
+            BackupSection()
         }
     }
 }
@@ -414,78 +416,84 @@ private fun AppFilterSection() {
 }
 
 @Composable
-private fun WalletsSection() {
+private fun TileSection() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Acceso rápido", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "El botón de Registro rápido vive en el panel de ajustes (donde están " +
+                    "Wi-Fi y Bluetooth) y abre el registro flotante sin abrir la app. " +
+                    "Para agregarlo: abre el panel completo, toca el lápiz, arrastra " +
+                    "\"Registro rápido\" a tus botones y guarda.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackupSection() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val store = remember { WalletStore(context.applicationContext) }
-    val wallets by store.wallets.collectAsState(initial = emptyList())
-    var newName by remember { mutableStateOf("") }
-    var newLast4 by remember { mutableStateOf("") }
-
-    LaunchedEffect(Unit) {
-        runCatching { store.ensureDefaults() }
-    }
+    val backup = remember { com.fintrack.app.data.BackupManager(context.applicationContext) }
+    var importText by remember { mutableStateOf("") }
+    var showImport by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Mis billeteras", style = MaterialTheme.typography.titleSmall)
+            Text("Respaldo local", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Efectivo viene por defecto. Agrega las tuyas con su terminación " +
-                    "(ej. Mercado Pago •1234) y quita las fijas que no uses: " +
-                    "ya no vuelven a aparecer.",
+                "Billeteras, tarjetas, servicios, topes, flujos y más viven solo " +
+                    "en este teléfono. Cópialos y guárdalos fuera antes de cambiar de equipo.",
                 style = MaterialTheme.typography.bodySmall
             )
             Spacer(modifier = Modifier.height(8.dp))
-
-            wallets.forEach { wallet ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(wallet.displayName, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            if (wallet.custom) "Propia" else "Fija",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    TextButton(onClick = {
-                        scope.launch { store.deleteWallet(wallet.id) }
-                    }) { Text("Quitar") }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    label = { Text("Nueva billetera") },
-                    placeholder = { Text("Mercado Pago…") },
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                OutlinedTextField(
-                    value = newLast4,
-                    onValueChange = { newLast4 = it.filter { c -> c.isDigit() }.take(4) },
-                    label = { Text("Term.") },
-                    placeholder = { Text("1234") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(0.5f)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     scope.launch {
-                        if (newName.isNotBlank()) {
-                            store.addWallet(newName, newLast4)
-                            newName = ""
-                            newLast4 = ""
+                        runCatching { backup.exportJson() }.onSuccess { json ->
+                            val clipboard = context.getSystemService(
+                                android.content.Context.CLIPBOARD_SERVICE
+                            ) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("fintrack-backup", json)
+                            )
+                            message = "Respaldo copiado (${json.length / 1024} KB). Pégalo en tus notas."
+                        }.onFailure {
+                            message = "No se pudo generar: ${it.message?.take(120)}"
                         }
                     }
-                }) { Text("Añadir") }
+                }) { Text("Copiar respaldo") }
+                OutlinedButton(onClick = { showImport = !showImport }) { Text("Restaurar") }
+            }
+            message?.let {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
+            }
+            if (showImport) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = importText,
+                    onValueChange = { importText = it },
+                    label = { Text("Pega el respaldo") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    maxLines = 6
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = {
+                    scope.launch {
+                        runCatching { backup.importJson(importText) }.onSuccess { n ->
+                            message = if (n == 0) "Respaldo válido pero sin secciones."
+                            else "Restauradas $n secciones."
+                            importText = ""
+                            showImport = false
+                        }.onFailure {
+                            message = "Respaldo inválido: revisa el texto pegado."
+                        }
+                    }
+                }) { Text("Aplicar") }
             }
         }
     }

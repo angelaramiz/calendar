@@ -11,10 +11,12 @@ import com.fintrack.app.data.PendingOpStore
 import com.fintrack.app.data.PendingOpSync
 import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.WalletStore
+import com.fintrack.app.data.OnboardingStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import com.fintrack.app.ui.accounts.AccountsViewModel
 import com.fintrack.app.ui.auth.AuthViewModel
 import com.fintrack.app.ui.budget.BudgetViewModel
 import com.fintrack.app.ui.calendar.CalendarViewModel
@@ -35,14 +37,16 @@ val appModule = module {
     single { CredentialStore(androidContext()) }
     single { PendingOpStore(androidContext()) }
     single { WalletStore(androidContext()) }
+    single { OnboardingStore(androidContext()) }
     single { BudgetCapsStore(androidContext()) }
     single { CreditCardStore(androidContext()) }
     single { ServiceBillStore(androidContext()) }
     single { PatternLinkStore(androidContext()) }
     single { PendingOpSync(get(), get(), get(), get(), get(), get()) }
-    viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AuthViewModel(get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get(), get()) }
-    viewModel { BudgetViewModel(get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { BudgetViewModel(get(), get(), get(), get(), get()) }
+    viewModel { AccountsViewModel(get(), get(), get(), get(), get(), get()) }
 }

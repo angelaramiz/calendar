@@ -10,6 +10,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
+import com.fintrack.app.ui.accounts.AccountsScreen
 import com.fintrack.app.ui.auth.AuthScreen
 import com.fintrack.app.ui.auth.RecoveryWebScreen
 import com.fintrack.app.ui.budget.BudgetScreen
@@ -30,6 +31,7 @@ object Routes {
     const val CALENDAR = "calendar"
     const val FLOWS = "flows"
     const val BUDGET = "budget"
+    const val ACCOUNTS = "accounts"
 }
 
 private fun androidx.navigation.NavHostController.navigateToTab(route: String) {
@@ -64,6 +66,7 @@ fun FinTrackNavGraph(
                 onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
                 onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
                 onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) },
+                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) },
                 viewModel = dashboardViewModel
             )
         }
@@ -72,7 +75,8 @@ fun FinTrackNavGraph(
                 onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
                 onNavigateToAuth = { navController.navigate(Routes.AUTH) },
                 onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
-                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) }
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) },
+                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) }
             )
         }
         composable(Routes.FLOWS) {
@@ -80,7 +84,8 @@ fun FinTrackNavGraph(
                 onNavigateToAuth = { navController.navigate(Routes.AUTH) },
                 onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
                 onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
-                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) }
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) },
+                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) }
             )
         }
         composable(Routes.BUDGET) {
@@ -88,7 +93,17 @@ fun FinTrackNavGraph(
                 onNavigateToAuth = { navController.navigate(Routes.AUTH) },
                 onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
                 onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
-                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) }
+                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
+                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) }
+            )
+        }
+        composable(Routes.ACCOUNTS) {
+            AccountsScreen(
+                onNavigateToAuth = { navController.navigate(Routes.AUTH) },
+                onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
+                onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
+                onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
+                onNavigateToBudget = { navController.navigateToTab(Routes.BUDGET) }
             )
         }
         composable(Routes.PERMISSIONS) {
@@ -115,15 +130,16 @@ fun FinTrackNavGraph(
                 koinViewModel(viewModelStoreOwner = activity)
             val dashState by dashboardViewModel.uiState.collectAsState()
             QuickEntryDialog(
-                wallets = dashState.wallets,
-                initialWalletId = dashState.lastWalletId,
                 cards = dashState.cards,
-                onAddWallet = { name, last4 -> dashboardViewModel.addWallet(name, last4) },
+                wallets = dashState.wallets,
                 onSave = { transaction, walletId, cardId ->
                     dashboardViewModel.addTransaction(transaction, walletId, cardId)
                     navController.popBackStack()
                 },
-                onCancel = { navController.popBackStack() }
+                onCancel = { navController.popBackStack() },
+                onCreateWallet = { name, last4, kind ->
+                    dashboardViewModel.addWallet(name, last4, kind)
+                }
             )
         }
     }

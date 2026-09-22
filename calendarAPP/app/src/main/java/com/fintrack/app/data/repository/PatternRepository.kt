@@ -2,7 +2,10 @@ package com.fintrack.app.data.repository
 
 import com.fintrack.app.data.remote.SupabaseClientProvider
 import com.fintrack.app.domain.Occurrence
+import com.fintrack.app.domain.kind
 import com.fintrack.app.domain.Pattern
+import com.fintrack.app.domain.findDuplicateMovement
+import com.fintrack.app.domain.findDuplicatePattern
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -84,7 +87,15 @@ class PatternRepository {
         actualAmount: Double,
         dateIso: String
     ): MovementRow = withContext(Dispatchers.IO) {
-        val isIncome = occurrence.pattern.type == "INCOME"
+        val isIncome = occurrence.pattern.kind?.isIncome == true
+        // Anti-duplicado: confirmación reenviada tras respuesta perdida.
+        runCatching { getMovementsForMonth(userId, dateIso, dateIso) }.getOrNull()?.let { existing ->
+            findDuplicateMovement(
+                dateIso, if (isIncome) "ingreso" else "gasto",
+                occurrence.pattern.name, occurrence.pattern.description,
+                occurrence.pattern.category, actualAmount, occurrence.pattern.id, existing
+            )?.let { return@withContext it }
+        }
         val data = buildJsonObject {
             put("user_id", userId)
             put("type", if (isIncome) "ingreso" else "gasto")
@@ -118,6 +129,14 @@ class PatternRepository {
         startDateIso: String,
         endDateIso: String? = null
     ): PatternRow = withContext(Dispatchers.IO) {
+        // Anti-duplicado: recurrente reenviado tras respuesta perdida.
+        runCatching {
+            if (isIncome) getIncomePatterns(userId) else getExpensePatterns(userId)
+        }.getOrNull()?.let { existing ->
+            findDuplicatePattern(
+                name, description, category, baseAmount, frequency, startDateIso, existing
+            )?.let { return@withContext it }
+        }
         val start = runCatching { java.time.LocalDate.parse(startDateIso) }.getOrNull()
         val data = buildJsonObject {
             put("user_id", userId)
@@ -194,6 +213,13 @@ class PatternRepository {
         category: String,
         amount: Double
     ): MovementRow = withContext(Dispatchers.IO) {
+        // Anti-duplicado: movimiento manual reenviado tras respuesta perdida.
+        runCatching { getMovementsForMonth(userId, dateIso, dateIso) }.getOrNull()?.let { existing ->
+            findDuplicateMovement(
+                dateIso, if (isIncome) "ingreso" else "gasto",
+                title, description, category, amount, null, existing
+            )?.let { return@withContext it }
+        }
         val data = buildJsonObject {
             put("user_id", userId)
             put("type", if (isIncome) "ingreso" else "gasto")

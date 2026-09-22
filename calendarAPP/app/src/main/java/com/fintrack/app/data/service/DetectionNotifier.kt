@@ -12,10 +12,14 @@ import androidx.core.app.NotificationManagerCompat
 import com.fintrack.app.MainActivity
 import com.fintrack.app.R
 import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import com.fintrack.app.domain.kind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 
 object DetectionNotifier {
 
@@ -44,7 +48,7 @@ object DetectionNotifier {
         ensureChannel(context)
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
-        val isIncome = tx.type.equals("INCOME", ignoreCase = true)
+        val isIncome = tx.kind?.isIncome == true
         val title = if (isIncome) "Ingreso detectado" else "Gasto detectado"
         val detail = "$${String.format("%.2f", tx.amount)}" +
             (tx.merchant?.let { " en $it" } ?: "") + " · ${tx.category}"
@@ -88,7 +92,7 @@ object DetectionNotifier {
         ensureChannel(context)
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
 
-        val isIncome = tx.type.equals("INCOME", ignoreCase = true)
+        val isIncome = tx.kind?.isIncome == true
         val kind = if (isIncome) "Ingreso" else "Gasto"
         val detail = "$kind $${String.format("%.2f", tx.amount)}" +
             (tx.merchant?.let { " en $it" } ?: "") +
@@ -124,13 +128,17 @@ object DetectionNotifier {
     }
 }
 
-class DeleteDetectionReceiver : BroadcastReceiver() {
+class DeleteDetectionReceiver : BroadcastReceiver(), KoinComponent {
+    private val authRepository: AuthRepository by inject()
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != DetectionNotifier.ACTION_DELETE) return
         val txId = intent.getStringExtra(DetectionNotifier.EXTRA_TX_ID) ?: return
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                TransactionRepository().deleteTransaction(txId)
+                // Con ownership: sin sesión no se borra nada ajeno.
+                val uid = authRepository.currentUserId ?: return@launch
+                TransactionRepository().deleteTransaction(uid, txId)
             } catch (_: Exception) {
             }
             DetectionNotifier.dismiss(context.applicationContext, txId)

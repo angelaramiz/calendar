@@ -252,7 +252,7 @@ object FlowEngine {
                 val from = month.atDay(1)
                 val to = month.atEndOfMonth()
                 val total = patterns
-                    .filter { it.active && it.type.equals("INCOME", ignoreCase = true) }
+                    .filter { it.active && it.kind?.isIncome == true }
                     .flatMap { PatternExpander.expand(it, from, to) }
                     .sumOf { it.amount }
                 if (total <= 0) {

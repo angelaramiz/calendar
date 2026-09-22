@@ -129,7 +129,9 @@ if (-not $SkipBuild) {
 }
 
 # 5.5 Generar version.json (antes del push para que se incluya en el commit)
-$versionJson = @{ versionCode = $newCode; versionName = $targetVersion } | ConvertTo-Json -Compress
+# El SHA-256 del APK viaja aquí y en Supabase: la app lo verifica antes de instalar.
+$apkSha256 = (Get-FileHash -Path $publicApkPath -Algorithm SHA256).Hash.ToLower()
+$versionJson = @{ versionCode = $newCode; versionName = $targetVersion; apkSha256 = $apkSha256 } | ConvertTo-Json -Compress
 Set-Content -Path $versionJsonPath -Value $versionJson -Encoding ASCII -Force
 Write-Host "version.json generado: $versionJsonPath" -ForegroundColor Green
 
@@ -203,7 +205,7 @@ if (-not $isLive) {
 if ($isLive) {
     Write-Host "`nSUPABASE..." -ForegroundColor Cyan
     $apkUrl = "$renderUrl/calendarfinance.apk"
-    $valor = @{ versionCode = $newCode; versionName = $targetVersion; apkUrl = $apkUrl } | ConvertTo-Json -Compress
+    $valor = @{ versionCode = $newCode; versionName = $targetVersion; apkUrl = $apkUrl; apkSha256 = $apkSha256 } | ConvertTo-Json -Compress
     $body = @{ valor = $valor } | ConvertTo-Json
     $headers = @{ "apikey"=$supabaseKey; "Authorization"="Bearer $supabaseKey"; "Content-Type"="application/json"; "Prefer"="return=minimal" }
     try {

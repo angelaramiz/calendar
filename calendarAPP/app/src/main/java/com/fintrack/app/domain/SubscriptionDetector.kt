@@ -66,8 +66,7 @@ object SubscriptionDetector {
         }.sortedBy { it.nextExpected }
     }
 
-    private fun TransactionEntity.isExpense(): Boolean =
-        !(type.equals("INCOME", ignoreCase = true) || type.equals("ingreso", ignoreCase = true))
+    private fun TransactionEntity.isExpense(): Boolean = kind != TxKind.INCOME
 
     private fun txDate(tx: TransactionEntity): LocalDate =
         Instant.ofEpochMilli(tx.timestamp).atZone(ZoneOffset.UTC).toLocalDate()

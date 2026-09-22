@@ -21,17 +21,19 @@ fun computeMonthSummary(
     var projectedIncome = 0.0
     var projectedExpense = 0.0
     projected.forEach {
-        when (it.pattern.type) {
-            "INCOME" -> projectedIncome += it.amount
-            "EXPENSE" -> projectedExpense += it.amount
+        when (it.pattern.kind) {
+            TxKind.INCOME -> projectedIncome += it.amount
+            TxKind.EXPENSE -> projectedExpense += it.amount
+            null -> Unit
         }
     }
     var confirmedIncome = 0.0
     var confirmedExpense = 0.0
     confirmed.forEach {
-        when (it.type) {
-            "ingreso" -> confirmedIncome += it.confirmed_amount
-            "gasto" -> confirmedExpense += it.confirmed_amount
+        when (it.kind) {
+            TxKind.INCOME -> confirmedIncome += it.confirmed_amount
+            TxKind.EXPENSE -> confirmedExpense += it.confirmed_amount
+            null -> Unit
         }
     }
     return MonthSummary(

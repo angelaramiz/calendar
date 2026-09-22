@@ -29,7 +29,9 @@ import com.fintrack.app.domain.Pattern
 import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.PatternValidator
 import com.fintrack.app.domain.computeMonthSummary
-import com.fintrack.app.domain.toLocalDateUtc
+import com.fintrack.app.domain.friendlyErrorMessage
+import com.fintrack.app.domain.kind
+import com.fintrack.app.domain.toLocalDateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,12 +80,9 @@ data class CalendarUiState(
     val markers: Map<LocalDate, List<String>> = emptyMap()
 )
 
-private fun MovementRow.isIncomeRow(): Boolean =
-    type.equals("ingreso", ignoreCase = true)
+private fun MovementRow.isIncomeRow(): Boolean = kind?.isIncome == true
 
-private fun TransactionEntity.isIncomeTx(): Boolean =
-    type.equals("INCOME", ignoreCase = true) ||
-        type.equals("ingreso", ignoreCase = true)
+private fun TransactionEntity.isIncomeTx(): Boolean = kind?.isIncome == true
 
 class CalendarViewModel(
     private val patternRepository: PatternRepository,
@@ -151,10 +150,12 @@ class CalendarViewModel(
                     runCatching { LocalDate.parse(it.date) }.getOrNull()
                 }.filterKeys { it != null }.mapKeys { it.key!! }
 
-                // Registros de Inicio según su fecha (timestamp UTC).
+                // Registros de Inicio según su fecha en hora local (igual que
+                // selectedDate): si no, lo de la noche cae en "mañana".
+                val zone = java.time.ZoneId.systemDefault()
                 val quickInMonth = transactionRepository.getTransactions(userId)
-                    .filter { it.timestamp.toLocalDateUtc().let { d -> !d.isBefore(from) && !d.isAfter(to) } }
-                val quickByDate = quickInMonth.groupBy { it.timestamp.toLocalDateUtc() }
+                    .filter { it.timestamp.toLocalDateIn(zone).let { d -> !d.isBefore(from) && !d.isAfter(to) } }
+                val quickByDate = quickInMonth.groupBy { it.timestamp.toLocalDateIn(zone) }
 
                 val allDates = (projectedByDate.keys + confirmedByDate.keys + quickByDate.keys)
                     .associateWith { date ->
@@ -187,7 +188,7 @@ class CalendarViewModel(
                     needsLogin = false
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                _uiState.value = _uiState.value.copy(isLoading = false, error = friendlyErrorMessage(e))
             }
         }
     }
@@ -396,7 +397,7 @@ class CalendarViewModel(
                         error = "Sin conexión: el recurrente se guardará al entrar."
                     )
                 } else {
-                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = friendlyErrorMessage(e))
                 }
             }
         }
@@ -450,7 +451,7 @@ class CalendarViewModel(
                         error = "Sin conexión: la baja se guardará al entrar."
                     )
                 } else {
-                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = friendlyErrorMessage(e))
                 }
             }
         }
@@ -537,7 +538,7 @@ class CalendarViewModel(
                         error = "Sin conexión: el movimiento se guardará al entrar."
                     )
                 } else {
-                    _uiState.value = _uiState.value.copy(isSaving = false, error = e.message)
+                    _uiState.value = _uiState.value.copy(isSaving = false, error = friendlyErrorMessage(e))
                 }
             }
         }
@@ -601,18 +602,18 @@ class CalendarViewModel(
                 } else {
                     _uiState.value = _uiState.value.copy(
                         confirmTarget = null,
-                        error = e.message
+                        error = friendlyErrorMessage(e)
                     )
                 }
             }
         }
     }
 
-    /** Alta de billetera propia (con terminación de débito opcional) + recarga. */
-    fun addWallet(name: String, last4: String = "") {
+    /** Alta de billetera propia (con terminación y tipo de cuenta) + recarga. */
+    fun addWallet(name: String, last4: String = "", kind: String = "") {
         if (name.isBlank()) return
         viewModelScope.launch {
-            runCatching { walletStore.addWallet(name, last4) }
+            runCatching { walletStore.addWallet(name, last4, kind) }
             val wallets = runCatching {
                 walletStore.ensureDefaults()
                 walletStore.snapshot()

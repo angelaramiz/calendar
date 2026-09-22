@@ -17,16 +17,18 @@ import com.fintrack.app.data.TxInsertPayload
 import com.fintrack.app.data.TxUpdatePayload
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
-import com.fintrack.app.data.toResolver
+import com.fintrack.app.data.OnboardingStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.WalletResolver
+import com.fintrack.app.domain.friendlyErrorMessage
 import com.fintrack.app.domain.isRecoverableError
+import com.fintrack.app.domain.kind
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.data.repository.OtaUpdateInfo
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.TransactionRepository
-import com.fintrack.app.domain.onDayUtc
+import com.fintrack.app.domain.onDay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +44,12 @@ data class DashboardUiState(
     val recentTransactions: List<TransactionEntity> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
+    /** Sin red: se muestra cinta compacta en vez de error + snackbar. */
+    val isOffline: Boolean = false,
+    /** Operaciones pendientes de subir (cola offline visible). */
+    val pendingCount: Int = 0,
+    /** Asistente inicial de permisos (solo la primera vez). */
+    val showOnboarding: Boolean = false,
     val needsLogin: Boolean = false,
     /** Hay credenciales guardadas: el bloqueo biométrico puede desbloquear. */
     val canUnlockWithBiometrics: Boolean = false,
@@ -51,10 +59,6 @@ data class DashboardUiState(
     val wallets: List<WalletRow> = emptyList(),
     /** Overrides tx:<id> -> walletId (para prellenar la edición). */
     val walletOverrides: Map<String, String> = emptyMap(),
-    /** Neto del mes por billetera. */
-    val walletTotals: Map<String, Double> = emptyMap(),
-    /** Filtro por billetera (null = todas). */
-    val selectedWalletId: String? = null,
     /** Última billetera usada en registro manual. */
     val lastWalletId: String? = null,
     /** Tarjetas de crédito para el selector y el tag. */
@@ -80,7 +84,8 @@ class DashboardViewModel(
     private val pendingOpStore: PendingOpStore,
     private val walletStore: WalletStore,
     private val opSync: PendingOpSync,
-    private val creditCardStore: CreditCardStore
+    private val creditCardStore: CreditCardStore,
+    private val onboardingStore: OnboardingStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -93,16 +98,34 @@ class DashboardViewModel(
         syncPending()
         checkForUpdate()
         startAutoRefresh()
+        refreshPendingCount()
+        viewModelScope.launch {
+            if (!runCatching { onboardingStore.isDone() }.getOrDefault(true)) {
+                _uiState.value = _uiState.value.copy(showOnboarding = true)
+            }
+        }
+    }
+
+    /** Cierra el asistente inicial y no lo vuelve a mostrar. */
+    fun dismissOnboarding() {
+        viewModelScope.launch { runCatching { onboardingStore.markDone() } }
+        _uiState.value = _uiState.value.copy(showOnboarding = false)
     }
 
     private var autoRefreshJob: Job? = null
 
-    /** Refresca los datos cada 5 s para que las detecciones aparezcan solas. */
+    /**
+     * Auto-refresh barato: la caché del repositorio (60 s) hace que cada
+     * ciclo sea en memoria; el pintado es instantáneo y la red solo se toca
+     * al expirar el TTL. Los cambios del usuario refrescan dirigido
+     * (add/delete/update/sync llaman a loadDashboard).
+     */
     fun startAutoRefresh() {
         autoRefreshJob?.cancel()
         autoRefreshJob = viewModelScope.launch {
             while (true) {
-                kotlinx.coroutines.delay(5000)
+                // 30 s en línea / 60 s sin red (antes: 5 s siempre).
+                kotlinx.coroutines.delay(if (_uiState.value.isOffline) 60000 else 30000)
                 loadDashboard(silent = true)
             }
         }
@@ -141,7 +164,9 @@ class DashboardViewModel(
         val update = _uiState.value.updateAvailable ?: return
         if (_uiState.value.otaProgress != null) return
         otaPollJob?.cancel()
-        val downloadId = OtaInstaller.enqueueDownload(appContext, update.apkUrl, update.versionName)
+        val downloadId = OtaInstaller.enqueueDownload(
+            appContext, update.apkUrl, update.versionName, update.apkSha256
+        )
         otaDownloadId = downloadId
         _uiState.value = _uiState.value.copy(otaProgress = 0)
         otaPollJob = viewModelScope.launch {
@@ -159,13 +184,20 @@ class DashboardViewModel(
                     else -> {
                         if (progress >= 100) {
                             val file = OtaInstaller.downloadedFile(appContext, update.versionName)
+                            // Solo se instala lo verificado: hash distinto o fila
+                            // sin firma = se borra y se avisa (fail-closed).
+                            val verified = file != null &&
+                                OtaInstaller.verifySha256(file, update.apkSha256)
+                            if (!verified) runCatching { file?.delete() }
                             _uiState.value = _uiState.value.copy(
                                 otaProgress = null,
-                                otaApkPath = file?.absolutePath,
+                                otaApkPath = file?.takeIf { verified }?.absolutePath,
                                 updateAvailable = null,
-                                updateMessage = if (file == null) {
-                                    "Descarga completa pero no se encontró el archivo. Reintenta."
-                                } else null
+                                updateMessage = when {
+                                    file == null -> "Descarga completa pero no se encontró el archivo. Reintenta."
+                                    !verified -> "La actualización no pasó la verificación. No se instalará."
+                                    else -> null
+                                }
                             )
                             break
                         } else {
@@ -219,6 +251,24 @@ class DashboardViewModel(
     }
 
     /**
+     * Reintento manual desde la insignia de pendientes: sube la cola y
+     * recarga. También refresca el contador.
+     */
+    fun retryPending() {
+        syncPending()
+        loadDashboard(silent = true)
+        refreshPendingCount()
+    }
+
+    /** Cuenta pendientes (detecciones + operaciones manuales). */
+    fun refreshPendingCount() {
+        viewModelScope.launch {
+            val tx = runCatching { pendingTxStore.snapshot().size }.getOrDefault(0)
+            val ops = runCatching { pendingOpStore.count() }.getOrDefault(0)
+            _uiState.value = _uiState.value.copy(pendingCount = tx + ops)
+        }
+    }
+    /**
      * Sube la cola local de detecciones y la bandeja de operaciones manuales.
      * Se llama al abrir la app y tras cada login/desbloqueo.
      */
@@ -248,6 +298,7 @@ class DashboardViewModel(
                 )
                 loadDashboard()
             }
+            refreshPendingCount()
         }
     }
 
@@ -278,17 +329,11 @@ class DashboardViewModel(
                     .getOrDefault(emptyList())
                 val cardCharges = runCatching { creditCardStore.chargesSnapshot() }
                     .getOrDefault(emptyMap())
-                val resolverWallets = wallets.map { it.toResolver() }
-                // Inicio muestra SOLO hoy: al cambiar de día la lista se limpia
-                // sola y todo lo anterior vive en Calendario/Presupuesto.
-                val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
-                val todaysAll = transactions.onDayUtc(today)
-                // Neto diario por billetera (incluye crédito: cuadra con la lista).
-                val dailyTotals = WalletResolver.dayNet(
-                    todaysAll, today, resolverWallets, overrides
-                )
-                val todays = todaysAll
-                    .filter { selectedWalletMatches(it, resolverWallets, overrides) }
+                // Inicio muestra SOLO hoy en hora local del dispositivo: con
+                // UTC la lista se vaciaba desde las 18:00 (hora México).
+                val zone = java.time.ZoneId.systemDefault()
+                val today = java.time.LocalDate.now(zone)
+                val todays = transactions.onDay(today, zone)
                 // Gastos con tag de tarjeta: se registran pero no se aplican
                 // al balance del momento (se pagan al corte).
                 val creditToday = todays
@@ -305,17 +350,39 @@ class DashboardViewModel(
                     recentTransactions = todays,
                     wallets = wallets,
                     walletOverrides = overrides,
-                    walletTotals = dailyTotals,
                     lastWalletId = lastWallet,
                     cards = cards,
                     cardCharges = cardCharges,
                     creditPendingToday = creditToday,
-                    isLoading = false
+                    isLoading = false,
+                    error = null,
+                    isOffline = false
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                // El auto-refresh silencioso sin red NO pone error: la cinta
+                // "sin conexión" basta; si pusiera error, el snackbar
+                // sonaría cada 5 s sin parar.
+                if (silent && isRecoverableError(e)) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, isOffline = true)
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = friendlyErrorMessage(e),
+                        isOffline = isRecoverableError(e)
+                    )
+                }
             }
         }
+    }
+
+    /**
+     * Recarga completa (pull-to-refresh de Inicio): baja movimientos,
+     * sube la cola pendiente y revisa OTA silencioso.
+     */
+    fun refreshAll() {
+        loadDashboard()
+        syncPending()
+        checkForUpdate()
     }
 
     fun addTransaction(
@@ -358,7 +425,7 @@ class DashboardViewModel(
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "No se pudo guardar: ${e.message?.take(150)}"
+                        error = "No se pudo guardar. ${friendlyErrorMessage(e)}"
                     )
                 }
             }
@@ -376,7 +443,7 @@ class DashboardViewModel(
                 return@launch
             }
             try {
-                transactionRepository.deleteTransaction(id)
+                transactionRepository.deleteTransaction(uid, id)
                 loadDashboard()
             } catch (e: Exception) {
                 if (isRecoverableError(e)) {
@@ -423,7 +490,7 @@ class DashboardViewModel(
             }
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                transactionRepository.updateTransaction(id, transaction)
+                transactionRepository.updateTransaction(uid, id, transaction)
                 loadDashboard()
             } catch (e: Exception) {
                 if (isRecoverableError(e)) {
@@ -439,24 +506,18 @@ class DashboardViewModel(
                 } else {
                     _uiState.value = _uiState.value.copy(
                         isLoading = false,
-                        error = "No se pudo modificar: ${e.message?.take(150)}"
+                        error = "No se pudo modificar. ${friendlyErrorMessage(e)}"
                     )
                 }
             }
         }
     }
 
-    /** Filtro por billetera (null = todas) + recarga. */
-    fun selectWallet(walletId: String?) {
-        _uiState.value = _uiState.value.copy(selectedWalletId = walletId)
-        loadDashboard(silent = true)
-    }
-
-    /** Alta de billetera propia (con terminación de débito opcional) + recarga. */
-    fun addWallet(name: String, last4: String = "") {
+    /** Alta de billetera propia (con terminación y tipo de cuenta) + recarga. */
+    fun addWallet(name: String, last4: String = "", kind: String = "") {
         if (name.isBlank()) return
         viewModelScope.launch {
-            runCatching { walletStore.addWallet(name, last4) }
+            runCatching { walletStore.addWallet(name, last4, kind) }
             val wallets = runCatching {
                 walletStore.ensureDefaults()
                 walletStore.snapshot()
@@ -479,17 +540,11 @@ class DashboardViewModel(
                 )
             )
         }
-    }
-
-    private fun selectedWalletMatches(
-        tx: TransactionEntity,
-        wallets: List<WalletResolver.Wallet>,
-        overrides: Map<String, String>
-    ): Boolean {
-        val selected = _uiState.value.selectedWalletId ?: return true
-        return WalletResolver.resolve(tx, wallets, overrides) == selected
+        // La insignia de pendientes refleja el alta de inmediato.
+        val tx = runCatching { pendingTxStore.snapshot().size }.getOrDefault(0)
+        val ops = runCatching { pendingOpStore.count() }.getOrDefault(0)
+        _uiState.value = _uiState.value.copy(pendingCount = tx + ops)
     }
 }
 
-fun TransactionEntity.isIncomeType(): Boolean =
-    type.equals("INCOME", ignoreCase = true) || type.equals("ingreso", ignoreCase = true)
+fun TransactionEntity.isIncomeType(): Boolean = kind?.isIncome == true

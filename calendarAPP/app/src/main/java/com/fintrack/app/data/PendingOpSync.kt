@@ -40,12 +40,12 @@ class PendingOpSync(
             }
             PendingOpKind.TX_UPDATE -> {
                 val p = PendingOpCodec.payload<TxUpdatePayload>(op) ?: return true
-                transactionRepository.updateTransaction(p.id, p.tx)
+                transactionRepository.updateTransaction(userId, p.id, p.tx)
                 true
             }
             PendingOpKind.TX_DELETE -> {
                 val p = PendingOpCodec.payload<TxIdPayload>(op) ?: return true
-                transactionRepository.deleteTransaction(p.id)
+                transactionRepository.deleteTransaction(userId, p.id)
                 true
             }
             PendingOpKind.MOV_INSERT -> {

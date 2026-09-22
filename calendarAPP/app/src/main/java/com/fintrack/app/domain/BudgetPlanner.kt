@@ -70,13 +70,9 @@ object BudgetPlanner {
         "Ocio" to CAP_OCIO
     )
 
-    private fun TransactionEntity.isIncome(): Boolean =
-        type.equals("INCOME", ignoreCase = true) ||
-            type.equals("ingreso", ignoreCase = true)
+    private fun TransactionEntity.isIncome(): Boolean = kind?.isIncome == true
 
-    private fun Pattern.isIncomePattern(): Boolean =
-        type.equals("INCOME", ignoreCase = true) ||
-            type.equals("ingreso", ignoreCase = true)
+    private fun Pattern.isIncomePattern(): Boolean = kind?.isIncome == true
 
     private fun Long.toYearMonthUtc(): YearMonth =
         YearMonth.from(Instant.ofEpochMilli(this).atZone(ZoneOffset.UTC).toLocalDate())

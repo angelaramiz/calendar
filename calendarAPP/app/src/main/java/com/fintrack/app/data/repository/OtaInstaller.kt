@@ -31,6 +31,39 @@ object OtaInstaller {
     const val CHANNEL_ID = "fintrack_updates"
     private const val NOTIFICATION_ID = 4401
 
+    /**
+     * SHA-256 esperado de la descarga en curso (lo fija [enqueueDownload]).
+     * El receiver lo usa para no anunciar un APK corrupto o suplantado.
+     */
+    @Volatile
+    var pendingSha256: String = ""
+        private set
+
+    /**
+     * Verifica que el archivo descargado coincida con el SHA-256 hex
+     * publicado en `app_versions` (minúsculas). Puro JVM: testeable sin
+     * Android. `expectedHex` vacío o malformado = NO pasa (fail-closed:
+     * las filas viejas sin firma no se instalan).
+     */
+    fun verifySha256(file: File, expectedHex: String): Boolean {
+        val expected = expectedHex.trim().lowercase()
+        if (expected.length != 64 || !expected.all { it in '0'..'9' || it in 'a'..'f' }) {
+            return false
+        }
+        if (!file.isFile) return false
+        return runCatching {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.inputStream().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                var read: Int
+                while (input.read(buffer).also { read = it } >= 0) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) } == expected
+        }.getOrDefault(false)
+    }
+
     fun canInstallUnknownApps(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
@@ -55,7 +88,13 @@ object OtaInstaller {
     private fun fileName(versionName: String) = "fintrack-$versionName.apk"
 
     /** Encola la descarga y devuelve su ID. Al completarse publica "Toca para instalar". */
-    fun enqueueDownload(appContext: Context, apkUrl: String, versionName: String): Long {
+    fun enqueueDownload(
+        appContext: Context,
+        apkUrl: String,
+        versionName: String,
+        expectedSha256: String = ""
+    ): Long {
+        pendingSha256 = expectedSha256.trim().lowercase()
         val request = DownloadManager.Request(Uri.parse(apkUrl)).apply {
             setTitle("FinTrack $versionName")
             setDescription("Descargando actualización...")
@@ -72,7 +111,13 @@ object OtaInstaller {
                 if (intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) != downloadId) return
                 try { appContext.unregisterReceiver(this) } catch (_: Exception) { }
                 val file = apkFile(appContext, versionName)
-                if (file.exists()) showInstallNotification(appContext, file, versionName)
+                // Sin hash válido no se anuncia: un APK suplantado o corrupto
+                // nunca llega al instalador (ni por notificación ni por la app).
+                if (file.exists() && verifySha256(file, pendingSha256)) {
+                    showInstallNotification(appContext, file, versionName)
+                } else {
+                    runCatching { file.delete() }
+                }
             }
         }
         ContextCompat.registerReceiver(

@@ -18,13 +18,16 @@ private data class AppVersionRow(
 private data class OtaPayload(
     val versionCode: Int = 0,
     val versionName: String = "",
-    val apkUrl: String = ""
+    val apkUrl: String = "",
+    /** SHA-256 hex del APK (minúsculas). "" = fila vieja sin firma. */
+    val apkSha256: String = ""
 )
 
 data class OtaUpdateInfo(
     val versionCode: Int,
     val versionName: String,
-    val apkUrl: String
+    val apkUrl: String,
+    val apkSha256: String = ""
 )
 
 class OtaUpdateRepository {
@@ -43,7 +46,7 @@ class OtaUpdateRepository {
             if (payload.apkUrl.isBlank()) return@withContext null
 
             if (payload.versionCode > BuildConfig.VERSION_CODE) {
-                OtaUpdateInfo(payload.versionCode, payload.versionName, payload.apkUrl)
+                OtaUpdateInfo(payload.versionCode, payload.versionName, payload.apkUrl, payload.apkSha256)
             } else {
                 null
             }

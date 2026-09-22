@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -30,8 +31,11 @@ import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.repository.MovementRow
 import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
+import com.fintrack.app.domain.TxKind
+import com.fintrack.app.domain.kind
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
+import com.fintrack.app.ui.common.PullRefreshLayout
 import com.fintrack.app.ui.theme.expenseColor
 import com.fintrack.app.ui.theme.incomeColor
 import org.koin.androidx.compose.koinViewModel
@@ -49,6 +53,7 @@ fun CalendarScreen(
     onNavigateToAuth: () -> Unit,
     onNavigateToFlows: () -> Unit,
     onNavigateToBudget: () -> Unit,
+    onNavigateToAccounts: () -> Unit = {},
     viewModel: CalendarViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -66,13 +71,11 @@ fun CalendarScreen(
         AddMovementDialog(
             date = target,
             isSaving = uiState.isSaving,
-            wallets = uiState.wallets,
             cards = uiState.cards,
-            onAddWallet = { name, last4 -> viewModel.addWallet(name, last4) },
             onDismiss = { viewModel.dismissAddMovement() },
-            onSave = { date, isIncome, title, category, amount, description, walletId, cardId ->
+            onSave = { date, isIncome, title, category, amount, description, cardId ->
                 viewModel.saveManualMovement(
-                    date, isIncome, title, category, amount, description, walletId, cardId
+                    date, isIncome, title, category, amount, description, null, cardId
                 )
             }
         )
@@ -105,7 +108,7 @@ fun CalendarScreen(
             Column(horizontalAlignment = Alignment.End) {
                 if (fabExpanded) {
                     FabAction(
-                        label = "Registrar en este día",
+                        label = "Registrar en este dÃ­a",
                         icon = Icons.Default.Create,
                         onClick = {
                             fabExpanded = false
@@ -137,14 +140,26 @@ fun CalendarScreen(
                 onDashboard = onNavigateToDashboard,
                 onCalendar = { },
                 onFlows = onNavigateToFlows,
-                onBudget = onNavigateToBudget
+                onBudget = onNavigateToBudget,
+                onAccounts = onNavigateToAccounts
             )
         }
     ) { padding ->
         // Un solo LazyColumn (como Inicio/Flujos/Presupuesto): antes era Column
         // fija + LazyColumn anidada y el scroll fallaba.
+        val listState = rememberLazyListState()
+        PullRefreshLayout(
+            onRefresh = { viewModel.retry() },
+            isLoading = uiState.isLoading,
+            atTopProvider = {
+                listState.firstVisibleItemIndex == 0 &&
+                    listState.firstVisibleItemScrollOffset == 0
+            },
+            modifier = Modifier.padding(padding)
+        ) { pullModifier ->
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp)
+            state = listState,
+            modifier = pullModifier.padding(horizontal = 16.dp)
         ) {
             if (uiState.needsLogin) {
                 item {
@@ -153,9 +168,9 @@ fun CalendarScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Inicia sesión para ver tu calendario")
+                            Text("Inicia sesiÃ³n para ver tu calendario")
                             Spacer(modifier = Modifier.height(12.dp))
-                            Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
+                            Button(onClick = onNavigateToAuth) { Text("Iniciar sesiÃ³n") }
                         }
                     }
                 }
@@ -247,7 +262,7 @@ fun CalendarScreen(
                 (dayData.projected.isNotEmpty() || dayData.confirmed.isNotEmpty() || dayData.quick.isNotEmpty())
             if (!hasMovements && dayMarkers.isEmpty()) {
                 item {
-                    Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
+                    Text("Sin movimientos este dÃ­a", style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
                 if (dayMarkers.isNotEmpty()) {
@@ -278,6 +293,7 @@ fun CalendarScreen(
 
             item { Spacer(modifier = Modifier.height(80.dp)) }
             }
+        }
         }
     }
 }
@@ -367,12 +383,12 @@ private fun MonthGrid(
                     val inMonth = date.month == yearMonth.month
                     val isToday = date == LocalDate.now()
                     val dayData = days[date]
-                    val hasIncome = dayData?.projected?.any { it.pattern.type == "INCOME" } == true ||
-                        dayData?.confirmed?.any { it.type == "ingreso" } == true ||
-                        dayData?.quick?.any { it.type.equals("INCOME", ignoreCase = true) } == true
-                    val hasExpense = dayData?.projected?.any { it.pattern.type == "EXPENSE" } == true ||
-                        dayData?.confirmed?.any { it.type == "gasto" } == true ||
-                        dayData?.quick?.any { it.type.equals("EXPENSE", ignoreCase = true) } == true
+                    val hasIncome = dayData?.projected?.any { it.pattern.kind?.isIncome == true } == true ||
+                        dayData?.confirmed?.any { it.kind?.isIncome == true } == true ||
+                        dayData?.quick?.any { it.kind?.isIncome == true } == true
+                    val hasExpense = dayData?.projected?.any { it.pattern.kind == TxKind.EXPENSE } == true ||
+                        dayData?.confirmed?.any { it.kind == TxKind.EXPENSE } == true ||
+                        dayData?.quick?.any { it.kind == TxKind.EXPENSE } == true
                     val allConfirmed = dayData != null &&
                         dayData.projected.isEmpty() && dayData.confirmed.isNotEmpty()
                     val hasMarker = markers[date]?.isNotEmpty() == true
@@ -398,7 +414,7 @@ private fun MonthGrid(
                                     RoundedCornerShape(12.dp)
                                 ) else Modifier
                             )
-                            .clickable(onClickLabel = "Ver día ${date.dayOfMonth}") { onSelect(date) },
+                            .clickable(onClickLabel = "Ver dÃ­a ${date.dayOfMonth}") { onSelect(date) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -479,7 +495,7 @@ private fun MarkerRow(marker: String) {
         )
     ) {
         Text(
-            "🔔 $marker",
+            "ðŸ”” $marker",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
@@ -535,7 +551,7 @@ private fun BalanceCard(balance: CalendarBalance) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Ingresos $${String.format("%.2f", balance.income)} · " +
+                "Ingresos $${String.format("%.2f", balance.income)} Â· " +
                     "Gastos $${String.format("%.2f", balance.expense)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
@@ -655,15 +671,15 @@ private fun ProjectedCard(
 
 private fun linkLabel(linkKind: String?, cardName: String?): String? = when (linkKind) {
     com.fintrack.app.data.PatternLinkKind.CREDIT ->
-        "💳 Tarjeta" + (cardName?.let { " $it" } ?: "")
-    com.fintrack.app.data.PatternLinkKind.SERVICE -> "🧾 Servicio"
-    com.fintrack.app.data.PatternLinkKind.SUBSCRIPTION -> "🔁 Suscripción"
+        "ðŸ’³ Tarjeta" + (cardName?.let { " $it" } ?: "")
+    com.fintrack.app.data.PatternLinkKind.SERVICE -> "ðŸ§¾ Servicio"
+    com.fintrack.app.data.PatternLinkKind.SUBSCRIPTION -> "ðŸ” SuscripciÃ³n"
     else -> null
 }
 
 @Composable
 private fun ConfirmedRow(mov: MovementRow) {
-    val isIncome = mov.type == "ingreso"
+    val isIncome = mov.kind?.isIncome == true
     val amountTint = if (isIncome) incomeColor() else expenseColor()
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(
@@ -694,7 +710,7 @@ private fun ConfirmedRow(mov: MovementRow) {
 
 @Composable
 private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity) {
-    val isIncome = tx.type.equals("INCOME", ignoreCase = true)
+    val isIncome = tx.kind?.isIncome == true
     val amountTint = if (isIncome) incomeColor() else expenseColor()
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(

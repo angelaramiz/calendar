@@ -55,8 +55,8 @@ fun DashboardScreen(
         }
     }
 
-    // Bloqueo estilo banco: sin sesiÃ³n pero con credenciales guardadas, la
-    // huella desbloquea y sincroniza la cola sin pedir contraseÃ±a.
+    // Bloqueo estilo banco: sin sesión pero con credenciales guardadas, la
+    // huella desbloquea y sincroniza la cola sin pedir contraseña.
     if (uiState.needsLogin && uiState.canUnlockWithBiometrics) {
         BiometricLockScreen(
             unlocking = uiState.unlocking,
@@ -76,7 +76,7 @@ fun DashboardScreen(
         }
     }
 
-    // Asistente inicial (una vez): encima de todo menos del bloqueo biomÃ©trico.
+    // Asistente inicial (una vez): encima de todo menos del bloqueo biométrico.
     if (uiState.showOnboarding && !(uiState.needsLogin && uiState.canUnlockWithBiometrics)) {
         OnboardingDialog(
             onDone = { viewModel.dismissOnboarding() },
@@ -92,8 +92,8 @@ fun DashboardScreen(
         if (uiState.otaProgress == null && uiState.otaApkPath == null) {
             AlertDialog(
                 onDismissRequest = { viewModel.dismissUpdate() },
-                title = { Text("Nueva versiÃ³n disponible") },
-                text = { Text("FinTrack ${update.versionName} estÃ¡ lista para descargar.") },
+                title = { Text("Nueva versión disponible") },
+                text = { Text("FinTrack ${update.versionName} está lista para descargar.") },
                 confirmButton = {
                     TextButton(onClick = {
                         if (!OtaInstaller.canInstallUnknownApps(context)) {
@@ -104,7 +104,7 @@ fun DashboardScreen(
                     }) { Text("Descargar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { viewModel.dismissUpdate() }) { Text("DespuÃ©s") }
+                    TextButton(onClick = { viewModel.dismissUpdate() }) { Text("Después") }
                 }
             )
         }
@@ -113,10 +113,10 @@ fun DashboardScreen(
     uiState.otaProgress?.let { progress ->
         AlertDialog(
             onDismissRequest = { },
-            title = { Text("Descargando actualizaciÃ³n") },
+            title = { Text("Descargando actualización") },
             text = {
                 Column {
-                    Text("FinTrack ${uiState.updateAvailable?.versionName ?: ""} Â· $progress%")
+                    Text("FinTrack ${uiState.updateAvailable?.versionName ?: ""} · $progress%")
                     Spacer(modifier = Modifier.height(12.dp))
                     LinearProgressIndicator(
                         progress = { progress / 100f },
@@ -144,7 +144,7 @@ fun DashboardScreen(
         AlertDialog(
             onDismissRequest = { viewModel.consumeReadyApk() },
             title = { Text("Descarga completa") },
-            text = { Text("Se abriÃ³ el instalador: acepta para actualizar. Si no se abriÃ³, toca Instalar.") },
+            text = { Text("Se abrió el instalador: acepta para actualizar. Si no se abrió, toca Instalar.") },
             confirmButton = {
                 TextButton(onClick = {
                     if (apkFile.exists()) {
@@ -225,17 +225,17 @@ fun DashboardScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "Sin conexiÃ³n â€” mostrando datos locales",
+                                "Sin conexión — mostrando datos locales",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.weight(1f)
                             )
-                            TextButton(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
+                            TextButton(onClick = { viewModel.loadDashboard(forceRefresh = true) }) { Text("Reintentar") }
                         }
                     }
                 }
             }
 
-            // Cola offline visible: cuÃ¡ntos faltan por subir + reintento.
+            // Cola offline visible: cuántos faltan por subir + reintento.
             if (uiState.pendingCount > 0) {
                 item {
                     Card(
@@ -293,13 +293,13 @@ fun DashboardScreen(
                                 }
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    if (uiState.needsLogin) "Bienvenido a FinTrack" else "AÃºn no hay movimientos",
+                                    if (uiState.needsLogin) "Bienvenido a FinTrack" else "Aún no hay movimientos",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    if (uiState.needsLogin) "Inicia sesion para ver tus transacciones" else "Agrega tu primera transacciÃ³n con el botÃ³n +",
+                                    if (uiState.needsLogin) "Inicia sesión para ver tus transacciones" else "Agrega tu primera transacción con el botón +",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -312,9 +312,9 @@ fun DashboardScreen(
                                     if (uiState.canUnlockWithBiometrics) {
                                         Button(onClick = onNavigateToAuth) { Text("Desbloquear") }
                                     } else {
-                                        Button(onClick = onNavigateToAuth) { Text("Iniciar sesiÃ³n") }
+                                        Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
                                     }
-                                    TextButton(onClick = { viewModel.loadDashboard() }) { Text("Reintentar") }
+                                    TextButton(onClick = { viewModel.loadDashboard(forceRefresh = true) }) { Text("Reintentar") }
                                 }
                             }
                         }
@@ -328,10 +328,12 @@ fun DashboardScreen(
                         cardName = uiState.cardCharges["tx:${transaction.id}"]
                             ?.let { cardNames[it] },
                         cards = uiState.cards,
+                        wallets = uiState.wallets,
                         initialCardId = uiState.cardCharges["tx:${transaction.id}"],
+                        initialWalletId = uiState.walletOverrides["tx:${transaction.id}"],
                         onDelete = { viewModel.deleteTransaction(transaction.id) },
-                        onUpdate = { updated, cardId ->
-                            viewModel.updateTransaction(transaction.id, updated, null, cardId)
+                        onUpdate = { updated, walletId, cardId ->
+                            viewModel.updateTransaction(transaction.id, updated, walletId, cardId)
                         }
                     )
                 }
@@ -454,10 +456,12 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double, credi
 private fun TransactionItem(
     transaction: TransactionEntity,
     onDelete: () -> Unit,
-    onUpdate: (TransactionEntity, String?) -> Unit,
+    onUpdate: (TransactionEntity, String?, String?) -> Unit,
     cardName: String? = null,
     cards: List<com.fintrack.app.data.CreditCardRow> = emptyList(),
-    initialCardId: String? = null
+    wallets: List<com.fintrack.app.data.WalletRow> = emptyList(),
+    initialCardId: String? = null,
+    initialWalletId: String? = null
 ) {
     var showOptions by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -477,7 +481,7 @@ private fun TransactionItem(
             title = { Text(transaction.description.ifEmpty { transaction.category }) },
             text = {
                 Text(
-                    "${if (isIncome) "Ingreso" else "Gasto"} Â· $${String.format("%.2f", transaction.amount)} Â· ${transaction.category}" +
+                    "${if (isIncome) "Ingreso" else "Gasto"} · $${String.format("%.2f", transaction.amount)} · ${transaction.category}" +
                         (transaction.merchant?.let { "\nComercio: $it" } ?: "") +
                         "\nOrigen: ${if (transaction.source == "AUTO") "Detectado" else "Manual"}"
                 )
@@ -498,11 +502,13 @@ private fun TransactionItem(
         EditTransactionDialog(
             transaction = transaction,
             cards = cards,
+            wallets = wallets,
             initialCardId = initialCardId,
+            initialWalletId = initialWalletId,
             onDismiss = { showEdit = false },
-            onSave = { updated, cardId ->
+            onSave = { updated, walletId, cardId ->
                 showEdit = false
-                onUpdate(updated, cardId)
+                onUpdate(updated, walletId, cardId)
             }
         )
     }
@@ -510,8 +516,8 @@ private fun TransactionItem(
     if (showDelete) {
         AlertDialog(
             onDismissRequest = { showDelete = false },
-            title = { Text("Eliminar transacciÃ³n") },
-            text = { Text("Â¿Eliminar \"${transaction.description.ifEmpty { transaction.category }}\" por $${String.format("%.2f", transaction.amount)}?") },
+            title = { Text("Eliminar transacción") },
+            text = { Text("¿Eliminar \"${transaction.description.ifEmpty { transaction.category }}\" por $${String.format("%.2f", transaction.amount)}?") },
             confirmButton = {
                 TextButton(onClick = { showDelete = false; onDelete() }) { Text("Eliminar") }
             },
@@ -542,7 +548,7 @@ private fun TransactionItem(
                 Text(transaction.description.ifEmpty { transaction.category }, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    transaction.category + (cardName?.let { " Â· ðŸ’³ $it" } ?: ""),
+                    transaction.category + (cardName?.let { " · 💳 $it" } ?: ""),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -562,9 +568,11 @@ private fun TransactionItem(
 private fun EditTransactionDialog(
     transaction: TransactionEntity,
     onDismiss: () -> Unit,
-    onSave: (TransactionEntity, String?) -> Unit,
+    onSave: (TransactionEntity, String?, String?) -> Unit,
     cards: List<com.fintrack.app.data.CreditCardRow> = emptyList(),
-    initialCardId: String? = null
+    wallets: List<com.fintrack.app.data.WalletRow> = emptyList(),
+    initialCardId: String? = null,
+    initialWalletId: String? = null
 ) {
     var amount by remember(transaction) { mutableStateOf(String.format("%.2f", transaction.amount)) }
     var type by remember(transaction) { mutableStateOf(if (transaction.isIncomeType()) "INCOME" else "EXPENSE") }
@@ -572,12 +580,13 @@ private fun EditTransactionDialog(
     var description by remember(transaction) { mutableStateOf(transaction.description) }
     var merchant by remember(transaction) { mutableStateOf(transaction.merchant.orEmpty()) }
     var cardId by remember(transaction) { mutableStateOf(initialCardId) }
+    var walletId by remember(transaction) { mutableStateOf(initialWalletId) }
     val isIncome = type == "INCOME"
     val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Editar transacciÃ³n") },
+        title = { Text("Editar transacción") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Row {
@@ -631,21 +640,46 @@ private fun EditTransactionDialog(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        if (isIncome) "Cuenta destino" else "Cuenta / Método de pago",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id ||
+                                    (walletId == null && cardId == null && wallet.id == "efectivo"),
+                                onClick = {
+                                    walletId = wallet.id
+                                    cardId = null
+                                },
+                                label = { Text(wallet.displayWithKind) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
                 if (!isIncome && cards.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("MÃ©todo de pago", style = MaterialTheme.typography.labelLarge)
+                    Text("¿O es a crédito?", style = MaterialTheme.typography.labelLarge)
                     Spacer(modifier = Modifier.height(4.dp))
                     Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                         FilterChip(
                             selected = cardId == null,
                             onClick = { cardId = null },
-                            label = { Text("DÃ©bito / Efectivo") },
+                            label = { Text("Débito / Efectivo") },
                             modifier = Modifier.padding(end = 4.dp)
                         )
                         cards.forEach { card ->
                             FilterChip(
                                 selected = cardId == card.id,
-                                onClick = { cardId = card.id },
+                                onClick = {
+                                    cardId = card.id
+                                    walletId = null
+                                },
                                 label = { Text(card.name) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
@@ -666,6 +700,7 @@ private fun EditTransactionDialog(
                         description = description,
                         merchant = merchant.ifBlank { null }
                     ),
+                    walletId,
                     if (type == "INCOME") null else cardId
                 )
             }) { Text("Guardar") }

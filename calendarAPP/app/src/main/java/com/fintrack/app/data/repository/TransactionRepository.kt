@@ -14,22 +14,31 @@ class TransactionRepository {
     private val db get() = SupabaseClientProvider.client
 
     /**
-     * Caché de sesión: todas las pantallas pedían las mismas 200 filas en
-     * cada entrada/refresh. TTL 60 s; se invalida/actualiza al escribir.
+     * Caché de sesión COMPARTIDA (companion): el listener y el receiver
+     * crean su propia instancia del repositorio; con caché por instancia
+     * sus inserts eran invisibles para la UI hasta que expiraba el TTL.
+     * TTL 60 s; se invalida/actualiza al escribir.
      */
-    private var cache: List<TransactionEntity>? = null
-    private var cacheAt: Long = 0L
-    private var cacheUser: String = ""
-    private val cacheTtlMs = 60_000L
+    companion object {
+        @Volatile
+        private var sharedCache: List<TransactionEntity>? = null
+        @Volatile
+        private var sharedCacheAt: Long = 0L
+        @Volatile
+        private var sharedCacheUser: String = ""
+        private const val CACHE_TTL_MS = 60_000L
 
-    /** Último insert de esta sesión: el reintento tras respuesta perdida
-     *  se resuelve en memoria sin ningún fetch (ver [insertTransaction]). */
-    private var lastInsertKey: String? = null
-    private var lastInsertResult: TransactionEntity? = null
+        /** Último insert del proceso: el reintento tras respuesta perdida
+         *  se resuelve en memoria sin ningún fetch (ver [insertTransaction]). */
+        @Volatile
+        private var lastInsertKey: String? = null
+        @Volatile
+        private var lastInsertResult: TransactionEntity? = null
+    }
 
     fun invalidate() {
-        cache = null
-        cacheAt = 0L
+        sharedCache = null
+        sharedCacheAt = 0L
     }
 
     suspend fun getTransactions(
@@ -37,18 +46,18 @@ class TransactionRepository {
         forceRefresh: Boolean = false
     ): List<TransactionEntity> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
-        val hit = !forceRefresh && cache != null && cacheUser == userId &&
-            (now - cacheAt) < cacheTtlMs
-        if (hit) return@withContext cache!!
+        val hit = !forceRefresh && sharedCache != null && sharedCacheUser == userId &&
+            (now - sharedCacheAt) < CACHE_TTL_MS
+        if (hit) return@withContext sharedCache!!
         db.from("fintrack_transactions").select {
             filter { eq("user_id", userId) }
             order("timestamp", io.github.jan.supabase.postgrest.query.Order.DESCENDING)
             // Ventana amplia: suscripciones (6 meses) y promedios la necesitan.
             limit(200)
         }.decodeList<TransactionEntity>().also {
-            cache = it
-            cacheAt = now
-            cacheUser = userId
+            sharedCache = it
+            sharedCacheAt = now
+            sharedCacheUser = userId
         }
     }
 
@@ -66,7 +75,7 @@ class TransactionRepository {
             lastInsertResult?.let { return@withContext it }
         }
         // 2) Anti-duplicado contra caché (sin fetch si está fresca).
-        val known = cache?.takeIf { cacheUser == userId }
+        val known = sharedCache?.takeIf { sharedCacheUser == userId }
             ?: runCatching { getTransactions(userId) }.getOrNull()
         known?.let { existing ->
             findDuplicateTx(transaction, existing)?.let {
@@ -87,10 +96,10 @@ class TransactionRepository {
         }
         db.from("fintrack_transactions").insert(data) { select() }.decodeSingle<TransactionEntity>().also { saved ->
             // Pintado instantáneo: la lista en memoria ya trae la nueva fila.
-            cache = ((cache?.takeIf { cacheUser == userId } ?: emptyList()) + saved)
+            sharedCache = ((sharedCache?.takeIf { sharedCacheUser == userId } ?: emptyList()) + saved)
                 .sortedByDescending { it.timestamp }.take(200)
-            cacheAt = System.currentTimeMillis()
-            cacheUser = userId
+            sharedCacheAt = System.currentTimeMillis()
+            sharedCacheUser = userId
             lastInsertKey = key
             lastInsertResult = saved
         }
@@ -108,7 +117,7 @@ class TransactionRepository {
                 eq("user_id", userId)
             }
         }.also {
-            cache = cache?.filterNot { it.id == id }
+            sharedCache = sharedCache?.filterNot { it.id == id }
         }
     }
 
@@ -126,7 +135,7 @@ class TransactionRepository {
                 eq("user_id", userId)
             }
         }.also {
-            cache = cache?.map { if (it.id == id) it.copyWith(transaction) else it }
+            sharedCache = sharedCache?.map { if (it.id == id) it.copyWith(transaction) else it }
         }
     }
 

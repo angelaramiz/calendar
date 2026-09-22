@@ -241,7 +241,7 @@ class DashboardViewModel(
             _uiState.value = _uiState.value.copy(unlocking = false)
             if (ok) {
                 syncPending()
-                loadDashboard()
+                loadDashboard(forceRefresh = true)
             } else {
                 _uiState.value = _uiState.value.copy(
                     error = "No se pudo entrar con huella. Usa tu contraseña."
@@ -256,7 +256,7 @@ class DashboardViewModel(
      */
     fun retryPending() {
         syncPending()
-        loadDashboard(silent = true)
+        loadDashboard(silent = true, forceRefresh = true)
         refreshPendingCount()
     }
 
@@ -296,13 +296,13 @@ class DashboardViewModel(
                 _uiState.value = _uiState.value.copy(
                     updateMessage = "$total movimiento(s) del teléfono sincronizados."
                 )
-                loadDashboard()
+                loadDashboard(forceRefresh = true)
             }
             refreshPendingCount()
         }
     }
 
-    fun loadDashboard(silent: Boolean = false) {
+    fun loadDashboard(silent: Boolean = false, forceRefresh: Boolean = false) {
         if (userId.isEmpty()) {
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
@@ -317,7 +317,7 @@ class DashboardViewModel(
                 _uiState.value = _uiState.value.copy(isLoading = true, needsLogin = false, error = null)
             }
             try {
-                val transactions = transactionRepository.getTransactions(userId)
+                val transactions = transactionRepository.getTransactions(userId, forceRefresh)
                 val wallets = runCatching {
                     walletStore.ensureDefaults()
                     walletStore.snapshot()
@@ -380,7 +380,7 @@ class DashboardViewModel(
      * sube la cola pendiente y revisa OTA silencioso.
      */
     fun refreshAll() {
-        loadDashboard()
+        loadDashboard(forceRefresh = true)
         syncPending()
         checkForUpdate()
     }
@@ -468,7 +468,12 @@ class DashboardViewModel(
     ) {
         viewModelScope.launch {
             // Los tags son locales: se aplican de inmediato, con o sin red.
-            walletId?.let { runCatching { walletStore.setOverride("tx:$id", it) } }
+            // Al pasar a crédito se limpia el override de billetera rancio.
+            if (walletId != null) {
+                runCatching { walletStore.setOverride("tx:$id", walletId) }
+            } else if (cardId != null) {
+                runCatching { walletStore.clearOverride("tx:$id") }
+            }
             if (transaction.isIncomeType()) {
                 runCatching { creditCardStore.setCharge("tx:$id", null) }
             } else {

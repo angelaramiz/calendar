@@ -114,7 +114,7 @@ fun FinTrackNavGraph(
                 koinViewModel(viewModelStoreOwner = activity)
             AuthScreen(
                 onLoggedIn = {
-                    dashboardViewModel.loadDashboard()
+                    dashboardViewModel.loadDashboard(forceRefresh = true)
                     navController.popBackStack()
                 },
                 onNavigateToRecovery = { navController.navigate(Routes.RECOVERY) }

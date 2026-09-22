@@ -113,7 +113,7 @@ class CalendarViewModel(
         }
     }
 
-    fun loadMonth(yearMonth: YearMonth) {
+    fun loadMonth(yearMonth: YearMonth, forceRefresh: Boolean = false) {
         if (userId.isEmpty()) {
             _uiState.value = _uiState.value.copy(needsLogin = true)
             return
@@ -153,7 +153,7 @@ class CalendarViewModel(
                 // Registros de Inicio según su fecha en hora local (igual que
                 // selectedDate): si no, lo de la noche cae en "mañana".
                 val zone = java.time.ZoneId.systemDefault()
-                val quickInMonth = transactionRepository.getTransactions(userId)
+                val quickInMonth = transactionRepository.getTransactions(userId, forceRefresh)
                     .filter { it.timestamp.toLocalDateIn(zone).let { d -> !d.isBefore(from) && !d.isAfter(to) } }
                 val quickByDate = quickInMonth.groupBy { it.timestamp.toLocalDateIn(zone) }
 
@@ -196,7 +196,7 @@ class CalendarViewModel(
     fun prevMonth() = loadMonth(_uiState.value.yearMonth.minusMonths(1))
     fun nextMonth() = loadMonth(_uiState.value.yearMonth.plusMonths(1))
 
-    fun retry() = loadMonth(_uiState.value.yearMonth)
+    fun retry() = loadMonth(_uiState.value.yearMonth, forceRefresh = true)
 
     /**
      * Avisos del mes (capa local, sin crear movimientos): vencimientos de

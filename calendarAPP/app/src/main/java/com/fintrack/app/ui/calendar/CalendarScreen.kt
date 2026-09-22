@@ -72,10 +72,11 @@ fun CalendarScreen(
             date = target,
             isSaving = uiState.isSaving,
             cards = uiState.cards,
+            wallets = uiState.wallets,
             onDismiss = { viewModel.dismissAddMovement() },
-            onSave = { date, isIncome, title, category, amount, description, cardId ->
+            onSave = { date, isIncome, title, category, amount, description, walletId, cardId ->
                 viewModel.saveManualMovement(
-                    date, isIncome, title, category, amount, description, null, cardId
+                    date, isIncome, title, category, amount, description, walletId, cardId
                 )
             }
         )
@@ -108,7 +109,7 @@ fun CalendarScreen(
             Column(horizontalAlignment = Alignment.End) {
                 if (fabExpanded) {
                     FabAction(
-                        label = "Registrar en este dÃ­a",
+                        label = "Registrar en este día",
                         icon = Icons.Default.Create,
                         onClick = {
                             fabExpanded = false
@@ -168,9 +169,9 @@ fun CalendarScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Inicia sesiÃ³n para ver tu calendario")
+                            Text("Inicia sesión para ver tu calendario")
                             Spacer(modifier = Modifier.height(12.dp))
-                            Button(onClick = onNavigateToAuth) { Text("Iniciar sesiÃ³n") }
+                            Button(onClick = onNavigateToAuth) { Text("Iniciar sesión") }
                         }
                     }
                 }
@@ -262,7 +263,7 @@ fun CalendarScreen(
                 (dayData.projected.isNotEmpty() || dayData.confirmed.isNotEmpty() || dayData.quick.isNotEmpty())
             if (!hasMovements && dayMarkers.isEmpty()) {
                 item {
-                    Text("Sin movimientos este dÃ­a", style = MaterialTheme.typography.bodyMedium)
+                    Text("Sin movimientos este día", style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
                 if (dayMarkers.isNotEmpty()) {
@@ -414,7 +415,7 @@ private fun MonthGrid(
                                     RoundedCornerShape(12.dp)
                                 ) else Modifier
                             )
-                            .clickable(onClickLabel = "Ver dÃ­a ${date.dayOfMonth}") { onSelect(date) },
+                            .clickable(onClickLabel = "Ver día ${date.dayOfMonth}") { onSelect(date) },
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -495,7 +496,7 @@ private fun MarkerRow(marker: String) {
         )
     ) {
         Text(
-            "ðŸ”” $marker",
+            "🔔 $marker",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onTertiaryContainer,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
@@ -551,7 +552,7 @@ private fun BalanceCard(balance: CalendarBalance) {
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                "Ingresos $${String.format("%.2f", balance.income)} Â· " +
+                "Ingresos $${String.format("%.2f", balance.income)} · " +
                     "Gastos $${String.format("%.2f", balance.expense)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
@@ -671,9 +672,9 @@ private fun ProjectedCard(
 
 private fun linkLabel(linkKind: String?, cardName: String?): String? = when (linkKind) {
     com.fintrack.app.data.PatternLinkKind.CREDIT ->
-        "ðŸ’³ Tarjeta" + (cardName?.let { " $it" } ?: "")
-    com.fintrack.app.data.PatternLinkKind.SERVICE -> "ðŸ§¾ Servicio"
-    com.fintrack.app.data.PatternLinkKind.SUBSCRIPTION -> "ðŸ” SuscripciÃ³n"
+        "💳 Tarjeta" + (cardName?.let { " $it" } ?: "")
+    com.fintrack.app.data.PatternLinkKind.SERVICE -> "🧾 Servicio"
+    com.fintrack.app.data.PatternLinkKind.SUBSCRIPTION -> "🔁 Suscripción"
     else -> null
 }
 

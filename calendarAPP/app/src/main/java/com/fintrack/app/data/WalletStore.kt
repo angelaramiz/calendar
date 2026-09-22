@@ -139,6 +139,16 @@ class WalletStore(private val context: Context) {
         }
     }
 
+    /** Quita el override (ej. al pasar un gasto a tarjeta de crédito). */
+    suspend fun clearOverride(key: String) {
+        context.walletDataStore.edit { prefs ->
+            val current = PendingOpCodec.decodeStrings(prefs[overridesKey]).toMutableMap()
+            if (current.remove(key) != null) {
+                prefs[overridesKey] = PendingOpCodec.encodeStrings(current)
+            }
+        }
+    }
+
     suspend fun setLast(walletId: String) {
         context.walletDataStore.edit { prefs ->
             prefs[lastKey] = walletId

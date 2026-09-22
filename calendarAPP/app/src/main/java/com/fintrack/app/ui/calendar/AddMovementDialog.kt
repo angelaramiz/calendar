@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.TransactionCategories
 import java.time.Instant
 import java.time.LocalDate
@@ -35,10 +36,12 @@ fun AddMovementDialog(
         category: String,
         amount: Double,
         description: String,
+        walletId: String?,
         cardId: String?
     ) -> Unit,
     isSaving: Boolean = false,
-    cards: List<CreditCardRow> = emptyList()
+    cards: List<CreditCardRow> = emptyList(),
+    wallets: List<WalletRow> = emptyList()
 ) {
     var isIncome by remember(date) { mutableStateOf(false) }
     var amount by remember(date) { mutableStateOf("") }
@@ -46,6 +49,7 @@ fun AddMovementDialog(
     var category by remember(date) { mutableStateOf(TransactionCategories.defaultFor(false)) }
     var description by remember(date) { mutableStateOf("") }
     var cardId by remember(date) { mutableStateOf<String?>(null) }
+    var walletId by remember(date) { mutableStateOf<String?>(null) }
     var currentDate by remember(date) { mutableStateOf(date) }
     var showPicker by remember { mutableStateOf(false) }
     val categories = TransactionCategories.forType(isIncome)
@@ -131,10 +135,32 @@ fun AddMovementDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        if (isIncome) "Cuenta destino" else "Cuenta / Método de pago",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id ||
+                                    (walletId == null && cardId == null && wallet.id == "efectivo"),
+                                onClick = {
+                                    walletId = wallet.id
+                                    cardId = null
+                                },
+                                label = { Text(wallet.displayWithKind) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
                 if (!isIncome && cards.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "Método de pago",
+                        "¿O es a crédito?",
                         style = MaterialTheme.typography.labelLarge
                     )
                     Spacer(modifier = Modifier.height(8.dp))
@@ -148,7 +174,10 @@ fun AddMovementDialog(
                         cards.forEach { card ->
                             FilterChip(
                                 selected = cardId == card.id,
-                                onClick = { cardId = card.id },
+                                onClick = {
+                                    cardId = card.id
+                                    walletId = null
+                                },
                                 label = { Text(card.displayName) },
                                 modifier = Modifier.padding(end = 4.dp)
                             )
@@ -164,6 +193,7 @@ fun AddMovementDialog(
                     if (value <= 0) return@TextButton
                     onSave(
                         currentDate, isIncome, title, category, value, description,
+                        walletId,
                         if (isIncome) null else cardId
                     )
                 },

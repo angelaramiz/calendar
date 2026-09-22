@@ -65,6 +65,14 @@ class AppFilterStore(private val context: Context) {
             prefs[allowedKey] ?: NotificationParser.DEFAULT_PACKAGES
         }.first()
 
+    /** Restaura un respaldo: reemplaza la allowlist exacta. */
+    suspend fun replaceAllowed(packages: Set<String>) {
+        context.appFilterDataStore.edit { prefs ->
+            prefs[allowedKey] = packages
+            prefs[seededKey] = NotificationParser.DEFAULT_PACKAGES
+        }
+    }
+
     suspend fun setAllowed(packageName: String, allowed: Boolean) {
         context.appFilterDataStore.edit { prefs ->
             val current = (prefs[allowedKey] ?: NotificationParser.DEFAULT_PACKAGES).toMutableSet()

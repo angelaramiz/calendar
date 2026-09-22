@@ -3,6 +3,7 @@ package com.fintrack.app.domain
 import com.fintrack.app.data.model.TransactionEntity
 import java.time.Instant
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 /**
@@ -54,8 +55,7 @@ object WalletResolver {
         overrides: Map<String, String>
     ): String = overrides["mov:$movementId"] ?: EFECTIVO_ID
 
-    private fun TransactionEntity.isIncome(): Boolean =
-        type.equals("INCOME", ignoreCase = true) || type.equals("ingreso", ignoreCase = true)
+    private fun TransactionEntity.isIncome(): Boolean = kind?.isIncome == true
 
     /** Neto (ingresos menos gastos) del mes por billetera. */
     fun monthNet(
@@ -82,11 +82,12 @@ object WalletResolver {
         transactions: List<TransactionEntity>,
         day: java.time.LocalDate,
         wallets: List<Wallet>,
-        overrides: Map<String, String>
+        overrides: Map<String, String>,
+        zone: ZoneId = ZoneOffset.UTC
     ): Map<String, Double> {
         val net = mutableMapOf<String, Double>()
         transactions.forEach { tx ->
-            val txDay = Instant.ofEpochMilli(tx.timestamp).atZone(ZoneOffset.UTC).toLocalDate()
+            val txDay = Instant.ofEpochMilli(tx.timestamp).atZone(zone).toLocalDate()
             if (txDay != day) return@forEach
             val walletId = resolve(tx, wallets, overrides)
             val signed = if (tx.isIncome()) tx.amount else -tx.amount

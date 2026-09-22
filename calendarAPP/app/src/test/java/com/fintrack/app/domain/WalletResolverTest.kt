@@ -87,6 +87,18 @@ class WalletResolverTest {
     }
 
     @Test
+    fun dayNet_con_zona_local_cuenta_la_noche_en_el_dia_local() {
+        val mexico = java.time.ZoneId.of("America/Mexico_City")
+        val ts = java.time.LocalDateTime.of(2026, 9, 20, 0, 30)
+            .toInstant(ZoneOffset.UTC).toEpochMilli()
+        val txs = listOf(tx("1", "MANUAL", 130.0).copy(timestamp = ts))
+        val day = WalletResolver.dayNet(
+            txs, java.time.LocalDate.of(2026, 9, 19), wallets, emptyMap(), mexico
+        )
+        assertEquals(-130.0, day["efectivo"] ?: 0.0, 0.0)
+    }
+
+    @Test
     fun displayName_con_y_sin_terminacion_debito() {
         assertEquals(
             "Mercado Pago •1234",

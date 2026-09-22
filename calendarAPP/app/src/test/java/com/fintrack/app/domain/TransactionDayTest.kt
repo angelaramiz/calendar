@@ -46,4 +46,17 @@ class TransactionDayTest {
     fun dia_sin_movimientos_devuelve_vacio() {
         assertTrue(emptyList<TransactionEntity>().onDayUtc(LocalDate.of(2026, 9, 15)).isEmpty())
     }
+
+    @Test
+    fun noche_local_cae_en_hoy_local_aunque_utc_sea_manana() {
+        // 19 sep 18:30 en México = 20 sep 00:30 UTC: antes Inicio se vaciaba.
+        val mexico = java.time.ZoneId.of("America/Mexico_City")
+        val ts = java.time.LocalDateTime.of(2026, 9, 20, 0, 30)
+            .toInstant(ZoneOffset.UTC).toEpochMilli()
+        val all = listOf(
+            TransactionEntity(amount = 130.0, timestamp = ts)
+        )
+        assertEquals(1, all.onDay(LocalDate.of(2026, 9, 19), mexico).size)
+        assertTrue(all.onDayUtc(LocalDate.of(2026, 9, 19)).isEmpty())
+    }
 }

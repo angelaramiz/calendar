@@ -38,6 +38,13 @@ class ServiceBillStore(private val context: Context) {
 
     suspend fun snapshot(): List<ServiceBillRow> = bills.first()
 
+    /** Restaura un respaldo: reemplaza todos los servicios. */
+    suspend fun replaceAll(bills: List<ServiceBillRow>) {
+        context.serviceBillDataStore.edit { prefs ->
+            prefs[billsKey] = PendingOpCodec.json.encodeToString(listSerializer, bills)
+        }
+    }
+
     suspend fun upsert(bill: ServiceBillRow) {
         context.serviceBillDataStore.edit { prefs ->
             val current = decode(prefs[billsKey]).toMutableList()

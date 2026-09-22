@@ -43,6 +43,12 @@ class PatternLinkStore(private val context: Context) {
 
     suspend fun snapshot(): Map<String, PatternLink> = links.first()
 
+    suspend fun clear() {
+        context.patternLinkDataStore.edit { prefs ->
+            prefs.remove(linksKey)
+        }
+    }
+
     /** kind null = sin clasificar (borra el link). */
     suspend fun setLink(patternId: String, kind: String?, cardId: String?) {
         context.patternLinkDataStore.edit { prefs ->

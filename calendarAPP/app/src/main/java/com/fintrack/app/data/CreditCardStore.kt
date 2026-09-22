@@ -113,6 +113,19 @@ class CreditCardStore(private val context: Context) {
 
     suspend fun paymentsSnapshot(): List<CardPayment> = payments.first()
 
+    /** Restaura un respaldo: reemplaza tarjetas, tags y pagos. */
+    suspend fun replaceAll(
+        cards: List<CreditCardRow>,
+        charges: Map<String, String>,
+        payments: List<CardPayment>
+    ) {
+        context.creditCardDataStore.edit { prefs ->
+            prefs[cardsKey] = PendingOpCodec.encodeCards(cards)
+            prefs[chargesKey] = PendingOpCodec.encodeStrings(charges)
+            prefs[paymentsKey] = PendingOpCodec.json.encodeToString(paymentsSerializer, payments)
+        }
+    }
+
     suspend fun addPayment(payment: CardPayment) {
         context.creditCardDataStore.edit { prefs ->
             val current = prefs[paymentsKey]?.let { raw ->

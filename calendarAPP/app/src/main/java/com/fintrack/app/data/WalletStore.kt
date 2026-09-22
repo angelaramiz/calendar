@@ -50,7 +50,12 @@ class WalletStore(private val context: Context) {
             val ids = current.map { it.id }.toSet()
             val missing = com.fintrack.app.domain.WalletResolver.DEFAULT_WALLETS
                 .filter { it.id !in ids && it.id !in hidden }
-                .map { WalletRow(it.id, it.name, it.packages, custom = false) }
+                .map {
+                    WalletRow(
+                        it.id, it.name, it.packages, custom = false,
+                        kind = if (it.id == com.fintrack.app.domain.WalletResolver.EFECTIVO_ID) "Efectivo" else ""
+                    )
+                }
             if (missing.isNotEmpty()) {
                 prefs[walletsKey] = PendingOpCodec.json.encodeToString(
                     walletListSerializer, current + missing
@@ -60,7 +65,7 @@ class WalletStore(private val context: Context) {
     }
 
     /** Agrega una billetera propia (ej. Mercado Pago + terminación de débito) y devuelve su id. */
-    suspend fun addWallet(name: String, last4: String = ""): String {
+    suspend fun addWallet(name: String, last4: String = "", kind: String = ""): String {
         val id = "wallet-${System.currentTimeMillis()}"
         context.walletDataStore.edit { prefs ->
             val current = prefs[walletsKey]?.let { raw ->
@@ -72,7 +77,8 @@ class WalletStore(private val context: Context) {
                 walletListSerializer,
                 current + WalletRow(
                     id, name.trim(), emptyList(), custom = true,
-                    last4 = last4.filter { it.isDigit() }.take(4)
+                    last4 = last4.filter { it.isDigit() }.take(4),
+                    kind = kind.trim()
                 )
             )
         }
@@ -105,6 +111,24 @@ class WalletStore(private val context: Context) {
 
     suspend fun snapshot(): List<WalletRow> = wallets.first()
 
+    suspend fun hiddenSnapshot(): List<String> =
+        context.walletDataStore.data.map { prefs ->
+            PendingOpCodec.decodeStringList(prefs[hiddenKey])
+        }.first()
+
+    /** Restaura un respaldo: reemplaza billeteras, ocultas y overrides. */
+    suspend fun restore(
+        wallets: List<WalletRow>,
+        hidden: List<String>,
+        overrides: Map<String, String>
+    ) {
+        context.walletDataStore.edit { prefs ->
+            prefs[walletsKey] = PendingOpCodec.json.encodeToString(walletListSerializer, wallets)
+            prefs[hiddenKey] = PendingOpCodec.encodeStringList(hidden)
+            prefs[overridesKey] = PendingOpCodec.encodeStrings(overrides)
+        }
+    }
+
     suspend fun overridesSnapshot(): Map<String, String> = overrides.first()
 
     suspend fun setOverride(key: String, walletId: String) {
@@ -133,10 +157,21 @@ data class WalletRow(
     /** Creada por el usuario (las fijas no se pueden borrar). */
     val custom: Boolean = false,
     /** Terminación de la tarjeta de débito asociada (ej. Mercado Pago "1234"). */
-    val last4: String = ""
+    val last4: String = "",
+    /** Tipo de cuenta: Efectivo, Débito, Nómina, Vales, Ahorro, Otra. "" = sin clasificar. */
+    val kind: String = ""
 ) {
     /** "Mercado Pago •1234" o solo el nombre si no hay terminación. */
     val displayName: String get() = if (last4.isBlank()) name else "$name •$last4"
+    /** "Mercado Pago •1234 · Nómina" si hay tipo registrado (y distinto del nombre). */
+    val displayWithKind: String get() =
+        if (kind.isBlank() || kind.equals(name, ignoreCase = true)) displayName
+        else "$displayName · $kind"
+
+    companion object {
+        /** Tipos ofrecidos al registrar una cuenta (paso 5 del registro rápido). */
+        val ACCOUNT_KINDS = listOf("Débito", "Nómina", "Vales", "Ahorro", "Efectivo", "Otra")
+    }
 }
 
 fun WalletRow.toResolver() = com.fintrack.app.domain.WalletResolver.Wallet(id, name, packages)

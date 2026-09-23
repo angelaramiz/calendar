@@ -34,8 +34,8 @@ data class ReminderReport(
 )
 
 /**
- * Lógica de revisión compartida entre el worker diario y el botón Probar:
- * evalúa qué vence y dispara los avisos no repetidos.
+ * Lógica de revisión compartida entre el worker (12:00 y 22:00) y el botón
+ * Probar: evalúa qué vence y dispara los avisos no repetidos.
  */
 object ReminderCheck {
 
@@ -98,13 +98,21 @@ object ReminderCheck {
         )
     }
 
-    /** Envía los avisos no repetidos; devuelve cuántos salieron. */
-    suspend fun fire(context: Context, report: ReminderReport): Int {
+    /**
+     * Envía los avisos no repetidos; devuelve cuántos salieron.
+     * [slot] es el turno ("mediodia", "noche", "prueba"): va en la clave
+     * para que el aviso de la noche no lo consuma el del mediodía.
+     */
+    suspend fun fire(
+        context: Context,
+        report: ReminderReport,
+        slot: String = RemindersWorker.SLOT_TEST
+    ): Int {
         val reminded = runCatching { ReminderStore(context).snapshot() }.getOrDefault(emptySet())
         val fresh = mutableSetOf<String>()
 
         report.billsDue.forEach { (bill, due, days) ->
-            val key = "bill:${bill.id}:$due"
+            val key = "bill:${bill.id}:$due:$slot"
             if (key !in reminded) {
                 val whenText = if (days == 0) "hoy" else "en $days día${if (days == 1) "" else "s"}"
                 val amount =
@@ -119,7 +127,7 @@ object ReminderCheck {
         }
 
         report.cardsDue.forEach { (card, payment, days) ->
-            val key = "card:${card.id}:$payment"
+            val key = "card:${card.id}:$payment:$slot"
             if (key !in reminded) {
                 val whenText = if (days == 0) "hoy" else "en $days día${if (days == 1) "" else "s"}"
                 RemindersNotifier.show(
@@ -132,7 +140,7 @@ object ReminderCheck {
         }
 
         if (report.todayEvents.isNotEmpty()) {
-            val key = "day:${report.today}"
+            val key = "day:${report.today}:$slot"
             if (key !in reminded) {
                 val names = report.todayEvents.take(3).joinToString(", ") { (name, amount) ->
                     "$name ($${amount.toInt()})"

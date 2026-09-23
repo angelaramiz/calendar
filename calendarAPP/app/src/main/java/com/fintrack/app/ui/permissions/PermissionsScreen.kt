@@ -276,7 +276,7 @@ private fun DetectorDiagnosticsSection(listenerGranted: Boolean) {
             Spacer(modifier = Modifier.height(12.dp))
             Text("Recordatorios diarios", style = MaterialTheme.typography.labelLarge)
             Text(
-                "Revisión de vencimientos, pagos y eventos (~8:00). " +
+                "Revisión de vencimientos, pagos y eventos (12:00 y 22:00). " +
                     "Solo avisa a 3, 1 y 0 días: si nada vence pronto, callarse es lo correcto. " +
                     "Pruébalo ahora:",
                 style = MaterialTheme.typography.bodySmall

@@ -68,7 +68,7 @@ class ServiceBillStore(private val context: Context) {
             ?: emptyList()
 }
 
-/** Claves ya avisadas ("bill:<id>:<fecha>", "card:<id>:<fecha>") para no repetir. */
+/** Claves ya avisadas ("bill:<id>:<fecha>:<turno>", "card:<id>:<fecha>:<turno>") para no repetir. */
 class ReminderStore(private val context: Context) {
 
     private val remindedKey = stringPreferencesKey("reminded_json")

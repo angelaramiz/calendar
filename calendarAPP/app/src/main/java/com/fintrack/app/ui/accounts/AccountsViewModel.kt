@@ -9,6 +9,7 @@ import com.fintrack.app.data.ServiceBillRow
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
+import com.fintrack.app.data.toResolver
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.MovementRow
@@ -29,6 +30,8 @@ data class AccountsUiState(
     val subscriptions: List<SubscriptionCandidate> = emptyList(),
     /** Cuentas de débito / billeteras locales (nómina, vales, ahorro…). */
     val wallets: List<WalletRow> = emptyList(),
+    /** Flujo del mes por billetera (ingresos/gastos/neto, sin tags de crédito). */
+    val walletFlows: Map<String, com.fintrack.app.domain.WalletResolver.WalletMonthFlow> = emptyMap(),
     /** Tarjetas de crédito (corte y pago por tarjeta). */
     val cards: List<CreditCardRow> = emptyList(),
     /** Tag de cargos: "tx:<id>" o "mov:<id>" -> cardId. */
@@ -106,9 +109,24 @@ class AccountsViewModel(
                     patternRepository.getIncomePatterns(userId).mapNotNull { it.toDomain("INCOME") } +
                         patternRepository.getExpensePatterns(userId).mapNotNull { it.toDomain("EXPENSE") }
                 val subscriptions = SubscriptionDetector.detect(transactions, patterns, month)
+                // Flujo del mes por cuenta en hora local: los gastos con tag de
+                // tarjeta no restan a la billetera (se pagan al corte).
+                val zone = java.time.ZoneId.systemDefault()
+                val localMonth = java.time.YearMonth.now(zone)
+                val overrides = runCatching { walletStore.overridesSnapshot() }
+                    .getOrDefault(emptyMap())
+                val cashOnly = transactions.filter { cardCharges["tx:${it.id}"] == null }
+                val walletFlows = com.fintrack.app.domain.WalletResolver.monthFlow(
+                    cashOnly,
+                    localMonth,
+                    wallets.map { it.toResolver() },
+                    overrides,
+                    zone
+                )
                 _uiState.value = _uiState.value.copy(
                     subscriptions = subscriptions,
                     wallets = wallets,
+                    walletFlows = walletFlows,
                     cards = cards,
                     cardCharges = cardCharges,
                     cardPayments = cardPayments,
@@ -139,14 +157,8 @@ class AccountsViewModel(
         if (name.isBlank()) return
         viewModelScope.launch {
             runCatching { walletStore.addWallet(name, last4, kind) }
-            val wallets = runCatching {
-                walletStore.ensureDefaults()
-                walletStore.snapshot()
-            }.getOrDefault(emptyList())
-            _uiState.value = _uiState.value.copy(
-                wallets = wallets,
-                info = "Cuenta agregada."
-            )
+            _uiState.value = _uiState.value.copy(info = "Cuenta agregada.")
+            loadAccounts()
         }
     }
 
@@ -157,8 +169,7 @@ class AccountsViewModel(
     fun deleteWallet(id: String) {
         viewModelScope.launch {
             runCatching { walletStore.deleteWallet(id) }
-            val wallets = runCatching { walletStore.snapshot() }.getOrDefault(emptyList())
-            _uiState.value = _uiState.value.copy(wallets = wallets)
+            loadAccounts()
         }
     }
 

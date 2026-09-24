@@ -57,25 +57,51 @@ object WalletResolver {
 
     private fun TransactionEntity.isIncome(): Boolean = kind?.isIncome == true
 
+    /** Flujo del mes por billetera (ingresos y gastos separados). */
+    data class WalletMonthFlow(
+        val income: Double = 0.0,
+        val expense: Double = 0.0
+    ) {
+        /** Neto: cuánto dejó el mes en la cuenta (ingresos menos gastos). */
+        val net: Double get() = income - expense
+    }
+
+    /**
+     * Flujo (ingresos/gastos) del mes por billetera en la zona indicada.
+     * Con UTC el mes se cortaba a las 18:00 (hora México): por defecto se usa
+     * la zona del dispositivo; se conserva UTC explícito para compatibilidad.
+     */
+    fun monthFlow(
+        transactions: List<TransactionEntity>,
+        month: YearMonth,
+        wallets: List<Wallet>,
+        overrides: Map<String, String>,
+        zone: ZoneId = ZoneOffset.UTC
+    ): Map<String, WalletMonthFlow> {
+        val flow = mutableMapOf<String, WalletMonthFlow>()
+        transactions.forEach { tx ->
+            val txMonth = YearMonth.from(
+                Instant.ofEpochMilli(tx.timestamp).atZone(zone).toLocalDate()
+            )
+            if (txMonth != month) return@forEach
+            val walletId = resolve(tx, wallets, overrides)
+            val current = flow[walletId] ?: WalletMonthFlow()
+            flow[walletId] = if (tx.isIncome()) current.copy(income = current.income + tx.amount)
+            else current.copy(expense = current.expense + tx.amount)
+        }
+        return flow
+    }
+
     /** Neto (ingresos menos gastos) del mes por billetera. */
     fun monthNet(
         transactions: List<TransactionEntity>,
         month: YearMonth,
         wallets: List<Wallet>,
-        overrides: Map<String, String>
-    ): Map<String, Double> {
-        val net = mutableMapOf<String, Double>()
-        transactions.forEach { tx ->
-            val txMonth = YearMonth.from(
-                Instant.ofEpochMilli(tx.timestamp).atZone(ZoneOffset.UTC).toLocalDate()
-            )
-            if (txMonth != month) return@forEach
-            val walletId = resolve(tx, wallets, overrides)
-            val signed = if (tx.isIncome()) tx.amount else -tx.amount
-            net[walletId] = (net[walletId] ?: 0.0) + signed
-        }
-        return net
-    }
+        overrides: Map<String, String>,
+        zone: ZoneId = ZoneOffset.UTC
+    ): Map<String, Double> =
+        monthFlow(transactions, month, wallets, overrides, zone)
+            .mapValues { (_, flow) -> flow.net }
 
     /** Neto del día por billetera (cuadra con la lista visible de Inicio). */
     fun dayNet(

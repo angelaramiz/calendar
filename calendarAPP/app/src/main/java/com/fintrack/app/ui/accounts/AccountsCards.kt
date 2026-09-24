@@ -33,7 +33,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
+import com.fintrack.app.domain.WalletResolver
 import com.fintrack.app.domain.toLocalDateIn
+import com.fintrack.app.ui.theme.expenseColor
+import com.fintrack.app.ui.theme.incomeColor
 
 internal fun formatMoney(value: Double): String =
     "%,.0f".format(value).replace(',', '.')
@@ -56,7 +59,8 @@ internal fun SectionHeader(title: String, subtitle: String) {
 internal fun WalletsCard(
     wallets: List<WalletRow>,
     onAdd: (name: String, last4: String, kind: String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    flows: Map<String, WalletResolver.WalletMonthFlow> = emptyMap()
 ) {
     var newName by remember { mutableStateOf("") }
     var newLast4 by remember { mutableStateOf("") }
@@ -71,6 +75,7 @@ internal fun WalletsCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             wallets.forEach { wallet ->
+                val flow = flows[wallet.id]
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -79,10 +84,23 @@ internal fun WalletsCard(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(wallet.displayWithKind, fontWeight = FontWeight.SemiBold)
                         Text(
-                            if (wallet.custom) "Propia" else "Fija",
+                            (if (wallet.custom) "Propia" else "Fija") +
+                                (flow?.let {
+                                    " · +${formatMoney(it.income)} −${formatMoney(it.expense)}"
+                                } ?: " · sin movimientos este mes"),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        // Saldo del mes: se mueve con cada ingreso y gasto.
+                        if (flow != null && (flow.income > 0.0 || flow.expense > 0.0)) {
+                            val net = flow.net
+                            Text(
+                                "Neto " +
+                                    (if (net >= 0.0) "+${formatMoney(net)}" else formatMoney(net)),
+                                fontWeight = FontWeight.Bold,
+                                color = if (net >= 0.0) incomeColor() else expenseColor()
+                            )
+                        }
                     }
                     TextButton(onClick = { onDelete(wallet.id) }) { Text("Quitar") }
                 }

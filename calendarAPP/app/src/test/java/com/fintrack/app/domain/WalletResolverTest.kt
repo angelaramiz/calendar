@@ -71,7 +71,37 @@ class WalletResolverTest {
     }
 
     @Test
-    fun dayNet_solo_cuenta_el_dia_pedido() {        val now = YearMonth.now(ZoneOffset.UTC)
+    fun monthFlow_separa_ingresos_y_gastos_por_billetera() {
+        val now = YearMonth.now(ZoneOffset.UTC)
+        val base = now.atDay(10).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val txs = listOf(
+            tx("1", "com.nu.production", 500.0).copy(timestamp = base),
+            tx("2", "com.nu.production", 200.0, "INCOME").copy(timestamp = base)
+        )
+        val flow = WalletResolver.monthFlow(txs, now, wallets, emptyMap())
+        assertEquals(200.0, flow["nu"]?.income ?: 0.0, 0.0)
+        assertEquals(500.0, flow["nu"]?.expense ?: 0.0, 0.0)
+        assertEquals(-300.0, flow["nu"]?.net ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun monthFlow_con_zona_local_el_mes_no_se_corta_a_las_18() {
+        val mexico = java.time.ZoneId.of("America/Mexico_City")
+        // 1.º de mes 00:30 UTC = día anterior en México.
+        val firstOfMonth = YearMonth.of(2026, 9).atDay(1)
+            .atStartOfDay(ZoneOffset.UTC).plusMinutes(30).toInstant().toEpochMilli()
+        val txs = listOf(tx("1", "MANUAL", 100.0, "INCOME").copy(timestamp = firstOfMonth))
+        val utc = WalletResolver.monthFlow(txs, YearMonth.of(2026, 9), wallets, emptyMap())
+        assertEquals(100.0, utc["efectivo"]?.income ?: 0.0, 0.0)
+        val local = WalletResolver.monthFlow(
+            txs, YearMonth.of(2026, 8), wallets, emptyMap(), mexico
+        )
+        assertEquals(100.0, local["efectivo"]?.income ?: 0.0, 0.0)
+    }
+
+    @Test
+    fun dayNet_solo_cuenta_el_dia_pedido() {
+        val now = YearMonth.now(ZoneOffset.UTC)
         val todayTs = now.atDay(10).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val yesterdayTs = now.atDay(9).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
         val txs = listOf(

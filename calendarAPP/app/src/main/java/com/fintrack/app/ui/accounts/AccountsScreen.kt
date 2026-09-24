@@ -21,12 +21,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.common.PullRefreshLayout
@@ -47,6 +51,17 @@ fun AccountsScreen(
     viewModel: AccountsViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    // Al volver a la pestaña (ej. tras agregar un gasto en Inicio) los saldos
+    // se recalculan: mismo patrón ON_RESUME de Permisos.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.loadAccounts()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     uiState.info?.let { info ->
         LaunchedEffect(info) {
@@ -154,7 +169,8 @@ fun AccountsScreen(
                 WalletsCard(
                     wallets = uiState.wallets,
                     onAdd = { name, last4, kind -> viewModel.addWallet(name, last4, kind) },
-                    onDelete = { viewModel.deleteWallet(it) }
+                    onDelete = { viewModel.deleteWallet(it) },
+                    flows = uiState.walletFlows
                 )
             }
 

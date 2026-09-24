@@ -450,4 +450,64 @@ class FlowEngineTest {
             TimeZone.setDefault(original)
         }
     }
+
+    @Test
+    fun trace_registra_entradas_salidas_y_rama() {
+        val nodes: List<FlowNode> = listOf(
+            IncomeNode(id = "n1", label = "Sueldo", source = IncomeSource.Fixed(3_000.0)),
+            ConditionNode(
+                id = "n2",
+                operator = ConditionOperator.GREATER_THAN,
+                threshold = 1_000.0,
+                trueBranch = listOf(EnvelopeNode(id = "n3", label = "Ahorro")),
+                falseBranch = listOf(EnvelopeNode(id = "n4", label = "Reserva"))
+            )
+        )
+        val trace = FlowEngine.evaluateWithTrace(nodes)
+        assertEquals(3, trace.steps.size)
+        // La traza es post-orden: la rama ejecutada queda antes que la condición.
+        val byId = trace.steps.associateBy { it.nodeId }
+        assertEquals(TraceStep("n1", 0.0, 3_000.0, null), byId["n1"])
+        assertEquals("si", byId["n2"]?.branch)
+        assertEquals(TraceStep("n2", 3_000.0, 0.0, "si"), byId["n2"])
+        assertEquals(TraceStep("n3", 3_000.0, 0.0, null), byId["n3"])
+        assertEquals(3_000.0, trace.totalAssigned, 0.001)
+        // evaluate clásico da lo mismo.
+        assertEquals(trace.allocations, FlowEngine.evaluate(nodes))
+    }
+
+    @Test
+    fun trace_rama_no_tomada_no_aparece() {
+        val nodes: List<FlowNode> = listOf(
+            IncomeNode(id = "n1", label = "Sueldo", source = IncomeSource.Fixed(500.0)),
+            ConditionNode(
+                id = "n2",
+                operator = ConditionOperator.GREATER_THAN,
+                threshold = 1_000.0,
+                trueBranch = listOf(EnvelopeNode(id = "n3", label = "Ahorro")),
+                falseBranch = listOf(EnvelopeNode(id = "n4", label = "Reserva"))
+            )
+        )
+        val trace = FlowEngine.evaluateWithTrace(nodes)
+        val byId = trace.steps.associateBy { it.nodeId }
+        assertEquals("no", byId["n2"]?.branch)
+        assertTrue("n3" !in byId)
+        assertTrue("n4" in byId)
+    }
+
+    @Test
+    fun findNode_encuentra_en_ramas() {
+        val inner = EnvelopeNode(id = "x", label = "Ahorro")
+        val nodes: List<FlowNode> = listOf(
+            ConditionNode(
+                id = "c",
+                operator = ConditionOperator.GREATER_THAN,
+                threshold = 1.0,
+                trueBranch = listOf(inner),
+                falseBranch = emptyList()
+            )
+        )
+        assertEquals(inner, FlowEngine.findNode(nodes, "x"))
+        assertEquals(null, FlowEngine.findNode(nodes, "zzz"))
+    }
 }

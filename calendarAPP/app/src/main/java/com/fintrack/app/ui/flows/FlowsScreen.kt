@@ -20,9 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Drafts
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.Button
@@ -37,6 +35,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -72,14 +71,14 @@ import com.fintrack.app.domain.IncomeSource
 import com.fintrack.app.domain.Split
 import org.koin.androidx.compose.koinViewModel
 
-private val incomeSourceLabels = mapOf(
+internal val incomeSourceLabels = mapOf(
     "FIXED" to "Monto fijo",
     "MONTH" to "Ingresos del mes",
     "CATEGORY" to "Total por categoria",
     "RECURRING" to "Recurrentes del mes"
 )
 
-private val operatorLabels = mapOf(
+internal val operatorLabels = mapOf(
     ConditionOperator.GREATER_THAN to "Mayor que (>)",
     ConditionOperator.LESS_THAN to "Menor que (<)",
     ConditionOperator.EQUALS to "Igual a (=)"
@@ -98,6 +97,12 @@ fun FlowsScreen(
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var showAddMenu by remember { mutableStateOf(false) }
+    var selectedId by remember { mutableStateOf<String?>(null) }
+    val selectedNode = selectedId?.let { FlowEngine.findNode(uiState.nodes, it) }
+    // Si el nodo seleccionado se eliminó, se cierra el editor.
+    if (selectedId != null && selectedNode == null) {
+        LaunchedEffect(selectedId) { selectedId = null }
+    }
 
     uiState.error?.let { err ->
         LaunchedEffect(err) {
@@ -184,17 +189,21 @@ fun FlowsScreen(
                 }
             }
 
-            itemsIndexed(uiState.nodes, key = { _, node -> node.id }) { index, node ->
-                NodeCard(
-                    step = index + 1,
-                    node = node,
-                    viewModel = viewModel
+            item {
+                Text(
+                    "Toca un nodo para configurarlo. Al ejecutar, el camino " +
+                        "recorrido se ilumina con los montos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (index < uiState.nodes.lastIndex) {
-                    ConnectorLine()
-                } else {
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
+                Spacer(modifier = Modifier.height(4.dp))
+                FlowCanvas(
+                    nodes = uiState.nodes,
+                    trace = uiState.trace,
+                    selectedId = selectedId,
+                    onSelect = { selectedId = it }
+                )
+                Spacer(modifier = Modifier.height(4.dp))
             }
 
             item {
@@ -362,77 +371,44 @@ fun FlowsScreen(
             }
         }
     }
-}
 
-@Composable
-private fun ConnectorLine() {
-    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier.width(2.dp).height(10.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant)
-        )
-        Surface(
-            shape = CircleShape,
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-        ) {
-            Box(
-                modifier = Modifier.padding(5.dp).size(6.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-            )
+    // Editor del nodo tocado en el lienzo.
+    selectedNode?.let { node ->
+        val sheetTitle = when (node) {
+            is IncomeNode -> "Ingreso"
+            is FormulaNode -> "Reparto"
+            is ConditionNode -> "Condición"
+            is EnvelopeNode -> "Sobre"
         }
-        Box(
-            modifier = Modifier.width(2.dp).height(10.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant)
-        )
-    }
-}
-
-@Composable
-private fun NodeCard(step: Int, node: FlowNode, viewModel: FlowsViewModel) {
-    val (title, icon) = when (node) {
-        is IncomeNode -> "Paso $step - Ingreso" to Icons.Default.AccountBalanceWallet
-        is FormulaNode -> "Paso $step - Reparto" to Icons.AutoMirrored.Filled.CallSplit
-        is ConditionNode -> "Paso $step - Condicion" to Icons.Default.Drafts
-        is EnvelopeNode -> "Paso $step - Sobre" to Icons.Default.Savings
-    }
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary
-                ) {
+        ModalBottomSheet(onDismissRequest = { selectedId = null }) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        step.toString(),
-                        style = MaterialTheme.typography.labelLarge,
+                        "Configurar: $sheetTitle",
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = {
+                        viewModel.removeNode(node.id)
+                        selectedId = null
+                    }) {
+                        Icon(Icons.Default.Delete, "Eliminar nodo")
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                when (node) {
+                    is IncomeNode -> IncomeEditor(node, viewModel)
+                    is FormulaNode -> FormulaEditor(node, viewModel)
+                    is ConditionNode -> ConditionEditor(node, viewModel)
+                    is EnvelopeNode -> EnvelopeFields(
+                        label = node.label,
+                        category = node.category ?: "",
+                        onLabel = { viewModel.updateEnvelope(node.id, it, node.category) },
+                        onCategory = { viewModel.updateEnvelope(node.id, node.label, it) }
                     )
                 }
-                Spacer(modifier = Modifier.width(10.dp))
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = { viewModel.removeNode(node.id) }) {
-                    Icon(Icons.Default.Delete, "Eliminar nodo")
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            when (node) {
-                is IncomeNode -> IncomeEditor(node, viewModel)
-                is FormulaNode -> FormulaEditor(node, viewModel)
-                is ConditionNode -> ConditionEditor(node, viewModel)
-                is EnvelopeNode -> EnvelopeFields(
-                    label = node.label,
-                    category = node.category ?: "",
-                    onLabel = { viewModel.updateEnvelope(node.id, it, node.category) },
-                    onCategory = { viewModel.updateEnvelope(node.id, node.label, it) }
-                )
+                Spacer(modifier = Modifier.height(32.dp))
             }
         }
     }
@@ -440,7 +416,7 @@ private fun NodeCard(step: Int, node: FlowNode, viewModel: FlowsViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
+internal fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
     var expanded by remember { mutableStateOf(false) }
     val selectedKey = when (node.source) {
         is IncomeSource.Fixed -> "FIXED"
@@ -515,7 +491,7 @@ private fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
 }
 
 @Composable
-private fun FormulaEditor(node: FormulaNode, viewModel: FlowsViewModel) {
+internal fun FormulaEditor(node: FormulaNode, viewModel: FlowsViewModel) {
     node.splits.forEachIndexed { index, split ->
         val isPercent = split is Split.Percent
         OutlinedTextField(
@@ -589,7 +565,7 @@ private fun FormulaEditor(node: FormulaNode, viewModel: FlowsViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ConditionEditor(node: ConditionNode, viewModel: FlowsViewModel) {
+internal fun ConditionEditor(node: ConditionNode, viewModel: FlowsViewModel) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
@@ -637,7 +613,7 @@ private fun ConditionEditor(node: ConditionNode, viewModel: FlowsViewModel) {
 }
 
 @Composable
-private fun BranchSection(
+internal fun BranchSection(
     title: String,
     branch: List<FlowNode>,
     onEnvelope: (Int, EnvelopeNode) -> Unit
@@ -665,7 +641,7 @@ private fun BranchSection(
 }
 
 @Composable
-private fun EnvelopeFields(
+internal fun EnvelopeFields(
     label: String,
     category: String,
     onLabel: (String) -> Unit,
@@ -689,7 +665,7 @@ private fun EnvelopeFields(
 }
 
 @Composable
-private fun NumberField(
+internal fun NumberField(
     label: String,
     value: Double,
     modifier: Modifier = Modifier,
@@ -709,15 +685,15 @@ private fun NumberField(
     )
 }
 
-private fun splitValue(split: Split): Double = when (split) {
+internal fun splitValue(split: Split): Double = when (split) {
     is Split.Percent -> split.percent
     is Split.FixedAmount -> split.amount
 }
 
-private fun splitCategory(split: Split): String? = when (split) {
+internal fun splitCategory(split: Split): String? = when (split) {
     is Split.Percent -> split.category
     is Split.FixedAmount -> split.category
 }
 
-private fun formatNumber(value: Double): String =
+internal fun formatNumber(value: Double): String =
     if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()

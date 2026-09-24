@@ -24,6 +24,8 @@ object PendingOpKind {
     const val TX_UPDATE = "tx_update"
     const val TX_DELETE = "tx_delete"
     const val MOV_INSERT = "mov_insert"
+    const val MOV_UPDATE = "mov_update"
+    const val MOV_DELETE = "mov_delete"
     const val MOV_CONFIRM = "mov_confirm"
     const val PATTERN_INSERT = "pattern_insert"
     const val PATTERN_UPDATE = "pattern_update"
@@ -47,6 +49,17 @@ data class TxIdPayload(val id: String)
 data class MovInsertPayload(
     val dateIso: String,
     val isIncome: Boolean,
+    val title: String,
+    val description: String,
+    val category: String,
+    val amount: Double,
+    val walletId: String? = null,
+    val cardId: String? = null
+)
+
+@Serializable
+data class MovUpdatePayload(
+    val id: String,
     val title: String,
     val description: String,
     val category: String,

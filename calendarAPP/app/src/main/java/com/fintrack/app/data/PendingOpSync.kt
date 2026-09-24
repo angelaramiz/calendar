@@ -63,6 +63,26 @@ class PendingOpSync(
                 p.cardId?.let { creditCardStore.setCharge("mov:${saved.id}", it) }
                 true
             }
+            PendingOpKind.MOV_UPDATE -> {
+                val p = PendingOpCodec.payload<MovUpdatePayload>(op) ?: return true
+                patternRepository.updateMovement(
+                    userId, p.id, p.title, p.description, p.category, p.amount
+                )
+                if (p.walletId != null) {
+                    walletStore.setOverride("mov:${p.id}", p.walletId)
+                }
+                if (p.cardId != null) {
+                    creditCardStore.setCharge("mov:${p.id}", p.cardId)
+                }
+                true
+            }
+            PendingOpKind.MOV_DELETE -> {
+                val p = PendingOpCodec.payload<TxIdPayload>(op) ?: return true
+                patternRepository.deleteMovement(userId, p.id)
+                runCatching { walletStore.clearOverride("mov:${p.id}") }
+                runCatching { creditCardStore.setCharge("mov:${p.id}", null) }
+                true
+            }
             PendingOpKind.MOV_CONFIRM -> {
                 val p = PendingOpCodec.payload<MovConfirmPayload>(op) ?: return true
                 val date = runCatching { java.time.LocalDate.parse(p.dateIso) }

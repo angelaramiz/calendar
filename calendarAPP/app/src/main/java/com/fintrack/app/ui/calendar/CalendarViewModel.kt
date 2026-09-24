@@ -6,6 +6,7 @@ import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.MovConfirmPayload
 import com.fintrack.app.data.MovInsertPayload
+import com.fintrack.app.data.MovUpdatePayload
 import com.fintrack.app.data.PatternLink
 import com.fintrack.app.data.PatternLinkKind
 import com.fintrack.app.data.PatternLinkStore
@@ -15,6 +16,8 @@ import com.fintrack.app.data.PendingOpCodec
 import com.fintrack.app.data.PendingOpKind
 import com.fintrack.app.data.PendingOpStore
 import com.fintrack.app.data.ServiceBillStore
+import com.fintrack.app.data.TxIdPayload
+import com.fintrack.app.data.TxUpdatePayload
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.model.TransactionEntity
@@ -65,6 +68,10 @@ data class CalendarUiState(
     val error: String? = null,
     val confirmTarget: Occurrence? = null,
     val addTarget: LocalDate? = null,
+    /** Movimiento confirmado tocado: ver detalle, editar o eliminar. */
+    val detailMov: MovementRow? = null,
+    /** Registro de Inicio tocado: ver detalle, editar o eliminar. */
+    val detailTx: TransactionEntity? = null,
     val showPatternDialog: Boolean = false,
     /** Patrón en edición (null = creando uno nuevo). */
     val patternEditTarget: Pattern? = null,
@@ -74,6 +81,10 @@ data class CalendarUiState(
     val wallets: List<WalletRow> = emptyList(),
     /** Tarjetas de crédito para el tag de gastos. */
     val cards: List<CreditCardRow> = emptyList(),
+    /** Override de billetera por "tx:<id>"/"mov:<id>" (editar con su cuenta). */
+    val walletOverrides: Map<String, String> = emptyMap(),
+    /** Tag de tarjeta por "tx:<id>"/"mov:<id>". */
+    val cardCharges: Map<String, String> = emptyMap(),
     /** Clasificación de recurrentes: patternId -> link. */
     val links: Map<String, PatternLink> = emptyMap(),
     /** Avisos del mes (vencimientos y pagos): fecha -> etiquetas. */
@@ -109,7 +120,14 @@ class CalendarViewModel(
             }.getOrDefault(emptyList())
             val cards = runCatching { creditCardStore.cardsSnapshot() }
                 .getOrDefault(emptyList())
-            _uiState.value = _uiState.value.copy(wallets = wallets, cards = cards)
+            _uiState.value = _uiState.value.copy(
+                wallets = wallets,
+                cards = cards,
+                walletOverrides = runCatching { walletStore.overridesSnapshot() }
+                    .getOrDefault(emptyMap()),
+                cardCharges = runCatching { creditCardStore.chargesSnapshot() }
+                    .getOrDefault(emptyMap())
+            )
         }
     }
 
@@ -184,6 +202,10 @@ class CalendarViewModel(
                     balance = balance,
                     links = runCatching { linkStore.snapshot() }.getOrDefault(emptyMap()),
                     markers = buildMarkers(from, to),
+                    walletOverrides = runCatching { walletStore.overridesSnapshot() }
+                        .getOrDefault(emptyMap()),
+                    cardCharges = runCatching { creditCardStore.chargesSnapshot() }
+                        .getOrDefault(emptyMap()),
                     isLoading = false,
                     needsLogin = false
                 )
@@ -251,6 +273,24 @@ class CalendarViewModel(
 
     fun dismissAddMovement() {
         _uiState.value = _uiState.value.copy(addTarget = null)
+    }
+
+    /** Abre el detalle de un movimiento confirmado. */
+    fun showMovementDetail(mov: MovementRow) {
+        _uiState.value = _uiState.value.copy(detailMov = mov, detailTx = null)
+    }
+
+    fun dismissMovementDetail() {
+        _uiState.value = _uiState.value.copy(detailMov = null)
+    }
+
+    /** Abre el detalle de un registro de Inicio. */
+    fun showQuickDetail(tx: TransactionEntity) {
+        _uiState.value = _uiState.value.copy(detailTx = tx, detailMov = null)
+    }
+
+    fun dismissQuickDetail() {
+        _uiState.value = _uiState.value.copy(detailTx = null)
     }
 
     fun showPatternDialog() {
@@ -603,6 +643,184 @@ class CalendarViewModel(
                     _uiState.value = _uiState.value.copy(
                         confirmTarget = null,
                         error = friendlyErrorMessage(e)
+                    )
+                }
+            }
+        }
+    }
+
+    /** Edita un registro de Inicio desde Calendario (tags locales + offline). */
+    fun updateQuick(
+        id: String,
+        transaction: TransactionEntity,
+        walletId: String? = null,
+        cardId: String? = null
+    ) {
+        viewModelScope.launch {
+            if (walletId != null) {
+                runCatching { walletStore.setOverride("tx:$id", walletId) }
+            } else if (cardId != null) {
+                runCatching { walletStore.clearOverride("tx:$id") }
+            }
+            if (transaction.isIncomeTx()) {
+                runCatching { creditCardStore.setCharge("tx:$id", null) }
+            } else {
+                runCatching { creditCardStore.setCharge("tx:$id", cardId) }
+            }
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                enqueueOp(
+                    PendingOpKind.TX_UPDATE,
+                    TxUpdatePayload.serializer(),
+                    TxUpdatePayload(id, transaction)
+                )
+                _uiState.value = _uiState.value.copy(
+                    error = "Sin conexión: se modificará al entrar."
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                transactionRepository.updateTransaction(uid, id, transaction)
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.TX_UPDATE,
+                        TxUpdatePayload.serializer(),
+                        TxUpdatePayload(id, transaction)
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Sin conexión: se modificará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "No se pudo modificar. ${friendlyErrorMessage(e)}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Elimina un registro de Inicio desde Calendario (con offline). */
+    fun deleteQuick(id: String) {
+        viewModelScope.launch {
+            runCatching { walletStore.clearOverride("tx:$id") }
+            runCatching { creditCardStore.setCharge("tx:$id", null) }
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                _uiState.value = _uiState.value.copy(
+                    error = "Sin conexión: se eliminará al entrar."
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            try {
+                transactionRepository.deleteTransaction(uid, id)
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                    _uiState.value = _uiState.value.copy(
+                        error = "Sin conexión: se eliminará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "No se pudo eliminar: ${e.message?.take(150)}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Edita un movimiento confirmado (título, nota, categoría, monto + tags). */
+    fun updateMovement(
+        id: String,
+        title: String,
+        description: String,
+        category: String,
+        amount: Double,
+        walletId: String? = null,
+        cardId: String? = null
+    ) {
+        if (amount <= 0.0) return
+        viewModelScope.launch {
+            if (walletId != null) {
+                runCatching { walletStore.setOverride("mov:$id", walletId) }
+            }
+            if (cardId != null) {
+                runCatching { creditCardStore.setCharge("mov:$id", cardId) }
+            }
+            val uid = authRepository.ensureSession()
+            if (uid == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.MOV_UPDATE,
+                    MovUpdatePayload.serializer(),
+                    MovUpdatePayload(id, title, description, category, amount, walletId, cardId)
+                )
+                _uiState.value = _uiState.value.copy(
+                    error = "Sin conexión: se modificará al entrar."
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            try {
+                patternRepository.updateMovement(
+                    userId, id, title.ifBlank { category }, description, category, amount
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.MOV_UPDATE,
+                        MovUpdatePayload.serializer(),
+                        MovUpdatePayload(id, title, description, category, amount, walletId, cardId)
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "Sin conexión: se modificará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = "No se pudo modificar. ${friendlyErrorMessage(e)}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Elimina un movimiento confirmado (con offline). */
+    fun deleteMovement(id: String) {
+        viewModelScope.launch {
+            runCatching { walletStore.clearOverride("mov:$id") }
+            runCatching { creditCardStore.setCharge("mov:$id", null) }
+            val uid = authRepository.ensureSession()
+            if (uid == null || userId.isEmpty()) {
+                enqueueOp(PendingOpKind.MOV_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                _uiState.value = _uiState.value.copy(
+                    error = "Sin conexión: se eliminará al entrar."
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            try {
+                patternRepository.deleteMovement(userId, id)
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(PendingOpKind.MOV_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
+                    _uiState.value = _uiState.value.copy(
+                        error = "Sin conexión: se eliminará al entrar."
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "No se pudo eliminar: ${e.message?.take(150)}"
                     )
                 }
             }

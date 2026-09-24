@@ -145,6 +145,24 @@ data class Allocation(
     val category: String? = null
 )
 
+/** Paso ejecutado: con cuánto entró/salió cada nodo y qué rama tomó. */
+@Serializable
+data class TraceStep(
+    val nodeId: String,
+    val input: Double,
+    val output: Double,
+    /** Rama tomada en condiciones ("si"/"no", null en el resto). */
+    val branch: String? = null
+)
+
+/** Traza completa de una ejecución (para pintar el canvas estilo n8n). */
+@Serializable
+data class FlowTrace(
+    val steps: List<TraceStep>,
+    val allocations: List<Allocation>,
+    val totalAssigned: Double
+)
+
 /** Flujo editable completo, persistido como JSON en DataStore. */
 @Serializable
 data class MoneyFlow(
@@ -172,10 +190,39 @@ object FlowEngine {
         transactions: List<TransactionEntity> = emptyList(),
         patterns: List<Pattern> = emptyList(),
         month: YearMonth = YearMonth.now()
-    ): List<Allocation> {
+    ): List<Allocation> =
+        evaluateWithTrace(nodes, transactions, patterns, month).allocations
+
+    /**
+     * Evalúa y además registra la traza (entrada/salida por nodo y rama
+     * tomada). Misma validación y mismo resultado que [evaluate].
+     */
+    fun evaluateWithTrace(
+        nodes: List<FlowNode>,
+        transactions: List<TransactionEntity> = emptyList(),
+        patterns: List<Pattern> = emptyList(),
+        month: YearMonth = YearMonth.now()
+    ): FlowTrace {
         val state = FlowState()
-        process(nodes, transactions, patterns, month, state)
-        return state.allocations
+        val steps = mutableListOf<TraceStep>()
+        process(nodes, transactions, patterns, month, state, steps)
+        return FlowTrace(
+            steps = steps.toList(),
+            allocations = state.allocations.toList(),
+            totalAssigned = state.allocations.sumOf { it.amount }
+        )
+    }
+
+    /** Busca un nodo por id, también dentro de ramas de condiciones. */
+    fun findNode(nodes: List<FlowNode>, id: String): FlowNode? {
+        nodes.forEach { node ->
+            if (node.id == id) return node
+            if (node is ConditionNode) {
+                findNode(node.trueBranch, id)?.let { return it }
+                findNode(node.falseBranch, id)?.let { return it }
+            }
+        }
+        return null
     }
 
     private class FlowState(
@@ -188,18 +235,24 @@ object FlowEngine {
         transactions: List<TransactionEntity>,
         patterns: List<Pattern>,
         month: YearMonth,
-        state: FlowState
+        state: FlowState,
+        trace: MutableList<TraceStep>? = null
     ) {
         nodes.forEach { node ->
+            val before = state.current
+            var branch: String? = null
             when (node) {
                 is IncomeNode -> {
                     val amount = resolveIncome(node, transactions, patterns, month)
                     state.current = (state.current ?: 0.0) + amount
                 }
                 is FormulaNode -> applyFormula(node, state)
-                is ConditionNode -> applyCondition(node, transactions, patterns, month, state)
+                is ConditionNode -> {
+                    branch = applyCondition(node, transactions, patterns, month, state, trace)
+                }
                 is EnvelopeNode -> applyEnvelope(node, state)
             }
+            trace?.add(TraceStep(node.id, before ?: 0.0, state.current ?: 0.0, branch))
         }
     }
 
@@ -332,8 +385,9 @@ object FlowEngine {
         transactions: List<TransactionEntity>,
         patterns: List<Pattern>,
         month: YearMonth,
-        state: FlowState
-    ) {
+        state: FlowState,
+        trace: MutableList<TraceStep>? = null
+    ): String {
         val current = state.current
             ?: throw FlowValidationException("La condicion necesita un ingreso previo en el flujo.")
         if (node.threshold <= 0) {
@@ -352,7 +406,8 @@ object FlowEngine {
             ConditionOperator.EQUALS -> abs(current - node.threshold) <= EQUALS_TOLERANCE
         }
         val branch = if (matches) node.trueBranch else node.falseBranch
-        process(branch, transactions, patterns, month, state)
+        process(branch, transactions, patterns, month, state, trace)
+        return if (matches) "si" else "no"
     }
 
     private fun applyEnvelope(node: EnvelopeNode, state: FlowState) {

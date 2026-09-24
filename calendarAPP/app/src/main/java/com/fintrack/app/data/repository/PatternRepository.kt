@@ -234,6 +234,44 @@ class PatternRepository {
         }
         db.from("movements").insert(data) { select() }.decodeSingle<MovementRow>()
     }
+
+    /**
+     * Edita un movimiento confirmado (título, nota, categoría, monto).
+     * Con ownership: filtra por id + user_id (defensa en el cliente).
+     */
+    suspend fun updateMovement(
+        userId: String,
+        id: String,
+        title: String,
+        description: String,
+        category: String,
+        confirmedAmount: Double
+    ) = withContext(Dispatchers.IO) {
+        val data = buildJsonObject {
+            put("title", title)
+            put("description", description)
+            put("category", category)
+            put("confirmed_amount", confirmedAmount)
+        }
+        db.from("movements").update(data) {
+            filter {
+                eq("id", id)
+                eq("user_id", userId)
+            }
+        }
+    }
+
+    /**
+     * Elimina un movimiento confirmado (borrado real con ownership).
+     */
+    suspend fun deleteMovement(userId: String, id: String) = withContext(Dispatchers.IO) {
+        db.from("movements").delete {
+            filter {
+                eq("id", id)
+                eq("user_id", userId)
+            }
+        }
+    }
 }
 
 fun PatternRow.toDomain(type: String): Pattern? {

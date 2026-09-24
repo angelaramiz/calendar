@@ -3,7 +3,10 @@ package com.fintrack.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -78,6 +81,46 @@ fun CalendarScreen(
                 viewModel.saveManualMovement(
                     date, isIncome, title, category, amount, description, walletId, cardId
                 )
+            }
+        )
+    }
+
+    uiState.detailMov?.let { mov ->
+        MovDetailDialog(
+            mov = mov,
+            wallets = uiState.wallets,
+            cards = uiState.cards,
+            initialWalletId = uiState.walletOverrides["mov:${mov.id}"],
+            initialCardId = uiState.cardCharges["mov:${mov.id}"],
+            onDismiss = { viewModel.dismissMovementDetail() },
+            onSave = { title, description, category, amount, walletId, cardId ->
+                viewModel.updateMovement(
+                    mov.id, title, description, category, amount, walletId, cardId
+                )
+                viewModel.dismissMovementDetail()
+            },
+            onDelete = {
+                viewModel.deleteMovement(mov.id)
+                viewModel.dismissMovementDetail()
+            }
+        )
+    }
+
+    uiState.detailTx?.let { tx ->
+        QuickDetailDialog(
+            tx = tx,
+            wallets = uiState.wallets,
+            cards = uiState.cards,
+            initialWalletId = uiState.walletOverrides["tx:${tx.id}"],
+            initialCardId = uiState.cardCharges["tx:${tx.id}"],
+            onDismiss = { viewModel.dismissQuickDetail() },
+            onSave = { updated, walletId, cardId ->
+                viewModel.updateQuick(tx.id, updated, walletId, cardId)
+                viewModel.dismissQuickDetail()
+            },
+            onDelete = {
+                viewModel.deleteQuick(tx.id)
+                viewModel.dismissQuickDetail()
             }
         )
     }
@@ -284,10 +327,16 @@ fun CalendarScreen(
                         )
                     }
                     items(data.confirmed, key = { "c_${it.id}" }) { mov ->
-                        ConfirmedRow(mov)
+                        ConfirmedRow(
+                            mov = mov,
+                            onOpen = { viewModel.showMovementDetail(mov) }
+                        )
                     }
                     items(data.quick, key = { "q_${it.id}" }) { tx ->
-                        QuickRow(tx)
+                        QuickRow(
+                            tx = tx,
+                            onOpen = { viewModel.showQuickDetail(tx) }
+                        )
                     }
                 }
             }
@@ -626,7 +675,10 @@ private fun ProjectedCard(
     linkKind: String? = null,
     cardName: String? = null
 ) {
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onEdit() },
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -679,10 +731,13 @@ private fun linkLabel(linkKind: String?, cardName: String?): String? = when (lin
 }
 
 @Composable
-private fun ConfirmedRow(mov: MovementRow) {
+private fun ConfirmedRow(mov: MovementRow, onOpen: () -> Unit) {
     val isIncome = mov.kind?.isIncome == true
     val amountTint = if (isIncome) incomeColor() else expenseColor()
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onOpen() },
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -710,10 +765,13 @@ private fun ConfirmedRow(mov: MovementRow) {
 }
 
 @Composable
-private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity) {
+private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity, onOpen: () -> Unit) {
     val isIncome = tx.kind?.isIncome == true
     val amountTint = if (isIncome) incomeColor() else expenseColor()
-    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onOpen() },
+        shape = RoundedCornerShape(16.dp)
+    ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -787,6 +845,426 @@ private fun ConfirmOccurrenceDialog(
                 val value = amount.toDoubleOrNull() ?: return@TextButton
                 if (value > 0) onConfirm(value)
             }) { Text("Confirmar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+/** Detalle de un movimiento confirmado: ver todo, editar o eliminar. */
+@Composable
+private fun MovDetailDialog(
+    mov: MovementRow,
+    wallets: List<com.fintrack.app.data.WalletRow>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    initialWalletId: String?,
+    initialCardId: String?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, Double, String?, String?) -> Unit,
+    onDelete: () -> Unit
+) {
+    var showEdit by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+    val isIncome = mov.kind?.isIncome == true
+    val fromPattern = mov.income_pattern_id != null || mov.expense_pattern_id != null
+
+    if (showEdit) {
+        MovEditDialog(
+            mov = mov,
+            wallets = wallets,
+            cards = cards,
+            initialWalletId = initialWalletId,
+            initialCardId = initialCardId,
+            onDismiss = { showEdit = false },
+            onSave = { title, description, category, amount, walletId, cardId ->
+                showEdit = false
+                onSave(title, description, category, amount, walletId, cardId)
+            }
+        )
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(mov.title.ifEmpty { mov.category }) },
+        text = {
+            Text(
+                "${if (isIncome) "Ingreso" else "Gasto"} · " +
+                    "$${String.format("%.2f", mov.confirmed_amount)} · ${mov.category}" +
+                    (mov.description.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "") +
+                    "\nFecha: ${mov.date}" +
+                    "\nOrigen: ${if (fromPattern) "Recurrente confirmado" else "Registro manual"}"
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { showEdit = true }) { Text("Editar") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { showDelete = true }) { Text("Eliminar") }
+                TextButton(onClick = onDismiss) { Text("Cerrar") }
+            }
+        }
+    )
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Eliminar movimiento") },
+            text = {
+                Text(
+                    "¿Eliminar \"${mov.title.ifEmpty { mov.category }}\" por " +
+                        "$${String.format("%.2f", mov.confirmed_amount)}?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; onDelete() }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+/** Edición de un movimiento confirmado (tipo fijo, como los recurrentes). */
+@Composable
+private fun MovEditDialog(
+    mov: MovementRow,
+    wallets: List<com.fintrack.app.data.WalletRow>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    initialWalletId: String?,
+    initialCardId: String?,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, Double, String?, String?) -> Unit
+) {
+    val isIncome = mov.kind?.isIncome == true
+    var title by remember(mov) { mutableStateOf(mov.title) }
+    var amount by remember(mov) { mutableStateOf(String.format("%.2f", mov.confirmed_amount)) }
+    var category by remember(mov) { mutableStateOf(mov.category) }
+    var description by remember(mov) { mutableStateOf(mov.description) }
+    var walletId by remember(mov) { mutableStateOf(initialWalletId) }
+    var cardId by remember(mov) { mutableStateOf(initialCardId) }
+    val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar movimiento") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Título") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Monto") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = { Text(cat) },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Nota") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        if (isIncome) "Cuenta destino" else "Cuenta / Método de pago",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id ||
+                                    (walletId == null && cardId == null && wallet.id == "efectivo"),
+                                onClick = {
+                                    walletId = wallet.id
+                                    cardId = null
+                                },
+                                label = { Text(wallet.displayWithKind) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
+                if (!isIncome && cards.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("¿O es a crédito?", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        FilterChip(
+                            selected = cardId == null,
+                            onClick = { cardId = null },
+                            label = { Text("Débito / Efectivo") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        cards.forEach { card ->
+                            FilterChip(
+                                selected = cardId == card.id,
+                                onClick = {
+                                    cardId = card.id
+                                    walletId = null
+                                },
+                                label = { Text(card.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val value = amount.toDoubleOrNull() ?: return@TextButton
+                if (value <= 0) return@TextButton
+                onSave(title, description, category, value, walletId, cardId)
+            }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+
+/** Detalle de un registro de Inicio: ver todo, editar o eliminar. */
+@Composable
+private fun QuickDetailDialog(
+    tx: com.fintrack.app.data.model.TransactionEntity,
+    wallets: List<com.fintrack.app.data.WalletRow>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    initialWalletId: String?,
+    initialCardId: String?,
+    onDismiss: () -> Unit,
+    onSave: (com.fintrack.app.data.model.TransactionEntity, String?, String?) -> Unit,
+    onDelete: () -> Unit
+) {
+    var showEdit by remember { mutableStateOf(false) }
+    var showDelete by remember { mutableStateOf(false) }
+    val isIncome = tx.kind?.isIncome == true
+
+    if (showEdit) {
+        QuickEditDialog(
+            tx = tx,
+            wallets = wallets,
+            cards = cards,
+            initialWalletId = initialWalletId,
+            initialCardId = initialCardId,
+            onDismiss = { showEdit = false },
+            onSave = { updated, walletId, cardId ->
+                showEdit = false
+                onSave(updated, walletId, cardId)
+            }
+        )
+        return
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tx.description.ifEmpty { tx.merchant ?: tx.category }) },
+        text = {
+            Text(
+                "${if (isIncome) "Ingreso" else "Gasto"} · " +
+                    "$${String.format("%.2f", tx.amount)} · ${tx.category}" +
+                    (tx.merchant?.let { "\nComercio: $it" } ?: "") +
+                    (tx.description.takeIf { it.isNotBlank() }?.let { "\nNota: $it" } ?: "") +
+                    "\nOrigen: ${if (tx.source == "AUTO") "Detectado" else "Manual"}"
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { showEdit = true }) { Text("Editar") }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { showDelete = true }) { Text("Eliminar") }
+                TextButton(onClick = onDismiss) { Text("Cerrar") }
+            }
+        }
+    )
+    if (showDelete) {
+        AlertDialog(
+            onDismissRequest = { showDelete = false },
+            title = { Text("Eliminar transacción") },
+            text = {
+                Text(
+                    "¿Eliminar \"${tx.description.ifEmpty { tx.category }}\" por " +
+                        "$${String.format("%.2f", tx.amount)}?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showDelete = false; onDelete() }) { Text("Eliminar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDelete = false }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+/** Edición de un registro de Inicio (igual que en Inicio). */
+@Composable
+private fun QuickEditDialog(
+    tx: com.fintrack.app.data.model.TransactionEntity,
+    wallets: List<com.fintrack.app.data.WalletRow>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    initialWalletId: String?,
+    initialCardId: String?,
+    onDismiss: () -> Unit,
+    onSave: (com.fintrack.app.data.model.TransactionEntity, String?, String?) -> Unit
+) {
+    var amount by remember(tx) { mutableStateOf(String.format("%.2f", tx.amount)) }
+    var type by remember(tx) {
+        mutableStateOf(if (tx.kind?.isIncome == true) "INCOME" else "EXPENSE")
+    }
+    var category by remember(tx) { mutableStateOf(tx.category) }
+    var description by remember(tx) { mutableStateOf(tx.description) }
+    var merchant by remember(tx) { mutableStateOf(tx.merchant.orEmpty()) }
+    var walletId by remember(tx) { mutableStateOf(initialWalletId) }
+    var cardId by remember(tx) { mutableStateOf(initialCardId) }
+    val isIncome = type == "INCOME"
+    val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Editar transacción") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Row {
+                    listOf("EXPENSE" to "Gasto", "INCOME" to "Ingreso").forEach { (t, label) ->
+                        FilterChip(
+                            selected = type == t,
+                            onClick = {
+                                type = t
+                                category = com.fintrack.app.domain.TransactionCategories
+                                    .defaultFor(t == "INCOME")
+                                if (t == "INCOME") cardId = null
+                            },
+                            label = { Text(label) },
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Monto") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    categories.forEach { cat ->
+                        FilterChip(
+                            selected = category == cat,
+                            onClick = { category = cat },
+                            label = { Text(cat) },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = merchant,
+                    onValueChange = { merchant = it },
+                    label = { Text("Comercio (opcional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Nota") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (wallets.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        if (isIncome) "Cuenta destino" else "Cuenta / Método de pago",
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        wallets.forEach { wallet ->
+                            FilterChip(
+                                selected = walletId == wallet.id ||
+                                    (walletId == null && cardId == null && wallet.id == "efectivo"),
+                                onClick = {
+                                    walletId = wallet.id
+                                    cardId = null
+                                },
+                                label = { Text(wallet.displayWithKind) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
+                if (!isIncome && cards.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("¿O es a crédito?", style = MaterialTheme.typography.labelLarge)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        FilterChip(
+                            selected = cardId == null,
+                            onClick = { cardId = null },
+                            label = { Text("Débito / Efectivo") },
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        cards.forEach { card ->
+                            FilterChip(
+                                selected = cardId == card.id,
+                                onClick = {
+                                    cardId = card.id
+                                    walletId = null
+                                },
+                                label = { Text(card.name) },
+                                modifier = Modifier.padding(end = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val value = amount.toDoubleOrNull() ?: return@TextButton
+                if (value <= 0) return@TextButton
+                onSave(
+                    tx.copy(
+                        amount = value,
+                        type = type,
+                        category = category,
+                        description = description,
+                        merchant = merchant.ifBlank { null }
+                    ),
+                    walletId,
+                    if (type == "INCOME") null else cardId
+                )
+            }) { Text("Guardar") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancelar") }

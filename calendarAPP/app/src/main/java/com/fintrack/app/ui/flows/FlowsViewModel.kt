@@ -13,6 +13,7 @@ import com.fintrack.app.domain.ConditionOperator
 import com.fintrack.app.domain.EnvelopeNode
 import com.fintrack.app.domain.FlowEngine
 import com.fintrack.app.domain.FlowNode
+import com.fintrack.app.domain.FlowTrace
 import com.fintrack.app.domain.FlowValidationException
 import com.fintrack.app.domain.FormulaNode
 import com.fintrack.app.domain.IncomeNode
@@ -30,6 +31,8 @@ data class FlowsUiState(
     val nodes: List<FlowNode> = emptyList(),
     val allocations: List<Allocation> = emptyList(),
     val totalAssigned: Double = 0.0,
+    /** Traza de la última ejecución (para pintar el canvas). */
+    val trace: FlowTrace? = null,
     val isLoading: Boolean = false,
     val isRunning: Boolean = false,
     val error: String? = null,
@@ -71,6 +74,7 @@ class FlowsViewModel(
                     nodes = flow.nodes,
                     allocations = emptyList(),
                     totalAssigned = 0.0,
+                    trace = null,
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -88,16 +92,17 @@ class FlowsViewModel(
             return
         }
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isRunning = true, error = null)
+            _uiState.value = _uiState.value.copy(isRunning = true, error = null, trace = null)
             try {
                 val transactions = transactionRepository.getTransactions(userId)
                 val patterns =
                     patternRepository.getIncomePatterns(userId).mapNotNull { it.toDomain("INCOME") } +
                         patternRepository.getExpensePatterns(userId).mapNotNull { it.toDomain("EXPENSE") }
-                val allocations = FlowEngine.evaluate(_uiState.value.nodes, transactions, patterns)
+                val trace = FlowEngine.evaluateWithTrace(_uiState.value.nodes, transactions, patterns)
                 _uiState.value = _uiState.value.copy(
-                    allocations = allocations,
-                    totalAssigned = allocations.sumOf { it.amount },
+                    allocations = trace.allocations,
+                    totalAssigned = trace.totalAssigned,
+                    trace = trace,
                     isRunning = false
                 )
             } catch (e: FlowValidationException) {
@@ -135,6 +140,7 @@ class FlowsViewModel(
             nodes = sample.nodes,
             allocations = emptyList(),
             totalAssigned = 0.0,
+            trace = null,
             error = null,
             savedMessage = null
         )
@@ -180,6 +186,7 @@ class FlowsViewModel(
             nodes = _uiState.value.nodes + node,
             allocations = emptyList(),
             totalAssigned = 0.0,
+            trace = null,
             savedMessage = null
         )
     }
@@ -189,6 +196,7 @@ class FlowsViewModel(
             nodes = _uiState.value.nodes.filterNot { it.id == nodeId },
             allocations = emptyList(),
             totalAssigned = 0.0,
+            trace = null,
             savedMessage = null
         )
     }

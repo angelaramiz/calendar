@@ -10,6 +10,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
+import androidx.navigation.navArgument
 import com.fintrack.app.ui.accounts.AccountsScreen
 import com.fintrack.app.ui.auth.AuthScreen
 import com.fintrack.app.ui.auth.RecoveryWebScreen
@@ -18,6 +19,7 @@ import com.fintrack.app.ui.calendar.CalendarScreen
 import com.fintrack.app.ui.dashboard.DashboardScreen
 import com.fintrack.app.ui.flows.FlowsScreen
 import com.fintrack.app.ui.permissions.PermissionsScreen
+import com.fintrack.app.ui.product.ProductShareScreen
 import com.fintrack.app.ui.quickentry.QuickEntryDialog
 import org.koin.androidx.compose.koinViewModel
 import com.fintrack.app.ui.dashboard.DashboardViewModel
@@ -32,6 +34,7 @@ object Routes {
     const val FLOWS = "flows"
     const val BUDGET = "budget"
     const val ACCOUNTS = "accounts"
+    const val SHARE_PRODUCT = "share_product"
 }
 
 private fun androidx.navigation.NavHostController.navigateToTab(route: String) {
@@ -44,7 +47,9 @@ private fun androidx.navigation.NavHostController.navigateToTab(route: String) {
 @Composable
 fun FinTrackNavGraph(
     navController: NavHostController,
-    openQuickEntryOnStart: Boolean = false
+    openQuickEntryOnStart: Boolean = false,
+    openShareUrlOnStart: String? = null,
+    onShareUrlConsumed: () -> Unit = {}
 ) {
     // Un solo DashboardViewModel por actividad: sobrevive a pops del backstack
     // (tabs, Tile, QuickEntry) sin el crash de getBackStackEntry().
@@ -53,6 +58,15 @@ fun FinTrackNavGraph(
     if (openQuickEntryOnStart) {
         LaunchedEffect(Unit) {
             navController.navigate(Routes.QUICK_ENTRY)
+        }
+    }
+    // Link compartido desde ML/Amazon: abre Planificar compra una vez.
+    if (openShareUrlOnStart != null) {
+        LaunchedEffect(openShareUrlOnStart) {
+            navController.navigate(
+                "${Routes.SHARE_PRODUCT}?url=${android.net.Uri.encode(openShareUrlOnStart)}"
+            )
+            onShareUrlConsumed()
         }
     }
     NavHost(navController = navController, startDestination = Routes.DASHBOARD) {
@@ -89,12 +103,26 @@ fun FinTrackNavGraph(
             )
         }
         composable(Routes.BUDGET) {
+            val budgetViewModel: com.fintrack.app.ui.budget.BudgetViewModel =
+                koinViewModel(viewModelStoreOwner = activity)
             BudgetScreen(
                 onNavigateToAuth = { navController.navigate(Routes.AUTH) },
                 onNavigateToDashboard = { navController.navigateToTab(Routes.DASHBOARD) },
                 onNavigateToCalendar = { navController.navigateToTab(Routes.CALENDAR) },
                 onNavigateToFlows = { navController.navigateToTab(Routes.FLOWS) },
-                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) }
+                onNavigateToAccounts = { navController.navigateToTab(Routes.ACCOUNTS) },
+                onNavigateToShare = { navController.navigate(Routes.SHARE_PRODUCT) },
+                viewModel = budgetViewModel
+            )
+        }
+        composable(
+            "${Routes.SHARE_PRODUCT}?url={url}",
+            arguments = listOf(navArgument("url") { defaultValue = "" })
+        ) { entry ->
+            ProductShareScreen(
+                initialUrl = entry.arguments?.getString("url").orEmpty(),
+                onBack = { navController.popBackStack() },
+                onGoalCreated = { navController.navigateToTab(Routes.BUDGET) }
             )
         }
         composable(Routes.ACCOUNTS) {

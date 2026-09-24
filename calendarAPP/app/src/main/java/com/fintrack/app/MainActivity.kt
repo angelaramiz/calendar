@@ -26,10 +26,12 @@ class MainActivity : FragmentActivity() {
     ) { }
 
     private var quickEntryRequested by mutableStateOf(false)
+    private var sharedUrl by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         quickEntryRequested = intent?.action == QuickExpenseTileService.ACTION_QUICK_ENTRY
+        sharedUrl = sharedUrlOf(intent)
         requestNotificationPermission()
         setContent {
             FinTrackTheme {
@@ -37,7 +39,9 @@ class MainActivity : FragmentActivity() {
                     val navController = rememberNavController()
                     FinTrackNavGraph(
                         navController = navController,
-                        openQuickEntryOnStart = quickEntryRequested
+                        openQuickEntryOnStart = quickEntryRequested,
+                        openShareUrlOnStart = sharedUrl,
+                        onShareUrlConsumed = { sharedUrl = null }
                     )
                 }
             }
@@ -50,6 +54,14 @@ class MainActivity : FragmentActivity() {
         if (intent.action == QuickExpenseTileService.ACTION_QUICK_ENTRY) {
             quickEntryRequested = true
         }
+        sharedUrlOf(intent)?.let { sharedUrl = it }
+    }
+
+    /** Texto compartido desde Mercado Libre / Amazon / Chrome. */
+    private fun sharedUrlOf(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_SEND) return null
+        if (intent.type != "text/plain") return null
+        return intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }
     }
 
     private fun requestNotificationPermission() {

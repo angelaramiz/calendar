@@ -13,7 +13,11 @@ data class SavingsGoal(
     val downPercent: Double = 20.0,
     val downAmount: Double? = null,
     val annualRatePercent: Double = 15.0,
-    val termMonths: Int = 48
+    val termMonths: Int = 48,
+    /** Link del producto (Mercado Libre / Amazon). "" = meta manual. */
+    val url: String = "",
+    /** Tienda del link ("Amazon", "MercadoLibre"). */
+    val store: String = ""
 )
 
 data class CashPlan(

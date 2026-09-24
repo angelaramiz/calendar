@@ -191,18 +191,30 @@ class BudgetViewModel(
         GoalPlanner.compareCashVsCredit(goal.price, creditPlanFor(goal).totalCost)
 
     fun addGoal(name: String, price: Double) {
+        addGoalFromProduct(name, price, "", "")
+    }
+
+    /** Alta desde un link scraperado: guarda tienda y URL para re-consultar precio. */
+    fun addGoalFromProduct(name: String, price: Double, url: String, store: String) {
         val cleanName = name.trim().ifBlank { "Mi objetivo" }
         val safePrice = if (price < 0.0) 0.0 else price
         val goal = SavingsGoal(
             id = "goal-${System.currentTimeMillis()}-${_uiState.value.goals.size}",
             name = cleanName,
-            price = safePrice
+            price = safePrice,
+            url = url.trim(),
+            store = store.trim()
         )
         _uiState.value = _uiState.value.copy(
             goals = _uiState.value.goals + goal,
             selectedGoalId = goal.id
         )
         persistGoals()
+    }
+
+    /** Recarga las metas del DataStore (ej. al volver de Planificar compra). */
+    fun refreshGoals() {
+        loadGoals()
     }
 
     fun updateGoal(updated: SavingsGoal) {

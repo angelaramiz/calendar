@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -79,9 +80,11 @@ fun BudgetScreen(
     onNavigateToCalendar: () -> Unit = {},
     onNavigateToFlows: () -> Unit = {},
     onNavigateToAccounts: () -> Unit = {},
+    onNavigateToShare: () -> Unit = {},
     viewModel: BudgetViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -292,6 +295,12 @@ fun BudgetScreen(
                         ) {
                             Text("Agregar objetivo")
                         }
+                        Button(
+                            onClick = onNavigateToShare,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Planificar compra con link")
+                        }
                     }
                 }
             }
@@ -333,6 +342,34 @@ fun BudgetScreen(
                                         "${cash.monthsNeeded} meses"
                                     } + " | Credito: ${formatMoney(credit.monthlyPayment)} al mes"
                                 )
+                                if (goal.store.isNotBlank() || goal.url.isNotBlank()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            goal.store.ifBlank { "Link guardado" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        if (goal.url.isNotBlank()) {
+                                            TextButton(onClick = {
+                                                runCatching {
+                                                    val ctx = context
+                                                    ctx.startActivity(
+                                                        android.content.Intent(
+                                                            android.content.Intent.ACTION_VIEW,
+                                                            android.net.Uri.parse(goal.url)
+                                                        )
+                                                    )
+                                                }
+                                            }) {
+                                                Text("Abrir link")
+                                            }
+                                        }
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(onClick = { viewModel.selectGoal(goal.id) }) {
                                         Text("Ver detalle")

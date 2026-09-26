@@ -301,9 +301,45 @@ async function handleRegister(e) {
 
     } catch (err) {
         logger.error('Registration error:', err);
-        showError('Error al crear la cuenta. Por favor intenta nuevamente.');
+        showError(friendlyRegisterError(err));
         setLoading(false);
     }
+}
+
+/**
+ * Traduce el error real de Supabase a un mensaje útil en español.
+ * Antes se mostraba un genérico que ocultaba la causa.
+ */
+function friendlyRegisterError(err) {
+    const raw = (err && (err.message || err.msg || err.error_description)) || '';
+    const msg = String(raw).toLowerCase();
+    if (msg.includes('user already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
+        return 'Ese correo ya tiene cuenta. Inicia sesión en vez de registrarte.';
+    }
+    if (msg.includes('leaked') || msg.includes('breach') || msg.includes('compromised') || msg.includes('pwned')) {
+        return 'Esa contraseña apareció en filtraciones. Elige otra más única.';
+    }
+    if (msg.includes('rate limit') || msg.includes('too many') || msg.includes('over_')) {
+        return 'Demasiados intentos. Espera unos minutos e intenta de nuevo.';
+    }
+    if (msg.includes('signup is disabled') || msg.includes('signups not allowed')) {
+        return 'El registro está desactivado en el servidor. Avísanos.';
+    }
+    if (msg.includes('confirmation email') || msg.includes('sending email') || msg.includes('smtp')) {
+        return 'No se pudo enviar el correo de verificación. Intenta más tarde.';
+    }
+    if (msg.includes('network') || msg.includes('fetch') || msg.includes('failed to fetch')) {
+        return 'Sin conexión al servidor. Revisa tu internet e intenta de nuevo.';
+    }
+    if (msg.includes('invalid') && msg.includes('email')) {
+        return 'Ese correo no parece válido. Revísalo.';
+    }
+    if (msg.includes('password')) {
+        return 'El servidor rechazó la contraseña. Prueba con otra más única.';
+    }
+    return raw
+        ? `No se pudo crear la cuenta: ${raw}`
+        : 'Error al crear la cuenta. Por favor intenta nuevamente.';
 }
 
 async function upsertProfile(id, username, name, email) {

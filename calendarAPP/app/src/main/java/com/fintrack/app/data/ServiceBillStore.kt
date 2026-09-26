@@ -21,7 +21,12 @@ data class ServiceBillRow(
     /** Día de vencimiento (1-31). */
     val dueDay: Int,
     /** "monthly" o "bimonthly". */
-    val frequency: String = "monthly"
+    val frequency: String = "monthly",
+    /**
+     * Estado de pagado: vencimiento (ISO yyyy-MM-dd) que el usuario marcó
+     * como pagado. null = pendiente (siguen los avisos 3/1/0 días).
+     */
+    val lastPaidDueIso: String? = null
 )
 
 class ServiceBillStore(private val context: Context) {
@@ -59,6 +64,26 @@ class ServiceBillStore(private val context: Context) {
             prefs[billsKey] = PendingOpCodec.json.encodeToString(
                 listSerializer, decode(prefs[billsKey]).filterNot { it.id == id }
             )
+        }
+    }
+
+    /** Marca el vencimiento [dueIso] como pagado (silencia sus avisos). */
+    suspend fun markPaid(id: String, dueIso: String) {
+        context.serviceBillDataStore.edit { prefs ->
+            val current = decode(prefs[billsKey]).map {
+                if (it.id == id) it.copy(lastPaidDueIso = dueIso) else it
+            }
+            prefs[billsKey] = PendingOpCodec.json.encodeToString(listSerializer, current)
+        }
+    }
+
+    /** Quita el estado de pagado (vuelven los avisos del vencimiento). */
+    suspend fun clearPaid(id: String) {
+        context.serviceBillDataStore.edit { prefs ->
+            val current = decode(prefs[billsKey]).map {
+                if (it.id == id) it.copy(lastPaidDueIso = null) else it
+            }
+            prefs[billsKey] = PendingOpCodec.json.encodeToString(listSerializer, current)
         }
     }
 

@@ -19,6 +19,14 @@ object ServiceBills {
         }
     }
 
+    /**
+     * Estado de pagado: el vencimiento [due] ya se liquidó si coincide con
+     * el vencimiento que el usuario marcó como pagado. Como guarda la fecha
+     * exacta, el próximo periodo vuelve a avisar solo.
+     */
+    fun isPaidFor(lastPaidDueIso: String?, due: LocalDate): Boolean =
+        !lastPaidDueIso.isNullOrBlank() && lastPaidDueIso == due.toString()
+
     private fun atDay(month: YearMonth, day: Int): LocalDate {
         val safe = day.coerceIn(1, month.lengthOfMonth())
         return LocalDate.of(month.year, month.month, safe)

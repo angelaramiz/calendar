@@ -272,17 +272,25 @@ internal fun CreditCardsCard(
                             "A pagar ${formatMoney(summary.remaining)} " +
                                 "(cargos ${formatMoney(summary.periodCharges)}" +
                                 if (summary.paid > 0.0) " − pagos ${formatMoney(summary.paid)}" else "" +
-                                ") el ${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}",
+                                ") el ${summary.dueDate.dayOfMonth}/${summary.dueDate.monthValue}",
                             fontWeight = FontWeight.Bold
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { paying = summary }) {
-                                Text("Marcar pago")
+                        if (summary.isPaid) {
+                            Text(
+                                "✓ Pagado (${formatMoney(summary.paid)})",
+                                fontWeight = FontWeight.Bold,
+                                color = incomeColor()
+                            )
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { paying = summary }) {
+                                    Text("Marcar pago")
+                                }
                             }
                         }
                         val periodOnly = all.filter { (_, _, dated) ->
-                            !dated.first.isBefore(summary.lastCutoff) &&
-                                dated.first.isBefore(summary.nextCutoff)
+                            !dated.first.isBefore(summary.periodStart) &&
+                                dated.first.isBefore(summary.statementCutoff)
                         }
                         if (periodOnly.isEmpty()) {
                             Text(
@@ -340,7 +348,7 @@ internal fun CreditCardsCard(
             cardName = cards.firstOrNull { it.id == summary.cardId }?.displayName,
             onDismiss = { paying = null },
             onSave = { amount ->
-                onPay(summary.cardId, summary.nextCutoff.toString(), amount)
+                onPay(summary.cardId, summary.statementCutoff.toString(), amount)
                 paying = null
             }
         )
@@ -364,8 +372,8 @@ internal fun CardPayDialog(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "Estimado a pagar: ${formatMoney(summary.remaining)} " +
-                        "(corte ${summary.nextCutoff.dayOfMonth}/${summary.nextCutoff.monthValue}, " +
-                        "límite ${summary.nextPayment.dayOfMonth}/${summary.nextPayment.monthValue}). " +
+                        "(corte ${summary.statementCutoff.dayOfMonth}/${summary.statementCutoff.monthValue}, " +
+                        "límite ${summary.dueDate.dayOfMonth}/${summary.dueDate.monthValue}). " +
                         "Corrige con lo que en realidad pagaste.",
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -397,7 +405,9 @@ internal fun CardPayDialog(
 internal fun ServiceBillsCard(
     bills: List<com.fintrack.app.data.ServiceBillRow>,
     onSave: (String?, String, Double, Int, String) -> Unit,
-    onDelete: (String) -> Unit
+    onDelete: (String) -> Unit,
+    onMarkPaid: (String, String) -> Unit,
+    onUnmarkPaid: (String) -> Unit
 ) {
     var editing by remember { mutableStateOf<com.fintrack.app.data.ServiceBillRow?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -406,7 +416,8 @@ internal fun ServiceBillsCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                "Toca para dar de alta luz, agua, internet, etc. Te avisamos 3 días antes, 1 día antes y el día del vencimiento.",
+                "Toca para dar de alta luz, agua, internet, etc. Te avisamos 3 días antes, 1 día antes y el día del vencimiento. " +
+                    "Al pagar, márcalo como pagado para que ya no te avisemos de ese vencimiento.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -417,24 +428,47 @@ internal fun ServiceBillsCard(
                     val due = com.fintrack.app.domain.ServiceBills.nextDue(
                         bill.dueDay, bill.frequency, today
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(bill.name, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Vence ${due.dayOfMonth}/${due.monthValue}" +
-                                    (if (bill.estimatedAmount > 0.0) " · aprox. ${formatMoney(bill.estimatedAmount)}" else "") +
-                                    (if (bill.frequency == "bimonthly") " · bimestral" else ""),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    val paid = com.fintrack.app.domain.ServiceBills.isPaidFor(
+                        bill.lastPaidDueIso, due
+                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(bill.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Vence ${due.dayOfMonth}/${due.monthValue}" +
+                                        (if (bill.estimatedAmount > 0.0) " · aprox. ${formatMoney(bill.estimatedAmount)}" else "") +
+                                        (if (bill.frequency == "bimonthly") " · bimestral" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Row {
+                                TextButton(onClick = { editing = bill }) { Text("Editar") }
+                                TextButton(onClick = { onDelete(bill.id) }) { Text("Eliminar") }
+                            }
                         }
-                        Row {
-                            TextButton(onClick = { editing = bill }) { Text("Editar") }
-                            TextButton(onClick = { onDelete(bill.id) }) { Text("Eliminar") }
+                        if (paid) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "✓ Pagado",
+                                    fontWeight = FontWeight.Bold,
+                                    color = incomeColor()
+                                )
+                                TextButton(onClick = { onUnmarkPaid(bill.id) }) { Text("Desmarcar") }
+                            }
+                        } else {
+                            Button(onClick = { onMarkPaid(bill.id, due.toString()) }) {
+                                Text("Marcar pagado")
+                            }
                         }
                     }
                 }
@@ -490,6 +524,13 @@ internal fun BillEditDialog(
         title = { Text(if (existing == null) "Nuevo servicio" else "Editar servicio") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                existing?.lastPaidDueIso?.let { paidIso ->
+                    Text(
+                        "✓ Pagado el $paidIso (ya no llegan sus avisos).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = incomeColor()
+                    )
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

@@ -80,4 +80,26 @@ class ServiceBillsTest {
             ).isEmpty()
         )
     }
+
+    @Test
+    fun pagado_si_el_vencimiento_coincide_con_el_marcado() {
+        assertTrue(
+            ServiceBills.isPaidFor("2026-09-20", LocalDate.of(2026, 9, 20))
+        )
+    }
+
+    @Test
+    fun pendiente_si_el_vencimiento_es_otro() {
+        // El pago fue del periodo anterior: el nuevo vencimiento sí avisa.
+        assertTrue(
+            !ServiceBills.isPaidFor("2026-08-20", LocalDate.of(2026, 9, 20))
+        )
+    }
+
+    @Test
+    fun pendiente_si_nunca_se_marco() {
+        assertTrue(!ServiceBills.isPaidFor(null, LocalDate.of(2026, 9, 20)))
+        assertTrue(!ServiceBills.isPaidFor("", LocalDate.of(2026, 9, 20)))
+        assertTrue(!ServiceBills.isPaidFor("  ", LocalDate.of(2026, 9, 20)))
+    }
 }

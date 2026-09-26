@@ -10,19 +10,21 @@ object CreditCardPlanner {
 
     data class CardSummary(
         val cardId: String,
-        /** Cargos del periodo actual (tras el último corte). */
+        /** Cargos del estado de cuenta abierto (entre el corte anterior y el abierto). */
         val periodCharges: Double,
-        /** Pagos registrados contra este corte. */
+        /** Pagos registrados contra el corte abierto. */
         val paid: Double,
-        /** Inicio del periodo (último corte). */
-        val lastCutoff: LocalDate,
-        /** Fecha del próximo corte. */
-        val nextCutoff: LocalDate,
-        /** Fecha de pago correspondiente a ese corte. */
-        val nextPayment: LocalDate
+        /** Corte anterior: inicio del periodo del estado abierto. */
+        val periodStart: LocalDate,
+        /** Corte del estado de cuenta abierto (el que se debe pagar). */
+        val statementCutoff: LocalDate,
+        /** Fecha de pago del estado abierto. */
+        val dueDate: LocalDate
     ) {
         /** Restante a pagar (nunca negativo: de más se considera a favor). */
         val remaining: Double get() = (periodCharges - paid).coerceAtLeast(0.0)
+        /** true si el estado abierto ya quedó liquidado. */
+        val isPaid: Boolean get() = paid > 0.0 && remaining <= 0.0
     }
 
     private fun atDay(month: java.time.YearMonth, day: Int): LocalDate {
@@ -82,21 +84,23 @@ object CreditCardPlanner {
         /** Plazo tipo Plata: días después del corte (0 = día fijo). */
         graceDays: Int = 0
     ): CardSummary {
-        val last = lastCutoff(cutoffDay, today)
-        val next = nextCutoff(cutoffDay, today)
+        // Estado abierto = el del último corte: es el que se debe pagar.
+        // El próximo corte aún no existe como estado de cuenta.
+        val open = lastCutoff(cutoffDay, today)
+        val prev = lastCutoff(cutoffDay, open.minusDays(1))
         val periodTotal = charges
-            .filter { (date, _) -> !date.isBefore(last) && date.isBefore(next) }
+            .filter { (date, _) -> !date.isBefore(prev) && date.isBefore(open) }
             .sumOf { (_, amount) -> amount }
         val paid = payments
-            .filter { (cutoff, _) -> cutoff == next }
+            .filter { (cutoff, _) -> cutoff == open }
             .sumOf { (_, amount) -> amount }
         return CardSummary(
             cardId = cardId,
             periodCharges = periodTotal,
             paid = paid,
-            lastCutoff = last,
-            nextCutoff = next,
-            nextPayment = paymentFor(next, paymentDay, graceDays)
+            periodStart = prev,
+            statementCutoff = open,
+            dueDate = paymentFor(open, paymentDay, graceDays)
         )
     }
 }

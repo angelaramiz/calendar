@@ -43,39 +43,41 @@ class CreditCardPlannerTest {
             cardId = "plata",
             cutoffDay = 15,
             paymentDay = 1,
-            charges = listOf(LocalDate.of(2026, 1, 20) to 1000.0),
+            // Estado abierto = corte 15 ene (periodo 15 dic -> 15 ene).
+            charges = listOf(LocalDate.of(2026, 1, 10) to 1000.0),
             today = LocalDate.of(2026, 1, 20),
             graceDays = 30
         )
-        // Último corte 15 ene → próximo corte 15 feb → pago 15 feb + 30 = 17 mar.
-        assertEquals(LocalDate.of(2026, 3, 17), summary.nextPayment)
+        // Pago del estado abierto: 15 ene + 30 = 14 feb.
+        assertEquals(LocalDate.of(2026, 2, 14), summary.dueDate)
+        assertEquals(LocalDate.of(2026, 1, 15), summary.statementCutoff)
         assertEquals(1000.0, summary.periodCharges, 0.001)
     }
 
     @Test
     fun corte_y_pago_del_mes_actual() {
-        // Corte día 10, pago día 30; hoy 12 sep: periodo 10 sep -> 10 oct.
+        // Corte día 10, pago día 30; hoy 12 sep: estado abierto 10 sep, periodo 10 ago -> 10 sep.
         val today = LocalDate.of(2026, 9, 12)
         val charges = listOf(
-            LocalDate.of(2026, 9, 10) to 500.0,
-            LocalDate.of(2026, 9, 11) to 200.0,
-            LocalDate.of(2026, 9, 9) to 999.0 // periodo anterior, no cuenta
+            LocalDate.of(2026, 8, 15) to 500.0,
+            LocalDate.of(2026, 9, 9) to 200.0,
+            LocalDate.of(2026, 9, 10) to 999.0 // día del corte: ya es del próximo estado
         )
         val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today)
         assertEquals(700.0, summary.periodCharges, 0.0)
-        assertEquals(LocalDate.of(2026, 10, 10), summary.nextCutoff)
-        assertEquals(LocalDate.of(2026, 10, 30), summary.nextPayment)
+        assertEquals(LocalDate.of(2026, 9, 10), summary.statementCutoff)
+        assertEquals(LocalDate.of(2026, 9, 30), summary.dueDate)
     }
 
     @Test
     fun antes_del_corte_el_periodo_es_el_anterior() {
-        // Hoy 5 sep, corte 10: periodo 10 ago -> 10 sep, pago 30 sep.
+        // Hoy 5 sep, corte 10: estado abierto 10 ago (periodo 10 jul -> 10 ago), pago 30 ago.
         val today = LocalDate.of(2026, 9, 5)
-        val charges = listOf(LocalDate.of(2026, 8, 15) to 300.0)
+        val charges = listOf(LocalDate.of(2026, 7, 20) to 300.0)
         val summary = CreditCardPlanner.summarize("plata", 10, 30, charges, today)
         assertEquals(300.0, summary.periodCharges, 0.0)
-        assertEquals(LocalDate.of(2026, 9, 10), summary.nextCutoff)
-        assertEquals(LocalDate.of(2026, 9, 30), summary.nextPayment)
+        assertEquals(LocalDate.of(2026, 8, 10), summary.statementCutoff)
+        assertEquals(LocalDate.of(2026, 8, 30), summary.dueDate)
     }
 
     @Test
@@ -110,30 +112,56 @@ class CreditCardPlannerTest {
     @Test
     fun pagos_descuentan_del_restante_del_corte() {
         val today = LocalDate.of(2026, 9, 12)
-        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
-        val payments = listOf(LocalDate.of(2026, 10, 10) to 500.0)
+        // Estado abierto 10 sep: el pago va contra ese corte.
+        val charges = listOf(LocalDate.of(2026, 9, 9) to 700.0)
+        val payments = listOf(LocalDate.of(2026, 9, 10) to 500.0)
         val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
         assertEquals(700.0, summary.periodCharges, 0.0)
         assertEquals(500.0, summary.paid, 0.0)
         assertEquals(200.0, summary.remaining, 0.0)
+        assertEquals(false, summary.isPaid)
     }
 
     @Test
     fun pago_mayor_al_total_no_deja_negativo() {
         val today = LocalDate.of(2026, 9, 12)
-        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
-        val payments = listOf(LocalDate.of(2026, 10, 10) to 1_000.0)
+        val charges = listOf(LocalDate.of(2026, 9, 9) to 700.0)
+        val payments = listOf(LocalDate.of(2026, 9, 10) to 1_000.0)
         val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
         assertEquals(0.0, summary.remaining, 0.0)
+        assertEquals(true, summary.isPaid)
     }
 
     @Test
     fun pago_de_otro_corte_no_descuenta() {
         val today = LocalDate.of(2026, 9, 12)
-        val charges = listOf(LocalDate.of(2026, 9, 11) to 700.0)
-        // Pago contra el corte anterior (10 sep): no toca el periodo actual.
-        val payments = listOf(LocalDate.of(2026, 9, 10) to 500.0)
+        val charges = listOf(LocalDate.of(2026, 9, 9) to 700.0)
+        // Pago contra un corte futuro (10 oct): no toca el estado abierto (10 sep).
+        val payments = listOf(LocalDate.of(2026, 10, 10) to 500.0)
         val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
+        assertEquals(0.0, summary.paid, 0.0)
         assertEquals(700.0, summary.remaining, 0.0)
+        assertEquals(false, summary.isPaid)
+    }
+
+    @Test
+    fun liquidar_el_abierto_marca_pagado() {
+        val today = LocalDate.of(2026, 9, 12)
+        val charges = listOf(LocalDate.of(2026, 9, 9) to 700.0)
+        val payments = listOf(LocalDate.of(2026, 9, 10) to 700.0)
+        val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today, payments)
+        assertEquals(0.0, summary.remaining, 0.0)
+        assertEquals(true, summary.isPaid)
+    }
+
+    @Test
+    fun cargos_del_corte_abierto_en_adelante_son_del_proximo() {
+        val today = LocalDate.of(2026, 9, 12)
+        val charges = listOf(
+            LocalDate.of(2026, 9, 10) to 400.0, // día del corte abierto
+            LocalDate.of(2026, 9, 11) to 100.0 // después del corte
+        )
+        val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today)
+        assertEquals(0.0, summary.periodCharges, 0.0)
     }
 }

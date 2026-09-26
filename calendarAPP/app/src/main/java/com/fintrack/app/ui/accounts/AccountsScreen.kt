@@ -204,7 +204,9 @@ fun AccountsScreen(
                     onSave = { id, name, amount, dueDay, frequency ->
                         viewModel.saveBill(id, name, amount, dueDay, frequency)
                     },
-                    onDelete = { viewModel.deleteBill(it) }
+                    onDelete = { viewModel.deleteBill(it) },
+                    onMarkPaid = { id, dueIso -> viewModel.markBillPaid(id, dueIso) },
+                    onUnmarkPaid = { viewModel.unmarkBillPaid(it) }
                 )
             }
 

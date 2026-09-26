@@ -49,21 +49,26 @@ object ReminderCheck {
             val due = ServiceBills.nextDue(bill.dueDay, bill.frequency, today)
             Triple(bill, due, ChronoUnit.DAYS.between(today, due).toInt())
         }
-        val billsDue = billsWithDays.filter { (_, _, days) -> days in REMIND_DAYS }
-        val nextBillIn = billsWithDays.filter { (_, _, days) -> days >= 0 }
+        // Pagado = silencio: el vencimiento marcado ya no avisa (ni mediodía ni noche).
+        val unpaidBills = billsWithDays.filter { (bill, due, _) ->
+            !ServiceBills.isPaidFor(bill.lastPaidDueIso, due)
+        }
+        val billsDue = unpaidBills.filter { (_, _, days) -> days in REMIND_DAYS }
+        val nextBillIn = unpaidBills.filter { (_, _, days) -> days >= 0 }
             .minOfOrNull { (_, _, days) -> days }
 
         val cardStore = CreditCardStore(context)
         val cards = runCatching { cardStore.cardsSnapshot() }.getOrDefault(emptyList())
         val payments = runCatching { cardStore.paymentsSnapshot() }.getOrDefault(emptyList())
         val cardsWithDays = cards.mapNotNull { card ->
-            val nextCutoff = CreditCardPlanner.nextCutoff(card.cutoffDay, today)
-            val nextPayment = CreditCardPlanner.paymentFor(nextCutoff, card.paymentDay, card.graceDays)
+            // Estado abierto = último corte: solo él puede estar pagado o por pagar.
+            val open = CreditCardPlanner.lastCutoff(card.cutoffDay, today)
+            val due = CreditCardPlanner.paymentFor(open, card.paymentDay, card.graceDays)
             val alreadyPaid = payments.any {
-                it.cardId == card.id && it.statementCutoffIso == nextCutoff.toString()
+                it.cardId == card.id && it.statementCutoffIso == open.toString()
             }
             if (alreadyPaid) return@mapNotNull null
-            Triple(card, nextPayment, ChronoUnit.DAYS.between(today, nextPayment).toInt())
+            Triple(card, due, ChronoUnit.DAYS.between(today, due).toInt())
         }
         val cardsDue = cardsWithDays.filter { (_, _, days) -> days in REMIND_DAYS }
         val nextCardIn = cardsWithDays.filter { (_, _, days) -> days >= 0 }
@@ -120,7 +125,7 @@ object ReminderCheck {
                 RemindersNotifier.show(
                     context, key,
                     "${bill.name} vence $whenText",
-                    "Vencimiento $due$amount. Márcalo como pagado en tu banco."
+                    "Vencimiento $due$amount. Al pagar, márcalo como pagado en Cuentas → Servicios."
                 )
                 fresh.add(key)
             }
@@ -133,7 +138,7 @@ object ReminderCheck {
                 RemindersNotifier.show(
                     context, key,
                     "Pagar ${card.displayName} $whenText",
-                    "Fecha límite $payment. El estimado está en Presupuesto → Tarjetas."
+                    "Fecha límite $payment. Al pagar, márcalo en Cuentas → Tarjetas."
                 )
                 fresh.add(key)
             }

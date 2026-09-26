@@ -242,16 +242,36 @@ class AccountsViewModel(
     /** Alta/edición de pago de servicio (vencimiento + recordatorio). */
     fun saveBill(id: String?, name: String, estimatedAmount: Double, dueDay: Int, frequency: String) {
         val cleanName = name.trim().ifBlank { "Servicio" }
+        // Editar no borra el estado de pagado.
+        val previous = _uiState.value.bills.firstOrNull { it.id == id }
         val bill = ServiceBillRow(
             id = id ?: "bill-${System.currentTimeMillis()}",
             name = cleanName,
             estimatedAmount = if (estimatedAmount < 0.0) 0.0 else estimatedAmount,
             dueDay = dueDay.coerceIn(1, 31),
-            frequency = if (frequency == "bimonthly") "bimonthly" else "monthly"
+            frequency = if (frequency == "bimonthly") "bimonthly" else "monthly",
+            lastPaidDueIso = previous?.lastPaidDueIso
         )
         viewModelScope.launch {
             runCatching { billStore.upsert(bill) }
             _uiState.value = _uiState.value.copy(info = "${bill.name} programado.")
+            loadAccounts()
+        }
+    }
+
+    /** Marca el vencimiento actual como pagado: ya no llegan sus avisos. */
+    fun markBillPaid(id: String, dueIso: String) {
+        viewModelScope.launch {
+            runCatching { billStore.markPaid(id, dueIso) }
+            _uiState.value = _uiState.value.copy(info = "Servicio marcado como pagado.")
+            loadAccounts()
+        }
+    }
+
+    /** Quita el estado de pagado (vuelven los avisos del vencimiento). */
+    fun unmarkBillPaid(id: String) {
+        viewModelScope.launch {
+            runCatching { billStore.clearPaid(id) }
             loadAccounts()
         }
     }

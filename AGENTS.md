@@ -48,7 +48,7 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
 
 ## Web (`calendarWeb/`)
 
-- `build.sh` (run by Render) copies `calendarWeb/*` to `dist/` and generates `dist/js/config.js` from env vars `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SCRAPER_API_URL`. Never commit real keys; local dev: `cd calendarWeb && python -m http.server`.
+- `build.sh` (run by Render) copies `calendarWeb/*` to `dist/`, generates `dist/js/config.js` from env vars `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SCRAPER_API_URL`, and versions local assets with `?v=<commit>` (HTML src/href + ES imports estáticos/dinámicos) plus `dist/web-version.json` + `<meta name="app-version">`. `js/version-check.js` (loaded on all pages) prompts to reload when a newer version is published. Never commit real keys; local dev: `cd calendarWeb && python -m http.server`.
 - `render.yaml` rewrites all routes to `/index.html`.
 - Backend table for the Android rewrite is `fintrack_transactions` (RLS on `user_id`); UI never sets `TransactionEntity.user_id` — repository must fill it.
 - Canonical Supabase project is `https://ugtlxnrwfipoctckuvfd.supabase.co` (same URL + key as `release.ps1`; verified working Sep 2026). OTA reads table `app_versions`, row `clave = app_version_calendarfinance`, whose `valor` is **double-encoded JSON** (parse twice).

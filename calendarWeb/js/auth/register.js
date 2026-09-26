@@ -313,6 +313,10 @@ async function handleRegister(e) {
 function friendlyRegisterError(err) {
     const raw = (err && (err.message || err.msg || err.error_description)) || '';
     const msg = String(raw).toLowerCase();
+    if (msg.includes('database error saving new user')) {
+        return 'La base rechazó el registro: ese correo o nombre de usuario ya está en uso. ' +
+            'Prueba con otro nombre de usuario (ej. agrega números) y, si sigue igual, avísanos.';
+    }
     if (msg.includes('user already registered') || msg.includes('already exists') || msg.includes('duplicate')) {
         return 'Ese correo ya tiene cuenta. Inicia sesión en vez de registrarte.';
     }

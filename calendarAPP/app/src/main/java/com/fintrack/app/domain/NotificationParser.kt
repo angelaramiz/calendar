@@ -50,12 +50,16 @@ object NotificationParser {
     // ("debitamos"~"debito", "ingresaste"~"ingres", "pagaste"~"pag").
     private val expenseKeywords = listOf(
         "carg", "compr", "pag", "retir", "transfer",
-        "debit", "recarg", "comisi", "enviaste"
+        "debit", "recarg", "comisi", "enviaste",
+        // Fallback genérico (ej. Wallet: "Transacción aprobada en OXXO").
+        // Exige monto igual que el resto, así que un aviso sin cantidad
+        // ("No reconoces este movimiento") sigue rechazado.
+        "transaccion", "movimiento", "aprobad", "paid"
     )
 
     private val incomeKeywords = listOf(
         "abon", "deposit", "nomin", "ingres", "reembols", "recibid",
-        "recibi", "te envia", "te envio"
+        "recibi", "te envia", "te envio", "received"
     )
 
     // Pagos que NUNCA movieron dinero: rechazados/fallidos e instrucciones
@@ -133,10 +137,26 @@ object NotificationParser {
         return promoExclusions.any { lower.contains(it) }
     }
 
+    /**
+     * Mejor candidato a monto: prefiere el que trae $ (ej. "•1234 por $85"),
+     * luego el que trae centavos, luego el primero. Así "1500 pesos" no se
+     * trunca a 150 como hacía el patrón anterior de 1-3 dígitos.
+     */
     private fun extractAmount(text: String): Double? {
-        val pattern = Regex("""\$?\s?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)""")
-        return pattern.find(text)?.groupValues?.get(1)
-            ?.replace(",", "")?.toDoubleOrNull()
+        val pattern = Regex("""(\$)?\s?(\d[\d,]*(?:\.\d{1,2})?)""")
+        return pattern.findAll(text)
+            .mapNotNull { m ->
+                val value = m.groupValues[2].replace(",", "").toDoubleOrNull()
+                    ?: return@mapNotNull null
+                val score = when {
+                    m.groupValues[1].isNotEmpty() -> 2
+                    m.groupValues[2].contains(".") -> 1
+                    else -> 0
+                }
+                Triple(score, m.range.first, value)
+            }
+            .maxWithOrNull(compareBy({ it.first }, { -it.second }))
+            ?.third
     }
 
     private fun extractMerchant(title: String, text: String): String? {

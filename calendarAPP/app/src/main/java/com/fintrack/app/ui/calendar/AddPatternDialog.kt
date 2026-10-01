@@ -70,6 +70,9 @@ fun AddPatternDialog(
     var isIncome by remember(existing) { mutableStateOf(existing?.type != "EXPENSE") }
     val categories = TransactionCategories.forType(isIncome)
     var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
+    // Concepto/nota del recurrente (ej. "Quincena", "Luz casa"): sirve para
+    // reconocer el evento y para sugerir vínculos con registros coincidentes.
+    var description by remember(existing) { mutableStateOf(existing?.description ?: "") }
     var amount by remember(existing) {
         mutableStateOf(existing?.let { String.format("%.2f", it.baseAmount) } ?: "")
     }
@@ -120,6 +123,15 @@ fun AddPatternDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Nombre (ej. Sueldo, Renta)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Concepto (opcional, ej. Quincena)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -249,7 +261,7 @@ fun AddPatternDialog(
                 onClick = {
                     val value = amount.toDoubleOrNull() ?: return@TextButton
                     onSave(
-                        isIncome, name, "", category, value, frequency,
+                        isIncome, name, description, category, value, frequency,
                         startDate, endDate.takeIf { hasEndDate },
                         linkKind,
                         linkCardId.takeIf { linkKind == PatternLinkKind.CREDIT }

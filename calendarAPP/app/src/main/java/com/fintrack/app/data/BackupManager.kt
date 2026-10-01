@@ -25,6 +25,7 @@ class BackupManager(private val context: Context) {
             bills = ServiceBillStore(appCtx).snapshot(),
             caps = BudgetCapsStore(appCtx).snapshot(),
             links = PatternLinkStore(appCtx).snapshot(),
+            txLinks = TxLinkStore(appCtx).snapshot(),
             flowJson = PendingOpCodec.json.encodeToString(
                 MoneyFlow.serializer(), FlowStore(appCtx).snapshot()
             ),
@@ -74,6 +75,12 @@ class BackupManager(private val context: Context) {
             links.forEach { (patternId, link) ->
                 store.setLink(patternId, link.kind, link.cardId)
             }
+            applied++
+        }
+        backup.txLinks?.let { txLinks ->
+            val store = TxLinkStore(appCtx)
+            store.clear()
+            txLinks.forEach { (txId, link) -> store.link(txId, link) }
             applied++
         }
         backup.flowJson?.let { raw ->

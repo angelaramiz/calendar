@@ -374,4 +374,76 @@ class NotificationParserTest {
             categoriaDe("Recibiste dinero", "Te enviaron $200.00 y ya está disponible.")
         )
     }
+
+    @Test
+    fun wallet_transaccion_aprobada_sin_verbo_es_gasto() {
+        // Billetera de Google: a veces avisa sin "pagaste/compraste".
+        val result = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Transacción aprobada",
+            text = "Transacción aprobada en OXXO por $250.00."
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        val tx = (result as ParseResult.Accepted).tx
+        assertEquals("EXPENSE", tx.type)
+        assertEquals(250.0, tx.amount, 0.001)
+        assertEquals("Compras", tx.category)
+    }
+
+    @Test
+    fun wallet_monto_prefiere_signo_peso_sobre_terminacion() {
+        val result = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Compra con tarjeta",
+            text = "Compra con tarjeta •1234 por $85.00 en OXXO."
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        assertEquals(85.0, (result as ParseResult.Accepted).tx.amount, 0.001)
+    }
+
+    @Test
+    fun monto_sin_comas_ni_decimales_no_se_trunca() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Depósito",
+            text = "Te depositaron 1500 pesos.",
+            allowedPackages = allowed
+        )
+
+        assertTrue(result is ParseResult.Accepted)
+        assertEquals(1500.0, (result as ParseResult.Accepted).tx.amount, 0.001)
+    }
+
+    @Test
+    fun wallet_en_ingles_se_detecta() {
+        val paid = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Payment",
+            text = "You paid $20.00 at OXXO."
+        )
+        assertTrue(paid is ParseResult.Accepted)
+        assertEquals("EXPENSE", (paid as ParseResult.Accepted).tx.type)
+
+        val received = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Money received",
+            text = "You received $100.00."
+        )
+        assertTrue(received is ParseResult.Accepted)
+        assertEquals("INCOME", (received as ParseResult.Accepted).tx.type)
+    }
+
+    @Test
+    fun movimiento_sin_monto_se_rechaza() {
+        // "No reconoces este movimiento" sin cantidad no es registrable.
+        val result = NotificationParser.parse(
+            packageName = "com.google.android.apps.walletnfcrel",
+            title = "Aviso de seguridad",
+            text = "No reconoces este movimiento, revísalo en tu app."
+        )
+
+        assertTrue(result is ParseResult.Rejected)
+    }
 }

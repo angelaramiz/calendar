@@ -106,6 +106,15 @@ class PendingOpSync(
                 p.cardId?.let { creditCardStore.setCharge("mov:${saved.id}", it) }
                 true
             }
+            PendingOpKind.MOV_LINK -> {
+                val p = PendingOpCodec.payload<MovementLinkPayload>(op) ?: return true
+                if (p.patternId == null) {
+                    patternRepository.unlinkMovement(userId, p.movementId)
+                } else {
+                    patternRepository.linkMovement(userId, p.movementId, p.patternId, p.isIncome)
+                }
+                true
+            }
             PendingOpKind.PATTERN_INSERT -> {
                 val p = PendingOpCodec.payload<PatternOpPayload>(op) ?: return true
                 val saved = patternRepository.insertPattern(

@@ -27,6 +27,7 @@ object PendingOpKind {
     const val MOV_UPDATE = "mov_update"
     const val MOV_DELETE = "mov_delete"
     const val MOV_CONFIRM = "mov_confirm"
+    const val MOV_LINK = "mov_link"
     const val PATTERN_INSERT = "pattern_insert"
     const val PATTERN_UPDATE = "pattern_update"
     const val PATTERN_DEACTIVATE = "pattern_deactivate"
@@ -79,6 +80,17 @@ data class MovConfirmPayload(
     val actualAmount: Double,
     val dateIso: String,
     val cardId: String? = null
+)
+
+/**
+ * Vincula un movimiento existente a su evento programado (o lo desvincula
+ * con patternId null): pone/quita el FK sin duplicar el dinero.
+ */
+@Serializable
+data class MovementLinkPayload(
+    val movementId: String,
+    val patternId: String? = null,
+    val isIncome: Boolean = false
 )
 
 @Serializable

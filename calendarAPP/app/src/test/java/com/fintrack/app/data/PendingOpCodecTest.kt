@@ -54,4 +54,22 @@ class PendingOpCodecTest {
         assertEquals(5.0, back.tx.amount, 0.0)
         assertEquals("nu", back.walletId)
     }
+
+    @Test
+    fun link_payload_serializa_vinculo_y_desvinculo() {
+        val link = MovementLinkPayload(movementId = "m1", patternId = "p1", isIncome = true)
+        val back = PendingOpCodec.json.decodeFromString(
+            MovementLinkPayload.serializer(),
+            PendingOpCodec.json.encodeToString(MovementLinkPayload.serializer(), link)
+        )
+        assertEquals("m1", back.movementId)
+        assertEquals("p1", back.patternId)
+        assertTrue(back.isIncome)
+        val unlink = MovementLinkPayload(movementId = "m1")
+        val backUnlink = PendingOpCodec.json.decodeFromString(
+            MovementLinkPayload.serializer(),
+            PendingOpCodec.json.encodeToString(MovementLinkPayload.serializer(), unlink)
+        )
+        assertEquals(null, backUnlink.patternId)
+    }
 }

@@ -14,6 +14,7 @@ import com.fintrack.app.data.PendingTx
 import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.TxIdPayload
 import com.fintrack.app.data.TxInsertPayload
+import com.fintrack.app.data.TxLinkStore
 import com.fintrack.app.data.TxUpdatePayload
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
@@ -85,7 +86,8 @@ class DashboardViewModel(
     private val walletStore: WalletStore,
     private val opSync: PendingOpSync,
     private val creditCardStore: CreditCardStore,
-    private val onboardingStore: OnboardingStore
+    private val onboardingStore: OnboardingStore,
+    private val txLinkStore: TxLinkStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -434,6 +436,9 @@ class DashboardViewModel(
 
     fun deleteTransaction(id: String) {
         viewModelScope.launch {
+            // Si estaba vinculado a un evento, el vínculo muere con él (si no,
+            // el evento quedaría oculto para siempre).
+            runCatching { txLinkStore.unlink(id) }
             val uid = authRepository.ensureSession()
             if (uid == null) {
                 enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))

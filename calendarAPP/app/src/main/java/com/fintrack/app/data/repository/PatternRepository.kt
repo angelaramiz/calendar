@@ -262,6 +262,44 @@ class PatternRepository {
     }
 
     /**
+     * Vincula un movimiento existente a su evento programado: pone el FK
+     * sin crear otro movimiento (el dinero ya está contado una vez).
+     * Con ownership: filtra por id + user_id (defensa en el cliente).
+     */
+    suspend fun linkMovement(
+        userId: String,
+        movementId: String,
+        patternId: String,
+        isIncome: Boolean
+    ) = withContext(Dispatchers.IO) {
+        val data = buildJsonObject {
+            if (isIncome) put("income_pattern_id", patternId)
+            else put("expense_pattern_id", patternId)
+        }
+        db.from("movements").update(data) {
+            filter {
+                eq("id", movementId)
+                eq("user_id", userId)
+            }
+        }
+    }
+
+    /** Quita el vínculo con el evento programado (ambos FK a null). */
+    suspend fun unlinkMovement(userId: String, movementId: String) =
+        withContext(Dispatchers.IO) {
+            val data = buildJsonObject {
+                put("income_pattern_id", null as String?)
+                put("expense_pattern_id", null as String?)
+            }
+            db.from("movements").update(data) {
+                filter {
+                    eq("id", movementId)
+                    eq("user_id", userId)
+                }
+            }
+        }
+
+    /**
      * Elimina un movimiento confirmado (borrado real con ownership).
      */
     suspend fun deleteMovement(userId: String, id: String) = withContext(Dispatchers.IO) {

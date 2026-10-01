@@ -21,6 +21,8 @@ data class LocalBackup(
     val bills: List<ServiceBillRow>? = null,
     val caps: Map<String, Double>? = null,
     val links: Map<String, PatternLink>? = null,
+    /** Vínculos registro Inicio ↔ evento programado (txId -> vínculo). */
+    val txLinks: Map<String, TxLink>? = null,
     /** Flujo serializado tal cual (MoneyFlow). */
     val flowJson: String? = null,
     val allowedPackages: List<String>? = null

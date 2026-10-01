@@ -32,10 +32,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.repository.MovementRow
+import com.fintrack.app.data.TxLink
+import com.fintrack.app.domain.LinkCandidate
 import com.fintrack.app.domain.MonthSummary
 import com.fintrack.app.domain.Occurrence
 import com.fintrack.app.domain.TxKind
+import com.fintrack.app.domain.findLinkCandidates
 import com.fintrack.app.domain.kind
+import com.fintrack.app.domain.toLocalDateIn
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.common.PullRefreshLayout
@@ -63,10 +67,26 @@ fun CalendarScreen(
     var fabExpanded by remember { mutableStateOf(false) }
 
     uiState.confirmTarget?.let { target ->
+        val confirmCandidates = remember(target, uiState.days, uiState.txLinks) {
+            findLinkCandidates(
+                target,
+                uiState.days.values.flatMap { it.confirmed },
+                uiState.days.values.flatMap { it.quick },
+                uiState.txLinks.keys
+            ).map { target to it }
+        }
         ConfirmOccurrenceDialog(
             occurrence = target,
+            linkOptions = confirmCandidates,
             onDismiss = { viewModel.dismissConfirm() },
-            onConfirm = { amount -> viewModel.confirmOccurrence(target, amount) }
+            onConfirm = { amount -> viewModel.confirmOccurrence(target, amount) },
+            onLink = { _, cand ->
+                if (cand.key.startsWith("mov:")) {
+                    viewModel.linkMovement(cand.key.removePrefix("mov:"), target)
+                } else {
+                    viewModel.linkTx(cand.key.removePrefix("tx:"), target)
+                }
+            }
         )
     }
 
@@ -92,6 +112,8 @@ fun CalendarScreen(
             cards = uiState.cards,
             initialWalletId = uiState.walletOverrides["mov:${mov.id}"],
             initialCardId = uiState.cardCharges["mov:${mov.id}"],
+            days = uiState.days,
+            txLinks = uiState.txLinks,
             onDismiss = { viewModel.dismissMovementDetail() },
             onSave = { title, description, category, amount, walletId, cardId ->
                 viewModel.updateMovement(
@@ -102,17 +124,25 @@ fun CalendarScreen(
             onDelete = {
                 viewModel.deleteMovement(mov.id)
                 viewModel.dismissMovementDetail()
-            }
+            },
+            onLink = { occ, cand ->
+                viewModel.linkMovement(cand.key.removePrefix("mov:"), occ)
+            },
+            onUnlink = { viewModel.unlinkMovement(mov.id) }
         )
     }
 
     uiState.detailTx?.let { tx ->
+        val txLink = uiState.txLinks[tx.id]
         QuickDetailDialog(
             tx = tx,
             wallets = uiState.wallets,
             cards = uiState.cards,
             initialWalletId = uiState.walletOverrides["tx:${tx.id}"],
             initialCardId = uiState.cardCharges["tx:${tx.id}"],
+            linkedLabel = txLink?.patternName?.takeIf { it.isNotBlank() },
+            days = uiState.days,
+            txLinks = uiState.txLinks,
             onDismiss = { viewModel.dismissQuickDetail() },
             onSave = { updated, walletId, cardId ->
                 viewModel.updateQuick(tx.id, updated, walletId, cardId)
@@ -121,7 +151,11 @@ fun CalendarScreen(
             onDelete = {
                 viewModel.deleteQuick(tx.id)
                 viewModel.dismissQuickDetail()
-            }
+            },
+            onLink = { occ, cand ->
+                viewModel.linkTx(cand.key.removePrefix("tx:"), occ)
+            },
+            onUnlink = { viewModel.unlinkTx(tx.id) }
         )
     }
 
@@ -335,6 +369,7 @@ fun CalendarScreen(
                     items(data.quick, key = { "q_${it.id}" }) { tx ->
                         QuickRow(
                             tx = tx,
+                            linkedLabel = uiState.txLinks[tx.id]?.patternName?.takeIf { n -> n.isNotBlank() },
                             onOpen = { viewModel.showQuickDetail(tx) }
                         )
                     }
@@ -685,6 +720,13 @@ private fun ProjectedCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(occurrence.pattern.name, fontWeight = FontWeight.Medium)
+                occurrence.pattern.description.takeIf { it.isNotBlank() }?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
@@ -730,6 +772,71 @@ private fun linkLabel(linkKind: String?, cardName: String?): String? = when (lin
     else -> null
 }
 
+/** Ocurrencias en ventana ±1 día con candidatos para un movimiento manual. */
+private fun candidatesForMov(
+    mov: MovementRow,
+    days: Map<LocalDate, DayData>,
+    txLinks: Map<String, TxLink>
+): List<Pair<Occurrence, LinkCandidate>> {
+    val date = runCatching { LocalDate.parse(mov.date) }.getOrNull() ?: return emptyList()
+    return (-1..1).flatMap { off ->
+        days[date.plusDays(off.toLong())]?.projected.orEmpty()
+    }.flatMap { occ ->
+        findLinkCandidates(occ, listOf(mov), emptyList(), txLinks.keys).map { occ to it }
+    }
+}
+
+/** Ocurrencias en ventana ±1 día con candidatos para un registro de Inicio. */
+private fun candidatesForTx(
+    tx: com.fintrack.app.data.model.TransactionEntity,
+    days: Map<LocalDate, DayData>,
+    txLinks: Map<String, TxLink>
+): List<Pair<Occurrence, LinkCandidate>> {
+    val date = tx.timestamp.toLocalDateIn(java.time.ZoneId.systemDefault())
+    return (-1..1).flatMap { off ->
+        days[date.plusDays(off.toLong())]?.projected.orEmpty()
+    }.flatMap { occ ->
+        findLinkCandidates(occ, emptyList(), listOf(tx), txLinks.keys).map { occ to it }
+    }
+}
+
+/** "¿Ya lo registraste?": vincular en vez de duplicar el dinero. */
+@Composable
+private fun LinkCandidatesSection(
+    options: List<Pair<Occurrence, LinkCandidate>>,
+    onLink: (Occurrence, LinkCandidate) -> Unit
+) {
+    if (options.isEmpty()) return
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        "¿Ya lo registraste? Vincúlalo (no duplica)",
+        style = MaterialTheme.typography.labelLarge
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+    options.take(3).forEach { (occ, cand) ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "🔗 ${occ.pattern.name} · ${occ.date.dayOfMonth}/${occ.date.monthValue}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${cand.title} · $${String.format("%.2f", cand.amount)} · ${cand.origin}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Button(onClick = { onLink(occ, cand) }) { Text("Vincular") }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+}
+
 @Composable
 private fun ConfirmedRow(mov: MovementRow, onOpen: () -> Unit) {
     val isIncome = mov.kind?.isIncome == true
@@ -765,7 +872,11 @@ private fun ConfirmedRow(mov: MovementRow, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity, onOpen: () -> Unit) {
+private fun QuickRow(
+    tx: com.fintrack.app.data.model.TransactionEntity,
+    linkedLabel: String? = null,
+    onOpen: () -> Unit
+) {
     val isIncome = tx.kind?.isIncome == true
     val amountTint = if (isIncome) incomeColor() else expenseColor()
     Card(
@@ -799,7 +910,7 @@ private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity, onOpen: 
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        tx.category,
+                        tx.category + (linkedLabel?.let { " · 🔗 $it" } ?: ""),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -818,8 +929,10 @@ private fun QuickRow(tx: com.fintrack.app.data.model.TransactionEntity, onOpen: 
 @Composable
 private fun ConfirmOccurrenceDialog(
     occurrence: Occurrence,
+    linkOptions: List<Pair<Occurrence, LinkCandidate>> = emptyList(),
     onDismiss: () -> Unit,
-    onConfirm: (Double) -> Unit
+    onConfirm: (Double) -> Unit,
+    onLink: (Occurrence, LinkCandidate) -> Unit = { _, _ -> }
 ) {
     var amount by remember(occurrence) { mutableStateOf(String.format("%.2f", occurrence.amount)) }
 
@@ -829,6 +942,9 @@ private fun ConfirmOccurrenceDialog(
         text = {
             Column {
                 Text("Monto esperado: $${String.format("%.2f", occurrence.amount)}")
+                occurrence.pattern.description.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = amount,
@@ -838,6 +954,7 @@ private fun ConfirmOccurrenceDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
+                LinkCandidatesSection(options = linkOptions, onLink = onLink)
             }
         },
         confirmButton = {
@@ -860,9 +977,13 @@ private fun MovDetailDialog(
     cards: List<com.fintrack.app.data.CreditCardRow>,
     initialWalletId: String?,
     initialCardId: String?,
+    days: Map<LocalDate, DayData> = emptyMap(),
+    txLinks: Map<String, TxLink> = emptyMap(),
     onDismiss: () -> Unit,
     onSave: (String, String, String, Double, String?, String?) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onLink: (Occurrence, LinkCandidate) -> Unit = { _, _ -> },
+    onUnlink: () -> Unit = {}
 ) {
     var showEdit by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -876,11 +997,18 @@ private fun MovDetailDialog(
             cards = cards,
             initialWalletId = initialWalletId,
             initialCardId = initialCardId,
+            days = days,
+            txLinks = txLinks,
             onDismiss = { showEdit = false },
             onSave = { title, description, category, amount, walletId, cardId ->
                 showEdit = false
                 onSave(title, description, category, amount, walletId, cardId)
-            }
+            },
+            onLink = { occ, cand ->
+                showEdit = false
+                onLink(occ, cand)
+            },
+            onUnlink = onUnlink
         )
         return
     }
@@ -889,13 +1017,30 @@ private fun MovDetailDialog(
         onDismissRequest = onDismiss,
         title = { Text(mov.title.ifEmpty { mov.category }) },
         text = {
-            Text(
-                "${if (isIncome) "Ingreso" else "Gasto"} · " +
-                    "$${String.format("%.2f", mov.confirmed_amount)} · ${mov.category}" +
-                    (mov.description.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "") +
-                    "\nFecha: ${mov.date}" +
-                    "\nOrigen: ${if (fromPattern) "Recurrente confirmado" else "Registro manual"}"
-            )
+            Column {
+                Text(
+                    "${if (isIncome) "Ingreso" else "Gasto"} · " +
+                        "$${String.format("%.2f", mov.confirmed_amount)} · ${mov.category}" +
+                        (mov.description.takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "") +
+                        "\nFecha: ${mov.date}" +
+                        "\nOrigen: ${if (fromPattern) "Recurrente confirmado" else "Registro manual"}"
+                )
+                if (fromPattern) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🔗 Vinculado a evento",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = onUnlink) { Text("Desvincular") }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = { showEdit = true }) { Text("Editar") }
@@ -935,10 +1080,15 @@ private fun MovEditDialog(
     cards: List<com.fintrack.app.data.CreditCardRow>,
     initialWalletId: String?,
     initialCardId: String?,
+    days: Map<LocalDate, DayData> = emptyMap(),
+    txLinks: Map<String, TxLink> = emptyMap(),
     onDismiss: () -> Unit,
-    onSave: (String, String, String, Double, String?, String?) -> Unit
+    onSave: (String, String, String, Double, String?, String?) -> Unit,
+    onLink: (Occurrence, LinkCandidate) -> Unit = { _, _ -> },
+    onUnlink: () -> Unit = {}
 ) {
     val isIncome = mov.kind?.isIncome == true
+    val fromPattern = mov.income_pattern_id != null || mov.expense_pattern_id != null
     var title by remember(mov) { mutableStateOf(mov.title) }
     var amount by remember(mov) { mutableStateOf(String.format("%.2f", mov.confirmed_amount)) }
     var category by remember(mov) { mutableStateOf(mov.category) }
@@ -946,6 +1096,20 @@ private fun MovEditDialog(
     var walletId by remember(mov) { mutableStateOf(initialWalletId) }
     var cardId by remember(mov) { mutableStateOf(initialCardId) }
     val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+    // Opciones en vivo: al elegir categoría (ej. Sueldo) aparecen los eventos
+    // coincidentes en ±1 día para vincular en vez de duplicar.
+    val liveOptions = remember(title, amount, category, description, mov, days, txLinks) {
+        if (fromPattern) emptyList()
+        else candidatesForMov(
+            mov.copy(
+                title = title,
+                description = description,
+                category = category,
+                confirmed_amount = amount.toDoubleOrNull() ?: mov.confirmed_amount
+            ),
+            days, txLinks
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -978,6 +1142,23 @@ private fun MovEditDialog(
                             modifier = Modifier.padding(end = 4.dp)
                         )
                     }
+                }
+                if (fromPattern) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🔗 Vinculado a evento",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = onUnlink) { Text("Desvincular") }
+                    }
+                } else {
+                    LinkCandidatesSection(options = liveOptions, onLink = onLink)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
@@ -1056,9 +1237,14 @@ private fun QuickDetailDialog(
     cards: List<com.fintrack.app.data.CreditCardRow>,
     initialWalletId: String?,
     initialCardId: String?,
+    linkedLabel: String? = null,
+    days: Map<LocalDate, DayData> = emptyMap(),
+    txLinks: Map<String, TxLink> = emptyMap(),
     onDismiss: () -> Unit,
     onSave: (com.fintrack.app.data.model.TransactionEntity, String?, String?) -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onLink: (Occurrence, LinkCandidate) -> Unit = { _, _ -> },
+    onUnlink: () -> Unit = {}
 ) {
     var showEdit by remember { mutableStateOf(false) }
     var showDelete by remember { mutableStateOf(false) }
@@ -1071,11 +1257,18 @@ private fun QuickDetailDialog(
             cards = cards,
             initialWalletId = initialWalletId,
             initialCardId = initialCardId,
+            days = days,
+            txLinks = txLinks,
             onDismiss = { showEdit = false },
             onSave = { updated, walletId, cardId ->
                 showEdit = false
                 onSave(updated, walletId, cardId)
-            }
+            },
+            onLink = { occ, cand ->
+                showEdit = false
+                onLink(occ, cand)
+            },
+            onUnlink = onUnlink
         )
         return
     }
@@ -1084,13 +1277,30 @@ private fun QuickDetailDialog(
         onDismissRequest = onDismiss,
         title = { Text(tx.description.ifEmpty { tx.merchant ?: tx.category }) },
         text = {
-            Text(
-                "${if (isIncome) "Ingreso" else "Gasto"} · " +
-                    "$${String.format("%.2f", tx.amount)} · ${tx.category}" +
-                    (tx.merchant?.let { "\nComercio: $it" } ?: "") +
-                    (tx.description.takeIf { it.isNotBlank() }?.let { "\nNota: $it" } ?: "") +
-                    "\nOrigen: ${if (tx.source == "AUTO") "Detectado" else "Manual"}"
-            )
+            Column {
+                Text(
+                    "${if (isIncome) "Ingreso" else "Gasto"} · " +
+                        "$${String.format("%.2f", tx.amount)} · ${tx.category}" +
+                        (tx.merchant?.let { "\nComercio: $it" } ?: "") +
+                        (tx.description.takeIf { it.isNotBlank() }?.let { "\nNota: $it" } ?: "") +
+                        "\nOrigen: ${if (tx.source == "AUTO") "Detectado" else "Manual"}"
+                )
+                if (linkedLabel != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🔗 $linkedLabel",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = onUnlink) { Text("Desvincular") }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(onClick = { showEdit = true }) { Text("Editar") }
@@ -1130,8 +1340,12 @@ private fun QuickEditDialog(
     cards: List<com.fintrack.app.data.CreditCardRow>,
     initialWalletId: String?,
     initialCardId: String?,
+    days: Map<LocalDate, DayData> = emptyMap(),
+    txLinks: Map<String, TxLink> = emptyMap(),
     onDismiss: () -> Unit,
-    onSave: (com.fintrack.app.data.model.TransactionEntity, String?, String?) -> Unit
+    onSave: (com.fintrack.app.data.model.TransactionEntity, String?, String?) -> Unit,
+    onLink: (Occurrence, LinkCandidate) -> Unit = { _, _ -> },
+    onUnlink: () -> Unit = {}
 ) {
     var amount by remember(tx) { mutableStateOf(String.format("%.2f", tx.amount)) }
     var type by remember(tx) {
@@ -1144,6 +1358,22 @@ private fun QuickEditDialog(
     var cardId by remember(tx) { mutableStateOf(initialCardId) }
     val isIncome = type == "INCOME"
     val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+    val alreadyLinked = txLinks.containsKey(tx.id)
+    // Opciones en vivo: al elegir categoría (ej. Sueldo) aparecen los eventos
+    // coincidentes en ±1 día para vincular en vez de duplicar.
+    val liveOptions = remember(amount, type, category, description, merchant, tx, days, txLinks) {
+        if (alreadyLinked) emptyList()
+        else candidatesForTx(
+            tx.copy(
+                amount = amount.toDoubleOrNull() ?: tx.amount,
+                type = type,
+                category = category,
+                description = description,
+                merchant = merchant.ifBlank { null }
+            ),
+            days, txLinks
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1184,6 +1414,24 @@ private fun QuickEditDialog(
                             modifier = Modifier.padding(end = 4.dp)
                         )
                     }
+                }
+                val linkedName = txLinks[tx.id]?.patternName?.takeIf { it.isNotBlank() }
+                if (linkedName != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "🔗 $linkedName",
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(onClick = onUnlink) { Text("Desvincular") }
+                    }
+                } else {
+                    LinkCandidatesSection(options = liveOptions, onLink = onLink)
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(

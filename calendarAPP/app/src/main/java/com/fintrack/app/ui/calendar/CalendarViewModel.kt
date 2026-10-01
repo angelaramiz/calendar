@@ -7,6 +7,7 @@ import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.MovConfirmPayload
 import com.fintrack.app.data.MovInsertPayload
 import com.fintrack.app.data.MovUpdatePayload
+import com.fintrack.app.data.MovementLinkPayload
 import com.fintrack.app.data.PatternLink
 import com.fintrack.app.data.PatternLinkKind
 import com.fintrack.app.data.PatternLinkStore
@@ -17,6 +18,8 @@ import com.fintrack.app.data.PendingOpKind
 import com.fintrack.app.data.PendingOpStore
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.TxIdPayload
+import com.fintrack.app.data.TxLink
+import com.fintrack.app.data.TxLinkStore
 import com.fintrack.app.data.TxUpdatePayload
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
@@ -33,6 +36,7 @@ import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.PatternValidator
 import com.fintrack.app.domain.computeMonthSummary
 import com.fintrack.app.domain.friendlyErrorMessage
+import com.fintrack.app.domain.isOccurrenceConfirmed
 import com.fintrack.app.domain.kind
 import com.fintrack.app.domain.toLocalDateIn
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -87,6 +91,8 @@ data class CalendarUiState(
     val cardCharges: Map<String, String> = emptyMap(),
     /** Clasificación de recurrentes: patternId -> link. */
     val links: Map<String, PatternLink> = emptyMap(),
+    /** Vínculos registro Inicio ↔ evento programado: txId -> vínculo. */
+    val txLinks: Map<String, TxLink> = emptyMap(),
     /** Avisos del mes (vencimientos y pagos): fecha -> etiquetas. */
     val markers: Map<LocalDate, List<String>> = emptyMap()
 )
@@ -103,7 +109,8 @@ class CalendarViewModel(
     private val walletStore: WalletStore,
     private val creditCardStore: CreditCardStore,
     private val linkStore: PatternLinkStore,
-    private val billStore: ServiceBillStore
+    private val billStore: ServiceBillStore,
+    private val txLinkStore: TxLinkStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -146,25 +153,26 @@ class CalendarViewModel(
                     .mapNotNull { it.toDomain("INCOME") }
                 val expense = patternRepository.getExpensePatterns(userId)
                     .mapNotNull { it.toDomain("EXPENSE") }
+                // Rango con 1 día de colchón: un registro del día 30 puede
+                // vincularse a la ocurrencia del día 1 (y viceversa).
                 val movements = patternRepository.getMovementsForMonth(
-                    userId, from.toString(), to.toString()
+                    userId, from.minusDays(1).toString(), to.plusDays(1).toString()
                 )
-
-                val confirmedKeys = movements
-                    .filter { it.income_pattern_id != null || it.expense_pattern_id != null }
-                    .map {
-                        "${it.income_pattern_id ?: it.expense_pattern_id}_${it.date}"
-                    }.toSet()
+                val movementsInMonth = movements.filter { mov ->
+                    runCatching { LocalDate.parse(mov.date) }.getOrNull()?.let { d ->
+                        !d.isBefore(from) && !d.isAfter(to)
+                    } == true
+                }
+                val txLinks = runCatching { txLinkStore.snapshot() }.getOrDefault(emptyMap())
+                val linkedOccKeys = txLinks.values
+                    .map { "${it.patternId}_${it.dateIso}" }.toSet()
 
                 val projected = (income + expense)
                     .flatMap { PatternExpander.expand(it, from, to) }
-                    .filter { occ ->
-                        val key = "${occ.pattern.id}_${occ.date}"
-                        !confirmedKeys.contains(key)
-                    }
+                    .filter { occ -> !isOccurrenceConfirmed(occ, movements, linkedOccKeys) }
                 val projectedByDate = projected.groupBy { it.date }
 
-                val confirmedByDate = movements.groupBy {
+                val confirmedByDate = movementsInMonth.groupBy {
                     runCatching { LocalDate.parse(it.date) }.getOrNull()
                 }.filterKeys { it != null }.mapKeys { it.key!! }
 
@@ -186,11 +194,13 @@ class CalendarViewModel(
                     }
 
                 val confirmedFlat = confirmedByDate.values.flatten()
+                // Vinculados no duplican: el tx vinculado YA es el evento.
+                val quickUnlinked = quickInMonth.filter { it.id !in txLinks.keys }
                 val balance = CalendarBalance(
                     income = confirmedFlat.filter { it.isIncomeRow() }.sumOf { it.confirmed_amount } +
-                        quickInMonth.filter { it.isIncomeTx() }.sumOf { it.amount },
+                        quickUnlinked.filter { it.isIncomeTx() }.sumOf { it.amount },
                     expense = confirmedFlat.filter { !it.isIncomeRow() }.sumOf { it.confirmed_amount } +
-                        quickInMonth.filter { !it.isIncomeTx() }.sumOf { it.amount }
+                        quickUnlinked.filter { !it.isIncomeTx() }.sumOf { it.amount }
                 )
 
                 _uiState.value = _uiState.value.copy(
@@ -201,6 +211,7 @@ class CalendarViewModel(
                     ),
                     balance = balance,
                     links = runCatching { linkStore.snapshot() }.getOrDefault(emptyMap()),
+                    txLinks = txLinks,
                     markers = buildMarkers(from, to),
                     walletOverrides = runCatching { walletStore.overridesSnapshot() }
                         .getOrDefault(emptyMap()),
@@ -710,6 +721,7 @@ class CalendarViewModel(
         viewModelScope.launch {
             runCatching { walletStore.clearOverride("tx:$id") }
             runCatching { creditCardStore.setCharge("tx:$id", null) }
+            runCatching { txLinkStore.unlink(id) }
             val uid = authRepository.ensureSession()
             if (uid == null) {
                 enqueueOp(PendingOpKind.TX_DELETE, TxIdPayload.serializer(), TxIdPayload(id))
@@ -821,6 +833,113 @@ class CalendarViewModel(
                 } else {
                     _uiState.value = _uiState.value.copy(
                         error = "No se pudo eliminar: ${e.message?.take(150)}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Vincula un registro de Inicio a su evento programado (no duplica). */
+    fun linkTx(txId: String, occurrence: Occurrence) {
+        viewModelScope.launch {
+            runCatching {
+                txLinkStore.link(
+                    txId,
+                    TxLink(
+                        patternId = occurrence.pattern.id,
+                        dateIso = occurrence.date.toString(),
+                        isIncome = occurrence.pattern.kind?.isIncome == true,
+                        patternName = occurrence.pattern.name
+                    )
+                )
+            }
+            _uiState.value = _uiState.value.copy(
+                confirmTarget = null, detailTx = null
+            )
+            loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+        }
+    }
+
+    /** Quita el vínculo de un registro de Inicio (vuelve a contar aparte). */
+    fun unlinkTx(txId: String) {
+        viewModelScope.launch {
+            runCatching { txLinkStore.unlink(txId) }
+            loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+        }
+    }
+
+    /** Vincula un movimiento existente a su evento programado (pone el FK). */
+    fun linkMovement(movementId: String, occurrence: Occurrence) {
+        val isIncome = occurrence.pattern.kind?.isIncome == true
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.MOV_LINK,
+                    MovementLinkPayload.serializer(),
+                    MovementLinkPayload(movementId, occurrence.pattern.id, isIncome)
+                )
+                _uiState.value = _uiState.value.copy(
+                    confirmTarget = null, detailMov = null,
+                    error = "Sin conexión: el vínculo se guardará al entrar."
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            try {
+                patternRepository.linkMovement(userId, movementId, occurrence.pattern.id, isIncome)
+                _uiState.value = _uiState.value.copy(
+                    confirmTarget = null, detailMov = null
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.MOV_LINK,
+                        MovementLinkPayload.serializer(),
+                        MovementLinkPayload(movementId, occurrence.pattern.id, isIncome)
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        confirmTarget = null, detailMov = null,
+                        error = "Sin conexión: el vínculo se guardará al entrar."
+                    )
+                    loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "No se pudo vincular. ${friendlyErrorMessage(e)}"
+                    )
+                }
+            }
+        }
+    }
+
+    /** Quita el vínculo de un movimiento (FK a null, el dinero se queda). */
+    fun unlinkMovement(movementId: String) {
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null || userId.isEmpty()) {
+                enqueueOp(
+                    PendingOpKind.MOV_LINK,
+                    MovementLinkPayload.serializer(),
+                    MovementLinkPayload(movementId, null, false)
+                )
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                return@launch
+            }
+            try {
+                patternRepository.unlinkMovement(userId, movementId)
+                loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+            } catch (e: Exception) {
+                if (com.fintrack.app.domain.isRecoverableError(e)) {
+                    enqueueOp(
+                        PendingOpKind.MOV_LINK,
+                        MovementLinkPayload.serializer(),
+                        MovementLinkPayload(movementId, null, false)
+                    )
+                    loadMonth(_uiState.value.yearMonth, forceRefresh = true)
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        error = "No se pudo desvincular. ${friendlyErrorMessage(e)}"
                     )
                 }
             }

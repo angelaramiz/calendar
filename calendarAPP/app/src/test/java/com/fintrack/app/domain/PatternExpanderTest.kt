@@ -192,4 +192,65 @@ class PatternExpanderTest {
         assertTrue(occ.isNotEmpty())
         assertTrue(occ.all { it.pattern.id == "p1" && it.amount == 100.0 })
     }
+
+    @Test
+    fun semimonthly_caso_usuario_15_y_fin_de_mes() {
+        // Quincena desde el 15 oct 2026: 15 y 30 (el 31 cae sábado -> viernes).
+        val occ = PatternExpander.expand(
+            pattern("semimonthly", start = LocalDate.of(2026, 10, 15)),
+            LocalDate.of(2026, 10, 1),
+            LocalDate.of(2026, 10, 31)
+        ).map { it.date }
+
+        assertEquals(
+            listOf(LocalDate.of(2026, 10, 15), LocalDate.of(2026, 10, 30)),
+            occ
+        )
+    }
+
+    @Test
+    fun semimonthly_fin_de_semana_se_recorre_al_viernes() {
+        // Nov 2026: el 15 es domingo -> viernes 13; el 30 es lunes -> 30.
+        val nov = PatternExpander.expand(
+            pattern("semimonthly", start = LocalDate.of(2026, 10, 15)),
+            LocalDate.of(2026, 11, 1),
+            LocalDate.of(2026, 11, 30)
+        ).map { it.date }
+        assertEquals(
+            listOf(LocalDate.of(2026, 11, 13), LocalDate.of(2026, 11, 30)),
+            nov
+        )
+        // Feb 2027: el 15 es lunes -> 15; el 28 es domingo -> viernes 26.
+        val feb = PatternExpander.expand(
+            pattern("semimonthly", start = LocalDate.of(2026, 10, 15)),
+            LocalDate.of(2027, 2, 1),
+            LocalDate.of(2027, 2, 28)
+        ).map { it.date }
+        assertEquals(
+            listOf(LocalDate.of(2027, 2, 15), LocalDate.of(2027, 2, 26)),
+            feb
+        )
+    }
+
+    @Test
+    fun semimonthly_respeta_inicio_y_fin() {
+        // Inicio el 16: el 15 de ese mes ya pasó.
+        val occ = PatternExpander.expand(
+            pattern("semimonthly", start = LocalDate.of(2026, 10, 16)),
+            LocalDate.of(2026, 10, 1),
+            LocalDate.of(2026, 10, 31)
+        ).map { it.date }
+        assertEquals(listOf(LocalDate.of(2026, 10, 30)), occ)
+        // Fin el 20: solo alcanza el 15.
+        val occ2 = PatternExpander.expand(
+            pattern(
+                "semimonthly",
+                start = LocalDate.of(2026, 10, 15),
+                end = LocalDate.of(2026, 10, 20)
+            ),
+            LocalDate.of(2026, 10, 1),
+            LocalDate.of(2026, 10, 31)
+        ).map { it.date }
+        assertEquals(listOf(LocalDate.of(2026, 10, 15)), occ2)
+    }
 }

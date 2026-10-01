@@ -9,7 +9,7 @@ import java.time.LocalDate
  */
 object PatternValidator {
 
-    val FREQUENCIES = listOf("weekly", "biweekly", "monthly", "bimonthly", "yearly")
+    val FREQUENCIES = listOf("weekly", "biweekly", "monthly", "bimonthly", "yearly", "semimonthly")
 
     fun validate(
         name: String,

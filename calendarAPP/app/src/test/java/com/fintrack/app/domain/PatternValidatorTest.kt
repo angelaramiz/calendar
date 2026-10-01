@@ -106,6 +106,19 @@ class PatternValidatorTest {
     }
 
     @Test
+    fun quincena_15_fin_es_frecuencia_valida() {
+        assertNull(
+            PatternValidator.validate(
+                name = "Nómina",
+                baseAmount = 8_000.0,
+                frequency = "semimonthly",
+                startDate = start,
+                endDate = null
+            )
+        )
+    }
+
+    @Test
     fun fin_igual_al_inicio_es_valido() {
         assertNull(
             PatternValidator.validate(

@@ -79,7 +79,8 @@ object SubscriptionDetector {
         val norm = label.lowercase()
         return patterns.any { p ->
             p.active &&
-                (p.frequency == "monthly" || p.frequency == "bimonthly") &&
+                (p.frequency == "monthly" || p.frequency == "bimonthly" ||
+                    p.frequency == "semimonthly") &&
                 p.type.equals("EXPENSE", ignoreCase = true) &&
                 (p.name.lowercase().contains(norm) || norm.contains(p.name.lowercase())) &&
                 kotlin.math.abs(p.baseAmount - amount) <= maxOf(1.0, amount * 0.01)

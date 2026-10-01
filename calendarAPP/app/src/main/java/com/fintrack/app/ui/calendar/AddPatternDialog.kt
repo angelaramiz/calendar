@@ -28,7 +28,8 @@ private val ES = Locale("es")
 
 private val FREQUENCY_LABELS = listOf(
     "weekly" to "Semanal",
-    "biweekly" to "Quincenal",
+    "biweekly" to "Cada 14 días",
+    "semimonthly" to "Quincena 15/fin",
     "monthly" to "Mensual",
     "bimonthly" to "Bimestral",
     "yearly" to "Anual"

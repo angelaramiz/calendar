@@ -8,6 +8,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,7 +33,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.WalletResolver
@@ -190,6 +195,26 @@ internal fun SubscriptionCard(
     }
 }
 
+/** Fila del estado de cuenta: concepto + fecha + monto. */
+internal data class StatementRow(
+    val label: String,
+    val date: java.time.LocalDate,
+    val amount: Double
+)
+
+/** Datos del modal "Edo. cuenta": cargos del periodo del estado abierto. */
+internal data class StatementView(
+    val cardName: String,
+    val periodStart: java.time.LocalDate,
+    val statementCutoff: java.time.LocalDate,
+    val dueDate: java.time.LocalDate,
+    val rows: List<StatementRow>,
+    val paid: Double
+) {
+    val total: Double get() = rows.sumOf { it.amount }
+    val remaining: Double get() = (total - paid).coerceAtLeast(0.0)
+}
+
 @Composable
 internal fun CreditCardsCard(
     cards: List<com.fintrack.app.data.CreditCardRow>,
@@ -205,6 +230,7 @@ internal fun CreditCardsCard(
     var editing by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
     var adding by remember { mutableStateOf(false) }
     var paying by remember { mutableStateOf<com.fintrack.app.domain.CreditCardPlanner.CardSummary?>(null) }
+    var statement by remember { mutableStateOf<StatementView?>(null) }
     // Periodo del corte en hora local: con UTC el periodo brincaba a las 18:00.
     val today = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -246,13 +272,17 @@ internal fun CreditCardsCard(
                         all.map { it.third }, today, cardPayments,
                         graceDays = card.graceDays
                     )
+                    val periodOnly = all.filter { (_, _, dated) ->
+                        !dated.first.isBefore(summary.periodStart) &&
+                            dated.first.isBefore(summary.statementCutoff)
+                    }
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(card.displayName, fontWeight = FontWeight.SemiBold)
                                 Text(
                                     if (card.usesGrace)
@@ -264,6 +294,18 @@ internal fun CreditCardsCard(
                                 )
                             }
                             Row {
+                                TextButton(onClick = {
+                                    statement = StatementView(
+                                        cardName = card.displayName,
+                                        periodStart = summary.periodStart,
+                                        statementCutoff = summary.statementCutoff,
+                                        dueDate = summary.dueDate,
+                                        rows = periodOnly.map { (_, label, dated) ->
+                                            StatementRow(label, dated.first, dated.second)
+                                        },
+                                        paid = summary.paid
+                                    )
+                                }) { Text("Edo. cuenta") }
                                 TextButton(onClick = { editing = card }) { Text("Editar") }
                                 TextButton(onClick = { onDelete(card.id) }) { Text("Eliminar") }
                             }
@@ -288,10 +330,9 @@ internal fun CreditCardsCard(
                                 }
                             }
                         }
-                        val periodOnly = all.filter { (_, _, dated) ->
-                            !dated.first.isBefore(summary.periodStart) &&
-                                dated.first.isBefore(summary.statementCutoff)
-                        }
+                        val cycle = com.fintrack.app.domain.CreditCardPlanner.currentCycle(
+                            all, { it.third.first }, summary.statementCutoff, today
+                        )
                         if (periodOnly.isEmpty()) {
                             Text(
                                 "Sin cargos en este periodo.",
@@ -311,6 +352,27 @@ internal fun CreditCardsCard(
                                     )
                                     TextButton(onClick = { onUntag(key) }) { Text("Quitar") }
                                 }
+                            }
+                        }
+                        val nextCut = com.fintrack.app.domain.CreditCardPlanner.nextCutoff(card.cutoffDay, today)
+                        Text(
+                            "Ciclo actual (corte ${nextCut.dayOfMonth}/${nextCut.monthValue}): " +
+                                "${formatMoney(cycle.sumOf { it.third.second })} · se paga el próximo corte",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (cycle.isEmpty()) {
+                            Text(
+                                "Sin cargos en el ciclo actual.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            cycle.forEach { (_, label, dated) ->
+                                Text(
+                                    "$label · ${formatMoney(dated.second)} · " +
+                                        "${dated.first.dayOfMonth}/${dated.first.monthValue}",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
                             }
                         }
                     }
@@ -352,6 +414,120 @@ internal fun CreditCardsCard(
                 paying = null
             }
         )
+    }
+    statement?.let { view ->
+        CardStatementDialog(view = view, onDismiss = { statement = null })
+    }
+}
+
+private fun shortDate(date: java.time.LocalDate): String =
+    "${date.dayOfMonth}/${date.monthValue}"
+
+/** Modal "Edo. cuenta": tabla con todos los cargos del periodo del estado. */
+@Composable
+internal fun CardStatementDialog(
+    view: StatementView,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Estado de cuenta", fontWeight = FontWeight.Bold)
+                Text(
+                    "${view.cardName} · Periodo ${shortDate(view.periodStart)} → " +
+                        "${shortDate(view.statementCutoff)} · Vence ${shortDate(view.dueDate)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Fecha",
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Concepto",
+                        modifier = Modifier.weight(2f),
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Monto",
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.End
+                    )
+                }
+                if (view.rows.isEmpty()) {
+                    Text(
+                        "Sin cargos en este periodo.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .heightIn(max = 320.dp)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        view.rows.forEach { row ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    shortDate(row.date),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    row.label,
+                                    modifier = Modifier.weight(2f),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(
+                                    formatMoney(row.amount),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.End
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Total",
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.weight(2f))
+                    Text(
+                        formatMoney(view.total),
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.End
+                    )
+                }
+                if (view.paid > 0.0) {
+                    Text(
+                        "Pagados ${formatMoney(view.paid)} · Resta ${formatMoney(view.remaining)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cerrar") }
+                }
+            }
+        }
     }
 }
 

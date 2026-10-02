@@ -164,4 +164,24 @@ class CreditCardPlannerTest {
         val summary = CreditCardPlanner.summarize("nu", 10, 30, charges, today)
         assertEquals(0.0, summary.periodCharges, 0.0)
     }
+
+    @Test
+    fun ciclo_actual_desde_el_corte_abierto_hasta_hoy() {
+        // Caso Didi: corte día 3, hoy 2 oct, compra 30 sep -> ciclo actual, no estado abierto.
+        val open = LocalDate.of(2026, 9, 3)
+        val today = LocalDate.of(2026, 10, 2)
+        val charges = listOf(
+            LocalDate.of(2026, 9, 2) to 50.0, // antes del corte: estado anterior
+            LocalDate.of(2026, 9, 3) to 10.0, // día del corte: ya es ciclo actual
+            LocalDate.of(2026, 9, 30) to 800.0,
+            LocalDate.of(2026, 10, 2) to 200.0, // hoy: entra
+            LocalDate.of(2026, 10, 3) to 5.0 // futuro: no entra
+        )
+        val cycle = CreditCardPlanner.currentCycle(charges, { it.first }, open, today)
+        assertEquals(3, cycle.size)
+        assertEquals(1010.0, cycle.sumOf { it.second }, 0.0)
+        val summary = CreditCardPlanner.summarize("didi", 3, 23, charges, today)
+        assertEquals(LocalDate.of(2026, 9, 3), summary.statementCutoff)
+        assertEquals(50.0, summary.periodCharges, 0.0)
+    }
 }

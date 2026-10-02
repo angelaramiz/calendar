@@ -73,6 +73,18 @@ object CreditCardPlanner {
         if (graceDays > 0) paymentForCutoffGrace(cutoff, graceDays)
         else paymentForCutoff(cutoff, paymentDay)
 
+    /**
+     * Cargos del ciclo actual: fecha en [openCutoff, today]. Son los que se
+     * acumulan para el próximo corte, no entran al estado abierto a pagar.
+     */
+    fun <T> currentCycle(
+        items: List<T>,
+        dateOf: (T) -> LocalDate,
+        openCutoff: LocalDate,
+        today: LocalDate
+    ): List<T> =
+        items.filter { !dateOf(it).isBefore(openCutoff) && !dateOf(it).isAfter(today) }
+
     fun summarize(
         cardId: String,
         cutoffDay: Int,

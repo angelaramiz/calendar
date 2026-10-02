@@ -446,4 +446,38 @@ class NotificationParserTest {
 
         assertTrue(result is ParseResult.Rejected)
     }
+
+    @Test
+    fun banco_desconocido_con_aviso_de_cargo_se_sugiere() {
+        // Paquete fuera de la allowlist pero con texto de movimiento real.
+        assertTrue(
+            NotificationParser.looksLikeBankActivity(
+                packageName = "mx.banco.desconocido",
+                title = "Compra aprobada",
+                text = "Pagaste $850.50 en Liverpool con tu tarjeta."
+            )
+        )
+    }
+
+    @Test
+    fun banco_desconocido_con_promo_no_se_sugiere() {
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "mx.banco.desconocido",
+                title = "Promoción",
+                text = "Aprovecha 20% de descuento pagando $500 o más."
+            )
+        )
+    }
+
+    @Test
+    fun app_comun_sin_movimiento_no_se_sugiere() {
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "com.whatsapp",
+                title = "Juan",
+                text = "Nos vemos a las 8 en la entrada."
+            )
+        )
+    }
 }

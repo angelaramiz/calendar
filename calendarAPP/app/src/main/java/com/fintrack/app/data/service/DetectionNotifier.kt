@@ -26,6 +26,9 @@ object DetectionNotifier {
     const val CHANNEL_ID = "fintrack_detecciones"
     const val ACTION_DELETE = "com.fintrack.app.DELETE_DETECTION"
     const val EXTRA_TX_ID = "tx_id"
+    /** Ruta a abrir al tocar un aviso (ej. Permisos tras detectar un banco). */
+    const val EXTRA_ROUTE = "open_route"
+    const val ROUTE_PERMISSIONS = "permissions"
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -119,6 +122,39 @@ object DetectionNotifier {
         try {
             NotificationManagerCompat.from(context)
                 .notify(("pending" + tx.hashCode()).hashCode(), notification)
+        } catch (_: SecurityException) {
+        }
+    }
+
+    /** Aviso de banco nuevo: su aviso parece movimiento pero no está en la lista. */
+    fun showBankSuggestion(context: Context, packageName: String, sample: String) {
+        ensureChannel(context)
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val short = packageName.split(".").takeLast(2).joinToString(".")
+        val detail = "$short parece tu banco («${sample.take(60)}»). " +
+            "Toca para agregarlo en Permisos."
+        val openIntent = PendingIntent.getActivity(
+            context,
+            packageName.hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(EXTRA_ROUTE, ROUTE_PERMISSIONS)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_detect)
+            .setContentTitle("¿Banco nuevo detectado?")
+            .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(packageName.hashCode(), notification)
         } catch (_: SecurityException) {
         }
     }

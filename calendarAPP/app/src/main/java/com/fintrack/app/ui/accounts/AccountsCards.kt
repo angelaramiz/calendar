@@ -215,6 +215,12 @@ internal data class StatementView(
     val remaining: Double get() = (total - paid).coerceAtLeast(0.0)
 }
 
+/** Cargos tagueados de una tarjeta + pagos registrados contra sus cortes. */
+internal data class CardChargeData(
+    val all: List<Triple<String, String, Pair<java.time.LocalDate, Double>>>,
+    val cardPayments: List<Pair<java.time.LocalDate, Double>>
+)
+
 @Composable
 internal fun CreditCardsCard(
     cards: List<com.fintrack.app.data.CreditCardRow>,
@@ -230,9 +236,35 @@ internal fun CreditCardsCard(
     var editing by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
     var adding by remember { mutableStateOf(false) }
     var paying by remember { mutableStateOf<com.fintrack.app.domain.CreditCardPlanner.CardSummary?>(null) }
-    var statement by remember { mutableStateOf<StatementView?>(null) }
+    var statementCard by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
+    var statementPeriod by remember { mutableStateOf(0) }
     // Periodo del corte en hora local: con UTC el periodo brincaba a las 18:00.
     val today = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+    fun chargesOf(card: com.fintrack.app.data.CreditCardRow): CardChargeData {
+        val txCharges = transactions
+            .filter { charges["tx:${it.id}"] == card.id }
+            .mapNotNull { tx ->
+                val date = tx.timestamp.toLocalDateIn()
+                Triple("tx:${tx.id}", txLabel(tx), date to tx.amount)
+            }
+        val movCharges = movements
+            .filter { charges["mov:${it.id}"] == card.id && !it.archived }
+            .mapNotNull { mov ->
+                val date = runCatching {
+                    java.time.LocalDate.parse(mov.date)
+                }.getOrNull() ?: return@mapNotNull null
+                Triple("mov:${mov.id}", mov.title.ifBlank { mov.category }, date to mov.confirmed_amount)
+            }
+        val cardPayments = payments
+            .filter { it.cardId == card.id }
+            .mapNotNull { pay ->
+                val cutoff = runCatching {
+                    java.time.LocalDate.parse(pay.statementCutoffIso)
+                }.getOrNull() ?: return@mapNotNull null
+                cutoff to pay.amount
+            }
+        return CardChargeData(txCharges + movCharges, cardPayments)
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
@@ -244,29 +276,7 @@ internal fun CreditCardsCard(
                 Text("Sin tarjetas. Agrega tu Nu, Plata, etc. con su día de corte y pago.")
             } else {
                 cards.forEach { card ->
-                    val txCharges = transactions
-                        .filter { charges["tx:${it.id}"] == card.id }
-                        .mapNotNull { tx ->
-                            val date = tx.timestamp.toLocalDateIn()
-                            Triple("tx:${tx.id}", txLabel(tx), date to tx.amount)
-                        }
-                    val movCharges = movements
-                        .filter { charges["mov:${it.id}"] == card.id && !it.archived }
-                        .mapNotNull { mov ->
-                            val date = runCatching {
-                                java.time.LocalDate.parse(mov.date)
-                            }.getOrNull() ?: return@mapNotNull null
-                            Triple("mov:${mov.id}", mov.title.ifBlank { mov.category }, date to mov.confirmed_amount)
-                        }
-                    val all = (txCharges + movCharges)
-                    val cardPayments = payments
-                        .filter { it.cardId == card.id }
-                        .mapNotNull { pay ->
-                            val cutoff = runCatching {
-                                java.time.LocalDate.parse(pay.statementCutoffIso)
-                            }.getOrNull() ?: return@mapNotNull null
-                            cutoff to pay.amount
-                        }
+                    val (all, cardPayments) = chargesOf(card)
                     val summary = com.fintrack.app.domain.CreditCardPlanner.summarize(
                         card.id, card.cutoffDay, card.paymentDay,
                         all.map { it.third }, today, cardPayments,
@@ -295,16 +305,8 @@ internal fun CreditCardsCard(
                             }
                             Row {
                                 TextButton(onClick = {
-                                    statement = StatementView(
-                                        cardName = card.displayName,
-                                        periodStart = summary.periodStart,
-                                        statementCutoff = summary.statementCutoff,
-                                        dueDate = summary.dueDate,
-                                        rows = periodOnly.map { (_, label, dated) ->
-                                            StatementRow(label, dated.first, dated.second)
-                                        },
-                                        paid = summary.paid
-                                    )
+                                    statementCard = card
+                                    statementPeriod = 0
                                 }) { Text("Edo. cuenta") }
                                 TextButton(onClick = { editing = card }) { Text("Editar") }
                                 TextButton(onClick = { onDelete(card.id) }) { Text("Eliminar") }
@@ -415,18 +417,53 @@ internal fun CreditCardsCard(
             }
         )
     }
-    statement?.let { view ->
-        CardStatementDialog(view = view, onDismiss = { statement = null })
+    statementCard?.let { card ->
+        val planner = com.fintrack.app.domain.CreditCardPlanner
+        val periods = planner.statementPeriods(card.cutoffDay, today)
+        val index = statementPeriod.coerceIn(0, periods.size - 1)
+        val (prev, open) = periods[index]
+        val (all, cardPayments) = chargesOf(card)
+        // Historial = el mismo summarize con today = cada corte.
+        val hist = planner.summarize(
+            card.id, card.cutoffDay, card.paymentDay,
+            all.map { it.third }, open, cardPayments,
+            graceDays = card.graceDays
+        )
+        CardStatementDialog(
+            view = StatementView(
+                cardName = card.displayName,
+                periodStart = prev,
+                statementCutoff = open,
+                dueDate = hist.dueDate,
+                rows = all.filter { (_, _, dated) ->
+                    !dated.first.isBefore(prev) && dated.first.isBefore(open)
+                }.map { (_, label, dated) ->
+                    StatementRow(label, dated.first, dated.second)
+                },
+                paid = hist.paid
+            ),
+            position = "${index + 1}/${periods.size}",
+            canNewer = index > 0,
+            canOlder = index < periods.size - 1,
+            onNewer = { statementPeriod = index - 1 },
+            onOlder = { statementPeriod = index + 1 },
+            onDismiss = { statementCard = null }
+        )
     }
 }
 
 private fun shortDate(date: java.time.LocalDate): String =
     "${date.dayOfMonth}/${date.monthValue}"
 
-/** Modal "Edo. cuenta": tabla con todos los cargos del periodo del estado. */
+/** Modal "Edo. cuenta": tabla con todos los cargos del periodo + historial ◀ ▶. */
 @Composable
 internal fun CardStatementDialog(
     view: StatementView,
+    position: String,
+    canNewer: Boolean,
+    canOlder: Boolean,
+    onNewer: () -> Unit,
+    onOlder: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -435,7 +472,23 @@ internal fun CardStatementDialog(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Estado de cuenta", fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Estado de cuenta",
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onNewer, enabled = canNewer) { Text("◀") }
+                    Text(
+                        position,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    TextButton(onClick = onOlder, enabled = canOlder) { Text("▶") }
+                }
                 Text(
                     "${view.cardName} · Periodo ${shortDate(view.periodStart)} → " +
                         "${shortDate(view.statementCutoff)} · Vence ${shortDate(view.dueDate)}",

@@ -68,6 +68,22 @@ class TransactionNotificationListener : NotificationListenerService() {
                     is ParseResult.Rejected -> {
                         Log.d(tag, "Ignorada (${result.reason}): $packageName | $title")
                         diag("RECHAZADA (${result.reason})", packageName, title)
+                        // App fuera de la lista pero con pinta de banco: se
+                        // sugiere una sola vez en vez de ignorarla en silencio.
+                        if (result.reason == "app_no_permitida" &&
+                            packageName != applicationContext.packageName &&
+                            NotificationParser.looksLikeBankActivity(packageName, title, text)
+                        ) {
+                            val fresh = runCatching {
+                                appFilter.suggestBank(packageName, title)
+                            }.getOrDefault(false)
+                            if (fresh) {
+                                DetectionNotifier.showBankSuggestion(
+                                    applicationContext, packageName, title
+                                )
+                                diag("BANCO SUGERIDO", packageName, title)
+                            }
+                        }
                         return@launch
                     }
                     is ParseResult.Accepted -> {

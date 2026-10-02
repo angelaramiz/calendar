@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.navigation.compose.rememberNavController
+import com.fintrack.app.data.service.DetectionNotifier
 import com.fintrack.app.ui.navigation.FinTrackNavGraph
 import com.fintrack.app.ui.theme.FinTrackTheme
 import com.fintrack.app.ui.tile.QuickExpenseTileService
@@ -27,11 +28,13 @@ class MainActivity : FragmentActivity() {
 
     private var quickEntryRequested by mutableStateOf(false)
     private var sharedUrl by mutableStateOf<String?>(null)
+    private var openRoute by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         quickEntryRequested = intent?.action == QuickExpenseTileService.ACTION_QUICK_ENTRY
         sharedUrl = sharedUrlOf(intent)
+        openRoute = intent?.getStringExtra(DetectionNotifier.EXTRA_ROUTE)
         requestNotificationPermission()
         setContent {
             FinTrackTheme {
@@ -41,7 +44,9 @@ class MainActivity : FragmentActivity() {
                         navController = navController,
                         openQuickEntryOnStart = quickEntryRequested,
                         openShareUrlOnStart = sharedUrl,
-                        onShareUrlConsumed = { sharedUrl = null }
+                        onShareUrlConsumed = { sharedUrl = null },
+                        openRouteOnStart = openRoute,
+                        onRouteConsumed = { openRoute = null }
                     )
                 }
             }
@@ -55,6 +60,7 @@ class MainActivity : FragmentActivity() {
             quickEntryRequested = true
         }
         sharedUrlOf(intent)?.let { sharedUrl = it }
+        intent.getStringExtra(DetectionNotifier.EXTRA_ROUTE)?.let { openRoute = it }
     }
 
     /** Texto compartido desde Mercado Libre / Amazon / Chrome. */

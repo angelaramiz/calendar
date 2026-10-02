@@ -56,6 +56,45 @@ class AppFilterStore(private val context: Context) {
         }
     }
 
+    /** Bancos detectados por sus avisos: "paquete|epoch|muestra". */
+    private val suggestedKey = stringSetPreferencesKey("suggested_banks")
+
+    val suggestedBanks: Flow<List<Pair<String, String>>> =
+        context.appFilterDataStore.data.map { prefs ->
+            (prefs[suggestedKey] ?: emptySet()).mapNotNull { raw ->
+                val pkg = raw.substringBefore("|")
+                val sample = raw.substringAfter("|", "").substringAfter("|")
+                if (pkg.isBlank()) null else pkg to sample
+            }.sortedBy { it.first }
+        }
+
+    /**
+     * Registra un banco candidato. Devuelve true si es nuevo (para avisar
+     * una sola vez en vez de spamear con cada notificación del banco).
+     */
+    suspend fun suggestBank(packageName: String, sampleTitle: String): Boolean {
+        var inserted = false
+        context.appFilterDataStore.edit { prefs ->
+            val current = (prefs[suggestedKey] ?: emptySet()).toMutableSet()
+            val cleanSample = sampleTitle.replace("|", " ").replace("\n", " ").take(60)
+            val withoutPkg = current.filterNot { it.substringBefore("|") == packageName }
+            val entry = "$packageName|${System.currentTimeMillis()}|$cleanSample"
+            inserted = current.none { it.substringBefore("|") == packageName }
+            val capped = (withoutPkg + entry).takeLast(20).toSet()
+            prefs[suggestedKey] = capped
+        }
+        return inserted
+    }
+
+    suspend fun clearSuggestion(packageName: String) {
+        context.appFilterDataStore.edit { prefs ->
+            prefs[suggestedKey] =
+                (prefs[suggestedKey] ?: emptySet()).filterNot {
+                    it.substringBefore("|") == packageName
+                }.toSet()
+        }
+    }
+
     val seenPackages: Flow<List<String>> = context.appFilterDataStore.data.map { prefs ->
         (prefs[seenKey] ?: emptySet()).sorted()
     }
@@ -78,6 +117,11 @@ class AppFilterStore(private val context: Context) {
             val current = (prefs[allowedKey] ?: NotificationParser.DEFAULT_PACKAGES).toMutableSet()
             if (allowed) current.add(packageName) else current.remove(packageName)
             prefs[allowedKey] = current
+            // Decidido (dentro o fuera): ya no es candidato pendiente.
+            prefs[suggestedKey] =
+                (prefs[suggestedKey] ?: emptySet()).filterNot {
+                    it.substringBefore("|") == packageName
+                }.toSet()
         }
     }
 

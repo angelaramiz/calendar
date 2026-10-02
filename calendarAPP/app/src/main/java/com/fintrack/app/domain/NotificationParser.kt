@@ -79,6 +79,14 @@ object NotificationParser {
         "ultimos dias", "ultimas horas", "fin de semana"
     )
 
+    /**
+     * ¿Parece aviso bancario aunque el paquete no esté en la allowlist?
+     * Corre las etapas 2-5 sin la compuerta: sirve para sugerir bancos
+     * nuevos en vez de ignorarlos en silencio.
+     */
+    fun looksLikeBankActivity(packageName: String, title: String, text: String): Boolean =
+        parse(packageName, title, text, setOf(packageName)) is ParseResult.Accepted
+
     fun parse(
         packageName: String,
         title: String,

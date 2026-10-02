@@ -49,7 +49,9 @@ fun FinTrackNavGraph(
     navController: NavHostController,
     openQuickEntryOnStart: Boolean = false,
     openShareUrlOnStart: String? = null,
-    onShareUrlConsumed: () -> Unit = {}
+    onShareUrlConsumed: () -> Unit = {},
+    openRouteOnStart: String? = null,
+    onRouteConsumed: () -> Unit = {}
 ) {
     // Un solo DashboardViewModel por actividad: sobrevive a pops del backstack
     // (tabs, Tile, QuickEntry) sin el crash de getBackStackEntry().
@@ -67,6 +69,15 @@ fun FinTrackNavGraph(
                 "${Routes.SHARE_PRODUCT}?url=${android.net.Uri.encode(openShareUrlOnStart)}"
             )
             onShareUrlConsumed()
+        }
+    }
+    // Ruta pedida desde un aviso (ej. banco nuevo -> Permisos), una vez.
+    if (openRouteOnStart != null) {
+        LaunchedEffect(openRouteOnStart) {
+            if (openRouteOnStart == Routes.PERMISSIONS) {
+                navController.navigate(Routes.PERMISSIONS)
+            }
+            onRouteConsumed()
         }
     }
     NavHost(navController = navController, startDestination = Routes.DASHBOARD) {

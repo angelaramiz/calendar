@@ -332,6 +332,7 @@ private fun AppFilterSection() {
     val store = remember { AppFilterStore(context.applicationContext) }
     val allowed by store.allowedPackages.collectAsState(initial = NotificationParser.DEFAULT_PACKAGES)
     val seen by store.seenPackages.collectAsState(initial = emptyList())
+    val suggested by store.suggestedBanks.collectAsState(initial = emptyList())
     var customPkg by remember { mutableStateOf("") }
 
     fun shortName(pkg: String): String {
@@ -374,6 +375,35 @@ private fun AppFilterSection() {
                     Text(pkg, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     TextButton(onClick = { scope.launch { store.setAllowed(pkg, false) } }) {
                         Text("Quitar")
+                    }
+                }
+            }
+
+            // Bancos detectados por sus avisos: pinta de movimiento real.
+            val fresh = suggested.filter { (pkg, _) -> pkg !in allowed }
+            if (fresh.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Bancos detectados por sus avisos", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Estas apps mandaron avisos con pinta de movimiento. Toca Agregar para escucharlas.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                fresh.forEach { (pkg, sample) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(shortName(pkg), style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                (if (sample.isBlank()) pkg else "«$sample» · $pkg"),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = { scope.launch { store.setAllowed(pkg, true) } }) {
+                            Text("Agregar")
+                        }
                     }
                 }
             }

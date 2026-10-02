@@ -184,4 +184,26 @@ class CreditCardPlannerTest {
         assertEquals(LocalDate.of(2026, 9, 3), summary.statementCutoff)
         assertEquals(50.0, summary.periodCharges, 0.0)
     }
+
+    @Test
+    fun historial_cadena_de_periodos_del_nuevo_al_viejo() {
+        // Hoy 2 oct, corte 3: abierto (3 ago->3 sep), luego (3 jul->3 ago)...
+        val periods = CreditCardPlanner.statementPeriods(3, LocalDate.of(2026, 10, 2), 3)
+        assertEquals(3, periods.size)
+        assertEquals(LocalDate.of(2026, 8, 3) to LocalDate.of(2026, 9, 3), periods[0])
+        assertEquals(LocalDate.of(2026, 7, 3) to LocalDate.of(2026, 8, 3), periods[1])
+        assertEquals(LocalDate.of(2026, 6, 3) to LocalDate.of(2026, 7, 3), periods[2])
+    }
+
+    @Test
+    fun historial_cargo_cae_en_su_periodo() {
+        // Compra Didi 30 sep: tras el corte del 3 oct vive en (3 sep->3 oct).
+        val charges = listOf(LocalDate.of(2026, 9, 30) to 800.0)
+        val periods = CreditCardPlanner.statementPeriods(3, LocalDate.of(2026, 10, 5), 2)
+        assertEquals(LocalDate.of(2026, 9, 3) to LocalDate.of(2026, 10, 3), periods[0])
+        val current = CreditCardPlanner.summarize("didi", 3, 23, charges, periods[0].second)
+        assertEquals(800.0, current.periodCharges, 0.0)
+        val older = CreditCardPlanner.summarize("didi", 3, 23, charges, periods[1].second)
+        assertEquals(0.0, older.periodCharges, 0.0)
+    }
 }

@@ -85,6 +85,25 @@ object CreditCardPlanner {
     ): List<T> =
         items.filter { !dateOf(it).isBefore(openCutoff) && !dateOf(it).isAfter(today) }
 
+    /**
+     * Periodos de estados de cuenta (prev, open), del más nuevo al más viejo.
+     * El historial es summarize() con today = cada corte: no duplica lógica.
+     */
+    fun statementPeriods(
+        cutoffDay: Int,
+        today: LocalDate,
+        count: Int = 6
+    ): List<Pair<LocalDate, LocalDate>> {
+        val periods = mutableListOf<Pair<LocalDate, LocalDate>>()
+        var open = lastCutoff(cutoffDay, today)
+        repeat(count.coerceAtLeast(1)) {
+            val prev = lastCutoff(cutoffDay, open.minusDays(1))
+            periods.add(prev to open)
+            open = prev
+        }
+        return periods
+    }
+
     fun summarize(
         cardId: String,
         cutoffDay: Int,

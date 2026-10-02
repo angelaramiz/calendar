@@ -20,8 +20,8 @@ android {
         applicationId = "com.fintrack.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 58
-        versionName = "1.0.52"
+        versionCode = 59
+        versionName = "1.0.53"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

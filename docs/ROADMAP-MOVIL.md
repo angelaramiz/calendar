@@ -210,3 +210,116 @@ aparta en su banco). Cierra el loop Flujos → Metas.
 Orden sugerido de construcción: MSI → Pronóstico de flujo (se alimentan) →
 Respaldo nube (asegura todo lo local antes de seguir creciendo) → Tandas →
 resto por antojo.
+
+---
+
+## D. Segunda oleada (12 ideas nuevas)
+
+Reutilizan lo que ya existe (cortes, tags, patrones, detector, Dedup) en vez de
+pedir datos nuevos. Prioridad y esfuerzo con la misma escala de arriba.
+
+### D1. ¿Con qué tarjeta pago? — P0, ~2 días
+Al comprar, la pregunta real es qué tarjeta conviene HOY. Con `cutoffDay` y
+`paymentDay` que ya guardas por tarjeta: días de gracia restantes si compras hoy
+(`paymentForCutoff` − hoy), MSI activo con promo, y regla de cashback por
+categoría (editable por tarjeta, ej. "Nu 2% en gasolina"). Respuesta:
+"Compra con Plata: pagas en 47 días; con Didi: en 12". Motor puro
+`CardRecommender` + tests con cortes cruzados de mes. Entrada: botón en
+QuickEntry ("¿con cuál?") y sección en Cuentas. Brilla más con MSI (A) hecho.
+
+### D2. Estrategia de deudas: bola de nieve vs avalancha — P0, ~3 días
+Suma TODO lo que debes (saldos de tarjetas + MSI activos + deudas personales si
+existe D8) y calcula tu **fecha de libertad** con los pagos actuales. Simulador:
+mismo excedente mensual repartido por menor saldo (nieve, gana rápido) vs mayor
+interés (avalancha, paga menos) — con CAT aproximado por tarjeta (dato editable,
+default 60%). Motor puro `DebtPlanner` + tests; UI en Presupuesto con tabla
+mes a mes y barra hasta la libertad. Es el feature "adulto" que hoy no existe.
+
+### D3. Reparto de quincena — P0, ~2 días
+Mitad del país vive de quincena en quincena. Al detectar/registrar la nómina,
+ritual de un toque: aparta fijos (renta + servicios del periodo) → deuda
+(mínimos + excedente según D2) → ahorro/meta → libre. Propone montos con los
+datos reales (servicios, pagos de tarjeta, topes) y registra el reparto como
+marcadores del periodo. `PaycheckPlanner` puro + tests con quincena 15/fin.
+El hábito financiero más valioso del roadmap.
+
+### D4. Aportaciones a metas — P1, ~2 días
+Las metas (Objetivos) hoy dicen si algo es factible, pero no registran progreso.
+`aportación(metaId, monto, fecha)` + barra `juntado/meta` + historial + "te
+faltan $X (~N quincenas)". Local en `GoalStore` (extiende el modelo, sin DDL).
+Cierra el loop con D3 (el apartado de ahorro cae aquí) y con C11.
+
+### D5. Vigilante: duplicados y subidas de precio — P1, ~2 días
+Dos anomalías con el mismo motor: (a) mismo comercio + mismo monto en <72h →
+"¿te cobraron doble en Liverpool?"; (b) cargo repetido de suscripción con monto
+mayor al histórico (Netflix 219→249) → "Netflix subió, ¿la conservas?".
+Push informativo (no bloquea nada), lista en Cuentas, descarte con un toque.
+Reutiliza transacciones + `SubscriptionDetector`. Tests de ventana 72h y de
+tolerancia (misma suscripción con centavos distintos no es subida).
+
+### D6. Límite diario ("hoy puedes gastar $X") — P1, ~1 día
+`(ingreso quincenal − fijos del periodo − apartado ahorro) / días restantes`,
+recalculado cada mañana y visible en Inicio bajo el balance. Si un gasto te
+pasa del día, aviso suave. `DailyAllowance` puro (3 tests). Simple y cambia
+conducta más que cualquier reporte.
+
+### D7. Importar CSV del banco + conciliación — P1, ~3 días
+BBVA/Banamex/Santander exportan movimientos en CSV/Excel con formatos distintos.
+Importar archivo → parser por banco (detector de formato por encabezados) →
+vista de conciliación: cada fila se acepta, se vincula a un registro existente
+(`OccurrenceLink` ya sabe comparar) o se descarta; `Dedup` evita dobles en
+re-imports. Solo lectura del archivo, todo local. El puente entre "app manual"
+y "banco real" sin APIs.
+
+### D8. Deudas personales y cuentas divididas — P1, ~3 días
+"Le presté $500 a Juan", "la cena $1200 entre 3". `PersonaDebt(quién, monto,
+dirección, fecha, parcialidades[])` + `SplitCheck(total, partes)`. Quién te debe
+/ a quién debes, abonos parciales, recordatorio de cobro amable a los N días.
+Local, con tests de saldos. Compañero natural de Tandas (C2): misma zona,
+distinto mecanismo.
+
+### D9. Pregunta a tus datos — P2, ~3 días
+"¿Cuánto gasté en tacos en marzo?", "¿cuánto me entró en agosto?" con plantillas
+en español sobre tus datos locales (categoría/comercio/mes × suma/promedio/top),
+sin LLM ni red: `QueryParser` (regex de intención + entidad) + ejecutor sobre
+transacciones. Responde en una tarjeta con la cifra y 3 ejemplos. Ambicioso pero
+factible; si una pregunta no matchea, lo dice (cero alucinaciones por diseño).
+
+### D10. Servicios anuales — P1, ~1 día
+Hoy los servicios son monthly/bimonthly; fuera quedan predial, verificación,
+tenencia, anualidades de tarjeta. Extender `ServiceBillStore.frequency` con
+`yearly` (+ fecha fija día/mes) y que `RemindersWorker` lo evalúe. Cambio
+pequeño, cierra un hueco real del modelo.
+
+### D11. Fuga hormiga semanal + rachas — P2, ~2 días
+Push del lunes: "Oxxo te llevó $340 esta semana (5 visitas)". Y rachas:
+"3 quincenas cerrando Comida bajo el tope 🎯" con conteo persistente local.
+Engagement barato sobre categorías y topes existentes; todo configurable en
+frecuencia (semanal/quincenal/off).
+
+### D12. Reporte mensual exportable — P2, ~2 días
+PDF de una página: ingresos/gastos/neto, top categorías, tarjetas (pagado vs
+ciclo), servicios, MSI activos y pronóstico. Generación local (Android
+`PdfDocument`, sin librerías), botón compartir. Útil para contador, pareja o
+tu yo de diciembre. Requiere C1/D4 hechos para que el reporte tenga sustancia.
+
+## Matriz segunda oleada
+
+| Feature | Prioridad | Esfuerzo | Depende de |
+|---|---|---|---|
+| ¿Con qué tarjeta pago? | P0 | 2 días | mejor con MSI |
+| Deudas nieve vs avalancha | P0 | 3 días | MSI + D8 |
+| Reparto de quincena | P0 | 2 días | D2 para excedente |
+| Aportaciones a metas | P1 | 2 días | nada |
+| Vigilante duplicados/subidas | P1 | 2 días | nada |
+| Límite diario | P1 | 1 día | nada |
+| Importar CSV + conciliar | P1 | 3 días | Dedup existente |
+| Deudas personales/divididas | P1 | 3 días | nada |
+| Pregunta a tus datos | P2 | 3 días | nada |
+| Servicios anuales | P1 | 1 día | nada |
+| Fuga hormiga + rachas | P2 | 2 días | nada |
+| Reporte PDF | P2 | 2 días | C1 + D4 |
+
+Orden sugerido global actualizado: MSI → Pronóstico de flujo → **¿Con qué
+tarjeta? + Reparto de quincena** (usan lo anterior) → Respaldo nube → Deudas
+(nieve/avalancha + personales) → Tandas → resto.

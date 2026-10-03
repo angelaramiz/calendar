@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <external-files-path name="downloads" path="Download/" />
+    <!-- C9 OCR: fotos de tickets en almacenamiento interno (FileProvider
+         para el intent TakePicture; jamás salen del equipo). -->
+    <files-path name="tickets" path="tickets/" />
 </paths>

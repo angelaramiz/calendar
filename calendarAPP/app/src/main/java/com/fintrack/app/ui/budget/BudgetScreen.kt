@@ -471,6 +471,18 @@ fun BudgetScreen(
             }
             // === Fin región D2. ===
 
+            // === Región D9 (pregunta a tus datos): al FINAL, no reordenar. ===
+            item {
+                SectionHeader(title = "Pregunta a tus datos", subtitle = "Respuestas sobre tus registros")
+            }
+            item {
+                DataQuerySection(
+                    transactions = uiState.allTransactions,
+                    goals = uiState.goals
+                )
+            }
+            // === Fin región D9. ===
+
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }
     }

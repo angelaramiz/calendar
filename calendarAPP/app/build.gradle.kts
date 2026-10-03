@@ -60,6 +60,34 @@ android {
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
+// Tren Compose pineado al BOM 2024.06 (1.6.8): ML Kit publica constraints que
+// empujan foundation a 1.7.0 y runtime/ui a 1.9.0 sobre material3 1.2.1 y eso
+// crashea en prefetch Lazy (FATAL: clickable solo acepta IndicationNodeFactory
+// de su mismo tren, PlatformRipple incompatible). force() restaura el estado
+// conocido-bueno previo a ML Kit; si OCR llegara a necesitar foundation 1.7.0
+// se verá como NoClassDefFound al probar cámara en dispositivo real.
+configurations.all {
+    resolutionStrategy {
+        force(
+            "androidx.compose.animation:animation:1.6.8",
+            "androidx.compose.animation:animation-core:1.6.8",
+            "androidx.compose.foundation:foundation:1.6.8",
+            "androidx.compose.foundation:foundation-layout:1.6.8",
+            "androidx.compose.material:material:1.6.8",
+            "androidx.compose.material:material-ripple:1.6.8",
+            "androidx.compose.material:material-icons-core:1.6.8",
+            "androidx.compose.runtime:runtime:1.6.8",
+            "androidx.compose.runtime:runtime-saveable:1.6.8",
+            "androidx.compose.ui:ui:1.6.8",
+            "androidx.compose.ui:ui-geometry:1.6.8",
+            "androidx.compose.ui:ui-graphics:1.6.8",
+            "androidx.compose.ui:ui-text:1.6.8",
+            "androidx.compose.ui:ui-unit:1.6.8",
+            "androidx.compose.ui:ui-util:1.6.8"
+        )
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -105,6 +133,15 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.2")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+    // C7 widget: Glance 1.1.1 ABORTADO — sube foundation a 1.7.0 y runtime/ui
+    // a 1.9.0 sobre el BOM 2024.06 (material3 1.2.1) y eso crashea los
+    // clickables en prefetch (PlatformRipple vs IndicationNodeFactory).
+    // Subir el tren Compose está prohibido en esta oleada, así que el widget
+    // es el clásico (RemoteViews, cero dependencias nuevas).
+    // C9 OCR: ML Kit Text Recognition 16.0.1 on-device (modelo latino
+    // empaquetado, sin red, sin KSP/Hilt/Room: AAR plano). minSdk 21 <= 26.
+    // Compatible Kotlin 2.4.0 / AGP 8.7.3.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")

@@ -40,9 +40,14 @@ import com.fintrack.app.ui.watch.AnomalyWatchCard
 import com.fintrack.app.ui.watch.HormigaFreqSetting
 import com.fintrack.app.ui.watch.StreakCard
 import kotlinx.coroutines.launch
+import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.domain.CsvImport
+import com.fintrack.app.ui.dashboard.DashboardViewModel
+import com.fintrack.app.ui.import.CsvImportEntry
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.common.PullRefreshLayout
@@ -291,6 +296,41 @@ fun AccountsScreen(
             item { HormigaFreqSetting() }
             item { StreakCard() }
             // === Fin D5/D11. ===
+
+            // === Región D7 (importar CSV del banco + conciliación). ===
+            // Entrada al final con navegación interna por estado local (sin
+            // ruta nueva en NavGraph): picker SAF sin permisos; aceptar crea
+            // vía DashboardViewModel.addTransaction, vincular usa
+            // OccurrenceLink/CsvImport.exactMatch, Dedup evita re-imports.
+            item {
+                SectionHeader(title = "Importar CSV", subtitle = "Concilia tu banco")
+            }
+            item {
+                val activity = LocalContext.current as ComponentActivity
+                val dashVm: DashboardViewModel =
+                    koinViewModel(viewModelStoreOwner = activity)
+                CsvImportEntry(
+                    existing = uiState.allTransactions,
+                    onAccept = { candidate ->
+                        val zone = java.time.ZoneId.systemDefault()
+                        dashVm.addTransaction(
+                            TransactionEntity(
+                                amount = candidate.amount,
+                                type = if (candidate.isIncome) "INCOME" else "EXPENSE",
+                                category = CsvImport.toOccurrence(candidate).pattern.category,
+                                description = candidate.concept,
+                                timestamp = java.time.LocalDate.parse(candidate.dateIso)
+                                    .atStartOfDay(zone).toInstant().toEpochMilli() +
+                                    12 * 3600 * 1000,
+                                source = "CSV"
+                            ),
+                            null,
+                            null
+                        )
+                    }
+                )
+            }
+            // === Fin región D7. ===
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }

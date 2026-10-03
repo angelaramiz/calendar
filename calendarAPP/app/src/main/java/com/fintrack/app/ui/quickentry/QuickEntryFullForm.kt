@@ -1,20 +1,30 @@
 package com.fintrack.app.ui.quickentry
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.TransactionCategories
+import com.fintrack.app.domain.VoiceExpenseParser
 
 /**
  * Formulario completo de registro rápido en una sola pantalla
@@ -78,6 +88,67 @@ fun QuickEntryFullForm(
             if (isIncome) "Ingreso rápido" else "Gasto rápido",
             style = MaterialTheme.typography.headlineSmall
         )
+        // === Zona voz (C8): dictado del sistema, pre-llena para confirmar. ===
+        // Usa RECOGNIZE_SPEECH del sistema (sin permiso extra): el parser
+        // sugiere monto + categoría y el usuario guarda con un toque.
+        var voiceError by remember { mutableStateOf<String?>(null) }
+        val context = LocalContext.current
+        val voiceLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { res ->
+            if (res.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+            val spoken = res.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+            if (spoken.isNullOrBlank()) {
+                voiceError = "No se entendió, intenta de nuevo."
+                return@rememberLauncherForActivityResult
+            }
+            val parsed = VoiceExpenseParser.parse(spoken)
+            parsed.amount?.let { v ->
+                amount = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+            }
+            type = if (parsed.isIncome) "INCOME" else "EXPENSE"
+            category = parsed.category
+            description = spoken
+            voiceError = if (parsed.amount == null) "Anota el monto a mano." else null
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, "es-MX")
+                    putExtra(RecognizerIntent.EXTRA_PROMPT, "Di tu gasto: ej. gasté 200 en tacos")
+                }
+                try {
+                    voiceLauncher.launch(intent)
+                } catch (e: ActivityNotFoundException) {
+                    voiceError = "Este teléfono no tiene dictado por voz."
+                }
+            }) {
+                Icon(Icons.Filled.Mic, contentDescription = "Dictar gasto")
+            }
+            Text(
+                "o dicta tu gasto",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        voiceError?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        // === Fin zona voz. ===
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth()) {

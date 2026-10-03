@@ -66,6 +66,17 @@ fun DashboardScreen(
         viewModel.checkCloudBackupOnStart(context.applicationContext)
     }
 
+    // Widget Glance (§C7): actualiza el balance de hoy cuando cambia;
+    // sin widget puesto no hace nada.
+    LaunchedEffect(uiState.currentBalance) {
+        runCatching {
+            com.fintrack.app.ui.widget.WidgetRefresher.refresh(
+                context.applicationContext,
+                uiState.currentBalance
+            )
+        }
+    }
+
     // Bloqueo estilo banco: sin sesión pero con credenciales guardadas, la
     // huella desbloquea y sincroniza la cola sin pedir contraseña.
     if (uiState.needsLogin && uiState.canUnlockWithBiometrics) {

@@ -25,9 +25,21 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.AnomalyDismissStore
+import com.fintrack.app.domain.Anomaly
+import com.fintrack.app.domain.AnomalyChecker
+import com.fintrack.app.ui.watch.AnomalyWatchCard
+import com.fintrack.app.ui.watch.HormigaFreqSetting
+import com.fintrack.app.ui.watch.StreakCard
+import kotlinx.coroutines.launch
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -69,6 +81,19 @@ fun AccountsScreen(
             viewModel.clearInfo()
         }
     }
+
+    // === Vigilante (D5): anomalías calculadas sobre lo cargado, menos descartes. ===
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var anomalies by remember { mutableStateOf<List<Anomaly>>(emptyList()) }
+    LaunchedEffect(uiState.allTransactions) {
+        val dismissed = runCatching {
+            AnomalyDismissStore(context.applicationContext).snapshot()
+        }.getOrDefault(emptySet())
+        anomalies = AnomalyChecker.check(uiState.allTransactions)
+            .filter { it.stableId !in dismissed }
+    }
+    // === Fin D5. ===
 
     Scaffold(
         topBar = {
@@ -191,7 +216,19 @@ fun AccountsScreen(
                     onUntag = { viewModel.untagCharge(it) },
                     onPay = { cardId, cutoffIso, amount ->
                         viewModel.recordCardPayment(cardId, cutoffIso, amount)
+                    },
+                    // === Región A (MSI): planes por tarjeta + pasar cargos a MSI. ===
+                    // El primer corte siempre es el próximo corte de la tarjeta.
+                    msiPlans = uiState.msiPlans,
+                    onMsiCrear = { cardId, concepto, monto, meses ->
+                        viewModel.pasarCargoAMsi(cardId, concepto, monto, meses)
+                    },
+                    onMsiLiquidar = { viewModel.liquidarMsi(it) },
+                    onMsiEliminar = { viewModel.deleteMsi(it) },
+                    onPasarAMsi = { cardId, concepto, monto, meses ->
+                        viewModel.pasarCargoAMsi(cardId, concepto, monto, meses)
                     }
+                    // === Fin región A. ===
                 )
             }
 
@@ -219,6 +256,41 @@ fun AccountsScreen(
                     onCreate = { viewModel.createSubscriptionPattern(it) }
                 )
             }
+
+            // === Región D8 (deudas personales): grupo "Personas" al final. ===
+            item {
+                SectionHeader(title = "Personas", subtitle = "Quién te debe / a quién debes")
+            }
+            item {
+                PersonDebtsCard(
+                    debts = uiState.personDebts,
+                    onSave = { id, nombre, monto, esMia, fecha ->
+                        viewModel.savePersonDebt(id, nombre, monto, esMia, fecha)
+                    },
+                    onDelete = { viewModel.deletePersonDebt(it) },
+                    onAbono = { debtId, amount -> viewModel.addPersonAbono(debtId, amount) },
+                    onLiquidar = { viewModel.liquidarPersonDebt(it) }
+                )
+            }
+            // === Fin región D8. ===
+
+            // === Vigilante (D5) + Fuga/Rachas (D11) al final de Cuentas. ===
+            item {
+                SectionHeader(title = "Vigilante", subtitle = "Duplicados y subidas")
+            }
+            item {
+                AnomalyWatchCard(anomalies = anomalies) { id ->
+                    scope.launch {
+                        runCatching {
+                            AnomalyDismissStore(context.applicationContext).dismiss(id)
+                        }
+                        anomalies = anomalies.filterNot { it.stableId == id }
+                    }
+                }
+            }
+            item { HormigaFreqSetting() }
+            item { StreakCard() }
+            // === Fin D5/D11. ===
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }

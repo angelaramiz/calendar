@@ -296,6 +296,37 @@ fun DashboardScreen(
                 )
             }
 
+            // D6 Límite diario (§D6): visible bajo el balance.
+            item {
+                DailyAllowanceCard(
+                    gastoHoy = uiState.totalExpenses,
+                    cards = uiState.cards,
+                    cardCharges = uiState.cardCharges,
+                    transactions = uiState.recentTransactions
+                )
+            }
+
+            // D3 Reparto de quincena (§D3): ritual de un toque al detectar nómina.
+            item {
+                PaycheckRitualCard(
+                    transactions = uiState.recentTransactions,
+                    cards = uiState.cards,
+                    cardCharges = uiState.cardCharges,
+                    onRegistrarIngreso = { ingreso ->
+                        viewModel.addTransaction(
+                            com.fintrack.app.data.model.TransactionEntity(
+                                amount = ingreso,
+                                type = "INCOME",
+                                category = "Otros",
+                                description = "Quincena"
+                            ),
+                            null,
+                            null
+                        )
+                    }
+                )
+            }
+
             // Transactions Header
             item {
                 Text("Transacciones de hoy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -368,6 +399,306 @@ fun DashboardScreen(
             }
         }
     }
+}
+
+@Composable
+private fun DailyAllowanceCard(
+    gastoHoy: Double,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    cardCharges: Map<String, String>,
+    transactions: List<com.fintrack.app.data.model.TransactionEntity>
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val anchorStore = remember { com.fintrack.app.data.AllowanceAnchorStore(context) }
+    val billStore = remember { com.fintrack.app.data.ServiceBillStore(context) }
+    val ingreso by anchorStore.biweeklyIncome.collectAsState(initial = null)
+    val ahorro by anchorStore.savingsShare.collectAsState(initial = 0.0)
+    val bills by billStore.bills.collectAsState(initial = emptyList())
+    val today = remember { java.time.LocalDate.now(java.time.ZoneId.systemDefault()) }
+    val period = remember(today) { com.fintrack.app.domain.DailyAllowance.periodFor(today) }
+    val dias = remember(today) { com.fintrack.app.domain.DailyAllowance.daysRemaining(today) }
+    val fijos = remember(bills, cards, transactions, today) {
+        fijosQuincena(bills, cards, cardCharges, transactions, today, period.start, period.end)
+    }
+    val fijosTotal = fijos.servicios + fijos.minimosPorTarjeta.values.sum()
+    val limite = remember(ingreso, fijosTotal, ahorro, dias) {
+        com.fintrack.app.domain.DailyAllowance.calculate(ingreso, fijosTotal, ahorro, dias)
+    }
+    var editando by remember { mutableStateOf(false) }
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Límite diario", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (limite == null) {
+                Text(
+                    "Define tu ingreso por quincena y te digo cuánto puedes gastar hoy.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    "Hoy puedes gastar $${String.format("%.2f", limite)}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Quedan $dias días · Fijos $${String.format("%.2f", fijosTotal)} · Ahorro $${String.format("%.2f", ahorro)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (com.fintrack.app.domain.DailyAllowance.overDay(gastoHoy, limite)) {
+                    Text(
+                        "Te pasaste del día por $${String.format("%.2f", gastoHoy - limite)}: mañana ajusta suave.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (editando) {
+                AllowanceAnchorEditor(
+                    ingresoInicial = ingreso,
+                    ahorroInicial = ahorro,
+                    onGuardar = { nuevoIngreso, nuevoAhorro ->
+                        scope.launch {
+                            anchorStore.setIncome(nuevoIngreso)
+                            anchorStore.setSavingsShare(nuevoAhorro)
+                            editando = false
+                        }
+                    },
+                    onCancelar = { editando = false }
+                )
+            } else {
+                TextButton(onClick = { editando = true }) {
+                    Text(if (limite == null) "Definir ingreso quincenal" else "Ajustar ingreso")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AllowanceAnchorEditor(
+    ingresoInicial: Double?,
+    ahorroInicial: Double,
+    onGuardar: (Double?, Double) -> Unit,
+    onCancelar: () -> Unit
+) {
+    var ingresoText by remember(ingresoInicial) {
+        mutableStateOf(ingresoInicial?.let { String.format("%.0f", it) } ?: "")
+    }
+    var ahorroText by remember(ahorroInicial) {
+        mutableStateOf(if (ahorroInicial > 0.0) String.format("%.0f", ahorroInicial) else "")
+    }
+    OutlinedTextField(
+        value = ingresoText,
+        onValueChange = { ingresoText = it.filter { c -> c.isDigit() } },
+        label = { Text("Ingreso por quincena") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        value = ahorroText,
+        onValueChange = { ahorroText = it.filter { c -> c.isDigit() } },
+        label = { Text("Apartado de ahorro (a tu meta)") },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = {
+            onGuardar(ingresoText.toDoubleOrNull(), ahorroText.toDoubleOrNull() ?: 0.0)
+        }) { Text("Guardar") }
+        TextButton(onClick = onCancelar) { Text("Cancelar") }
+    }
+}
+
+@Composable
+private fun PaycheckRitualCard(
+    transactions: List<com.fintrack.app.data.model.TransactionEntity>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    cardCharges: Map<String, String>,
+    onRegistrarIngreso: (Double) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val billStore = remember { com.fintrack.app.data.ServiceBillStore(context) }
+    val anchorStore = remember { com.fintrack.app.data.AllowanceAnchorStore(context) }
+    val paycheckStore = remember { com.fintrack.app.data.PaycheckStore(context) }
+    val bills by billStore.bills.collectAsState(initial = emptyList())
+    val ingresoAncla by anchorStore.biweeklyIncome.collectAsState(initial = null)
+    val ahorroAncla by anchorStore.savingsShare.collectAsState(initial = 0.0)
+    val ultimo by paycheckStore.last.collectAsState(initial = null)
+    val today = remember { java.time.LocalDate.now(java.time.ZoneId.systemDefault()) }
+    val (periodStart, periodEnd) = remember(today) {
+        com.fintrack.app.domain.PaycheckPlanner.periodFor(today)
+    }
+    val nominaHoy = remember(transactions) {
+        transactions.filter { it.isIncomeType() }.sumOf { it.amount }
+    }
+    var ingresoText by remember(nominaHoy, ingresoAncla) {
+        mutableStateOf(
+            (if (nominaHoy > 0.0) nominaHoy else ingresoAncla)?.let { String.format("%.0f", it) } ?: ""
+        )
+    }
+    var ahorroText by remember(ahorroAncla) {
+        mutableStateOf(if (ahorroAncla > 0.0) String.format("%.0f", ahorroAncla) else "")
+    }
+    var plan by remember { mutableStateOf<com.fintrack.app.domain.PaycheckPlanner.PaycheckPlan?>(null) }
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Reparto de quincena", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (nominaHoy > 0.0) {
+                Text(
+                    "Detectamos ingreso de $${String.format("%.2f", nominaHoy)} hoy: repártelo en un toque.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Text(
+                    "Cuando llegue tu nómina, repártela en un toque: fijos, deuda, ahorro y libre.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            OutlinedTextField(
+                value = ingresoText,
+                onValueChange = { ingresoText = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Ingreso de la quincena") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = ahorroText,
+                onValueChange = { ahorroText = it.filter { c -> c.isDigit() || c == '.' } },
+                label = { Text("Ahorro a tu meta") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Button(onClick = {
+                val ingreso = ingresoText.toDoubleOrNull() ?: 0.0
+                val fijos = fijosQuincena(bills, cards, cardCharges, transactions, today, periodStart, periodEnd)
+                plan = com.fintrack.app.domain.PaycheckPlanner.plan(
+                    com.fintrack.app.domain.PaycheckPlanner.PaycheckInput(
+                        ingreso = ingreso,
+                        serviciosTotal = fijos.servicios,
+                        minimosTarjetas = fijos.minimosPorTarjeta,
+                        ahorroMeta = ahorroText.toDoubleOrNull() ?: 0.0,
+                        periodStart = periodStart,
+                        periodEnd = periodEnd
+                    )
+                )
+            }) { Text("Repartir") }
+            plan?.let { p ->
+                Text(
+                    "Fijos $${String.format("%.2f", p.fijos)} · Mínimos $${String.format("%.2f", p.minimosTotal)}" +
+                        " · Extra deuda $${String.format("%.2f", p.extraTotal)}" +
+                        " · Ahorro $${String.format("%.2f", p.ahorro)}" +
+                        " · Libre $${String.format("%.2f", p.libre)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                p.markers.forEach { marker ->
+                    Text(
+                        "· $marker",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (p.ahorro > 0.0) {
+                    Text(
+                        "Apártalo con Aportar en Presupuesto → Objetivos.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        scope.launch {
+                            paycheckStore.save(
+                                com.fintrack.app.data.PaycheckSnapshot(
+                                    fechaIso = today.toString(),
+                                    ingreso = ingresoText.toDoubleOrNull() ?: 0.0,
+                                    fijos = p.fijos,
+                                    minimos = p.minimosTotal,
+                                    extraDeuda = p.extraTotal,
+                                    ahorro = p.ahorro,
+                                    libre = p.libre,
+                                    markers = p.markers
+                                )
+                            )
+                        }
+                    }) { Text("Guardar reparto") }
+                    if (nominaHoy <= 0.0) {
+                        TextButton(onClick = {
+                            (ingresoText.toDoubleOrNull() ?: 0.0).takeIf { it > 0.0 }?.let {
+                                onRegistrarIngreso(it)
+                            }
+                        }) { Text("Registrar ingreso") }
+                    }
+                }
+            }
+            ultimo?.let { u ->
+                Text(
+                    "Último reparto (${u.fechaIso}): libre $${String.format("%.2f", u.libre)}.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private data class FijosQuincena(
+    val servicios: Double,
+    val minimosPorTarjeta: Map<String, Double>
+)
+
+/**
+ * Fijos de la quincena con motores existentes: servicios del periodo
+ * ([ServiceBills.duesInRange], excluye vencimientos ya marcados pagados)
+ * + mínimos de tarjetas ([DailyAllowance.cardMinimums] sobre
+ * [CreditCardPlanner.summarize]). Inicio solo ve los movimientos de hoy,
+ * así que los mínimos son un piso parcial: el exacto vive en Cuentas.
+ */
+private fun fijosQuincena(
+    bills: List<com.fintrack.app.data.ServiceBillRow>,
+    cards: List<com.fintrack.app.data.CreditCardRow>,
+    cardCharges: Map<String, String>,
+    transactions: List<com.fintrack.app.data.model.TransactionEntity>,
+    today: java.time.LocalDate,
+    start: java.time.LocalDate,
+    end: java.time.LocalDate
+): FijosQuincena {
+    val period = com.fintrack.app.domain.DailyAllowance.PayPeriod(start, end)
+    val dues = bills.flatMap { bill ->
+        com.fintrack.app.domain.ServiceBills.duesInRange(
+            bill.dueDay, bill.frequency, start, end, bill.dueMonth
+        )
+            .filterNot { due ->
+                com.fintrack.app.domain.ServiceBills.isPaidFor(bill.lastPaidDueIso, due)
+            }
+            .map { due -> due to bill.estimatedAmount }
+    }
+    val servicios = com.fintrack.app.domain.DailyAllowance.servicesInPeriod(dues, period)
+    val porTarjeta = mutableMapOf<String, MutableList<Pair<java.time.LocalDate, Double>>>()
+    transactions.forEach { tx ->
+        val cardId = cardCharges["tx:${tx.id}"] ?: return@forEach
+        porTarjeta.getOrPut(cardId) { mutableListOf() }.add(today to tx.amount)
+    }
+    val minimos = com.fintrack.app.domain.DailyAllowance.cardMinimums(
+        cards.map {
+            com.fintrack.app.domain.DailyAllowance.CardMinInput(
+                cardId = it.id,
+                cutoffDay = it.cutoffDay,
+                paymentDay = it.paymentDay,
+                graceDays = it.graceDays
+            )
+        },
+        porTarjeta,
+        emptyMap(),
+        today
+    )
+    return FijosQuincena(servicios = servicios, minimosPorTarjeta = minimos)
 }
 
 @Composable

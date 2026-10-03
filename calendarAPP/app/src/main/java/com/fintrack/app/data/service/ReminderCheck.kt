@@ -1,9 +1,14 @@
 package com.fintrack.app.data.service
 
 import android.content.Context
+import com.fintrack.app.data.AnomalyDismissStore
+import com.fintrack.app.data.BudgetCapsStore
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.HormigaFrequency
+import com.fintrack.app.data.HormigaStore
 import com.fintrack.app.data.ReminderStore
+import com.fintrack.app.data.StreakStore
 import com.fintrack.app.data.ServiceBillRow
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.remote.AuthRepository
@@ -11,9 +16,16 @@ import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
 import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.CreditCardPlanner
+import com.fintrack.app.domain.Anomaly
+import com.fintrack.app.domain.AnomalyChecker
+import com.fintrack.app.domain.AnomalyKind
+import com.fintrack.app.domain.HormigaDetector
+import com.fintrack.app.domain.HormigaReport
+import com.fintrack.app.domain.StreakPlanner
 import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.ServiceBills
 import com.fintrack.app.domain.toLocalDateIn
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -34,7 +46,11 @@ data class ReminderReport(
     /** Eventos del calendario de hoy (nombre, monto). */
     val todayEvents: List<Pair<String, Double>>,
     /** false = sin sesión: los eventos (y cortes) se omitieron. */
-    val sessionOk: Boolean
+    val sessionOk: Boolean,
+    /** D5: duplicados y subidas sin descartar. */
+    val anomalies: List<Anomaly> = emptyList(),
+    /** D11: fuga hormiga de la semana en curso (lun-hoy). */
+    val hormiga: HormigaReport? = null
 )
 
 /**
@@ -81,6 +97,8 @@ object ReminderCheck {
         var sessionOk = false
         val events = mutableListOf<Pair<String, Double>>()
         var cuts: List<CreditCardPlanner.CutoffAlert> = emptyList()
+        var anomalies: List<Anomaly> = emptyList()
+        var hormiga: HormigaReport? = null
         runCatching {
             val userId = AuthRepository().ensureSession()
             if (userId != null) {
@@ -120,6 +138,27 @@ object ReminderCheck {
                         byCard, today
                     )
                 }.getOrDefault(emptyList())
+                // D5 + D11: vigilante y fuga hormiga sobre las mismas
+                // transacciones (nada nuevo que pedir, todo local + cache).
+                runCatching {
+                    val txs = TransactionRepository().getTransactions(userId)
+                    val dismissed = AnomalyDismissStore(context).snapshot()
+                    anomalies = AnomalyChecker.check(txs)
+                        .filter { it.stableId !in dismissed }
+                    val monday = today.with(DayOfWeek.MONDAY)
+                    hormiga = HormigaDetector.topHormiga(txs, monday, today)
+                    // Rachas: al cerrar quincena se registra bajo-tope/sobre-tope.
+                    val closing = StreakPlanner.closingFortnight(today)
+                    if (closing != null) {
+                        val caps = BudgetCapsStore(context).snapshot()
+                        val under = StreakPlanner.underCaps(
+                            txs, caps, closing.first, closing.second
+                        )
+                        StreakStore(context).recordPeriod(
+                            StreakPlanner.periodKey(closing.second), under
+                        )
+                    }
+                }
             }
         }
 
@@ -133,7 +172,9 @@ object ReminderCheck {
             nextCardIn = nextCardIn,
             cutsDue = cuts,
             todayEvents = events,
-            sessionOk = sessionOk
+            sessionOk = sessionOk,
+            anomalies = anomalies,
+            hormiga = hormiga
         )
     }
 
@@ -204,6 +245,52 @@ object ReminderCheck {
             }
         }
 
+        // D5: vigilante informativo (mismo canal, dedup `anom_`, respeta
+        // silencio: si las notificaciones estan apagadas no sale nada).
+        report.anomalies.forEach { anomaly ->
+            val key = "anom:${anomaly.stableId}:$slot"
+            if (key !in reminded) {
+                val title = if (anomaly.kind == AnomalyKind.DUPLICATE) {
+                    "Posible cobro doble en ${anomaly.merchant}"
+                } else {
+                    "${anomaly.merchant} subio de precio"
+                }
+                RemindersNotifier.show(context, key, title, anomaly.detail)
+                fresh.add(key)
+            }
+        }
+
+        // D11: fuga hormiga solo el lunes, segun frecuencia y sin repetir semana.
+        report.hormiga?.let { h ->
+            if (h.visits > 0) {
+                val store = HormigaStore(context)
+                val freq = runCatching { store.frequency() }
+                    .getOrDefault(HormigaFrequency.SEMANAL)
+                val weekKey = h.from.toString()
+                val last = runCatching { store.lastSentWeek() }.getOrNull()
+                val isMonday = report.today.dayOfWeek == DayOfWeek.MONDAY
+                val weeksSinceEpoch = ChronoUnit.WEEKS.between(
+                    LocalDate.of(1970, 1, 5), h.from
+                )
+                val due = when (freq) {
+                    HormigaFrequency.OFF -> false
+                    HormigaFrequency.SEMANAL -> isMonday && last != weekKey
+                    HormigaFrequency.QUINCENAL -> isMonday && last != weekKey &&
+                        weeksSinceEpoch % 2L == 0L
+                }
+                val key = "hormiga:$weekKey:$slot"
+                if (due && key !in reminded) {
+                    RemindersNotifier.show(
+                        context, key,
+                        "${h.merchant.replaceFirstChar { it.uppercase() }} te llevo $${h.total.toInt()}",
+                        "Van ${h.visits} visitas esta semana. Rachas y topes en Presupuesto."
+                    )
+                    fresh.add(key)
+                    runCatching { store.markSent(weekKey) }
+                }
+            }
+        }
+
         runCatching { ReminderStore(context).markReminded(fresh) }
         return fresh.size
     }
@@ -226,7 +313,14 @@ object ReminderCheck {
         val cuts = if (!report.sessionOk) "omitidos (sin sesión)"
         else if (report.cutsDue.isEmpty()) "ninguno en 3 días"
         else report.cutsDue.joinToString { "${it.cardName} ($${it.cycleTotal.toInt()})" }
-        return "Revisado: recibos: $bills; tarjetas: $cards; cortes: $cuts; eventos: $events. " +
-            "Avisos enviados: $fired."
+        val anomalies = if (!report.sessionOk) "omitidas (sin sesión)"
+        else if (report.anomalies.isEmpty()) "ninguna"
+        else report.anomalies.joinToString { it.merchant }
+        val hormiga = report.hormiga
+            ?.takeIf { it.visits > 0 }
+            ?.let { "${it.merchant} $${it.total.toInt()} (${it.visits} visitas)" }
+            ?: "sin fuga"
+        return "Revisado: recibos: $bills; tarjetas: $cards; cortes: $cuts; eventos: $events; " +
+            "anomalías: $anomalies; hormiga: $hormiga. Avisos enviados: $fired."
     }
 }

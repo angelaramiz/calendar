@@ -40,18 +40,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.domain.BudgetPlanner
 import com.fintrack.app.domain.CashPlan
 import com.fintrack.app.domain.CategoryBudget
 import com.fintrack.app.domain.CreditPlan
 import com.fintrack.app.domain.GoalVerdict
 import com.fintrack.app.domain.MonthProjection
 import com.fintrack.app.domain.SavingsGoal
+import com.fintrack.app.domain.SpendingHeatmap
 import com.fintrack.app.domain.toLocalDateIn
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.theme.expenseColor
 import com.fintrack.app.ui.theme.incomeColor
 import org.koin.androidx.compose.koinViewModel
+import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
 
@@ -335,6 +339,39 @@ fun BudgetScreen(
                                     Text(goal.name, fontWeight = FontWeight.SemiBold)
                                     Text(formatMoney(goal.price), fontWeight = FontWeight.Bold)
                                 }
+                                val juntado = goal.aportado
+                                val falta = (goal.price - juntado).coerceAtLeast(0.0)
+                                val progreso = com.fintrack.app.domain.GoalContributions.progreso(goal)
+                                LinearProgressIndicator(
+                                    progress = { progreso },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Text(
+                                    "Juntado: ${formatMoney(juntado)} de ${formatMoney(goal.price)}" +
+                                        if (falta <= 0.0) " · ¡Meta juntada!"
+                                        else " · te faltan ${formatMoney(falta)}" + run {
+                                            val quincenal =
+                                                (uiState.shortTerm?.estimatedSavings ?: 0.0) / 2.0
+                                            val n = com.fintrack.app.domain.GoalContributions
+                                                .quincenasRestantes(goal, quincenal)
+                                            if (n != null) " (~$n quincenas)" else ""
+                                        },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                var aporteModo by remember(goal.id) { mutableStateOf<String?>(null) }
+                                aporteModo?.let { modo ->
+                                    AportacionDialog(
+                                        titulo = if (modo == "retiro") "Retirar de ${goal.name}"
+                                        else "Aportar a ${goal.name}",
+                                        onDismiss = { aporteModo = null },
+                                        onSave = { monto ->
+                                            if (modo == "retiro") viewModel.withdrawContribution(goal.id, monto)
+                                            else viewModel.addContribution(goal.id, monto)
+                                            aporteModo = null
+                                        }
+                                    )
+                                }
                                 Text(
                                     "Contado: " + if (cash.monthsNeeded == null) {
                                         "inviable por ahora"
@@ -378,6 +415,22 @@ fun BudgetScreen(
                                         Text("Eliminar")
                                     }
                                 }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    TextButton(onClick = { aporteModo = "aporto" }) {
+                                        Text("Aportar")
+                                    }
+                                    TextButton(onClick = { aporteModo = "retiro" }) {
+                                        Text("Retirar")
+                                    }
+                                    if (goal.aportaciones.isNotEmpty()) {
+                                        Text(
+                                            "${goal.aportaciones.size} movimientos",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.align(Alignment.CenterVertically)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -393,6 +446,30 @@ fun BudgetScreen(
                     }
                 }
             }
+
+            // C6: comparativa "este mes vs anterior" por categoría, al final.
+            item {
+                SectionHeader(title = "Este mes vs anterior", subtitle = "Por categoría")
+            }
+            item {
+                MonthOverMonthCard(
+                    currentMonth = uiState.currentMonth,
+                    transactions = uiState.allTransactions
+                )
+            }
+
+            // === Región D2 (estrategia de deudas): nieve vs avalancha, al FINAL. ===
+            item {
+                SectionHeader(title = "Estrategia de deudas", subtitle = "Nieve vs avalancha")
+            }
+            item {
+                DebtStrategySection(
+                    deudas = viewModel.deudasParaEstrategia(),
+                    cards = uiState.debtCards,
+                    onSetCat = { cardId, cat -> viewModel.setCardCat(cardId, cat) }
+                )
+            }
+            // === Fin región D2. ===
 
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }
@@ -671,12 +748,69 @@ private fun GoalDetailCard(
                     "${formatMoney(credit.totalCost)}. El credito te cuesta ${formatMoney(extraCost)} mas.",
                 fontWeight = FontWeight.Bold
             )
+            Text("Aportaciones", fontWeight = FontWeight.Bold)
+            val juntadoDetalle = goal.aportado
+            LinearProgressIndicator(
+                progress = { com.fintrack.app.domain.GoalContributions.progreso(goal) },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text("Juntado: ${formatMoney(juntadoDetalle)} de ${formatMoney(goal.price)}")
+            if (goal.aportaciones.isEmpty()) {
+                Text(
+                    "Aun sin aportaciones. Usa Aportar en la tarjeta del objetivo.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                goal.aportaciones.takeLast(10).reversed().forEach { aporte ->
+                    val signo = if (aporte.monto >= 0) "+" else "−"
+                    Text(
+                        "${aporte.fechaIso}: $signo${formatMoney(kotlin.math.abs(aporte.monto))}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
+private fun AportacionDialog(
+    titulo: String,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var montoText by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(titulo) },
+        text = {
+            OutlinedTextField(
+                value = montoText,
+                onValueChange = { raw ->
+                    montoText = raw.filter { it.isDigit() || it == '.' || it == ',' }
+                },
+                label = { Text("Monto") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                val monto = montoText.replace(".", "").replace(",", "").toDoubleOrNull() ?: 0.0
+                if (monto > 0.0) onSave(monto)
+            }) { Text("Guardar") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancelar") }
+        }
+    )
+}
+@Composable
 private fun MonthProjectionCard(projection: MonthProjection) {
+
     val surplusColor = if (projection.surplus >= 0) incomeColor() else expenseColor()
     Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -696,6 +830,54 @@ private fun MonthProjectionCard(projection: MonthProjection) {
                 color = surplusColor,
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+}
+
+/** C6: comparativa "este mes vs anterior" por categoría (lectura, sin red). */
+@Composable
+private fun MonthOverMonthCard(
+    currentMonth: YearMonth,
+    transactions: List<TransactionEntity>
+) {
+    val diff = remember(transactions, currentMonth) {
+        SpendingHeatmap.monthCategoryDiff(
+            BudgetPlanner.spentByCategory(transactions, currentMonth),
+            BudgetPlanner.spentByCategory(transactions, currentMonth.minusMonths(1))
+        )
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (diff.isEmpty()) {
+                Text(
+                    "Sin movimientos para comparar.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                diff.forEach { d ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(d.category, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Antes ${formatMoney(d.previous)} · ahora ${formatMoney(d.current)}" +
+                                    (d.percent?.let { " (${"%+.0f".format(it)}%)" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "${if (d.delta >= 0.0) "+" else "−"}$${formatMoney(kotlin.math.abs(d.delta))}",
+                            fontWeight = FontWeight.Bold,
+                            color = if (d.delta > 0.0) expenseColor() else incomeColor()
+                        )
+                    }
+                }
+            }
         }
     }
 }

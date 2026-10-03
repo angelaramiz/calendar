@@ -37,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.MsiPlan
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.WalletResolver
 import com.fintrack.app.domain.toLocalDateIn
@@ -232,13 +233,25 @@ internal fun CreditCardsCard(
     onSave: (String?, String, Int, Int, String, Int) -> Unit,
     onDelete: (String) -> Unit,
     onUntag: (String) -> Unit,
-    onPay: (String, String, Double) -> Unit
+    onPay: (String, String, Double) -> Unit,
+    // === Región A (MSI): planes por tarjeta, opcionales para no romper llamadas. ===
+    msiPlans: List<MsiPlan> = emptyList(),
+    onMsiCrear: (cardId: String, concepto: String, monto: Double, meses: Int) -> Unit = { _, _, _, _ -> },
+    onMsiLiquidar: (String) -> Unit = {},
+    onMsiEliminar: (String) -> Unit = {},
+    onPasarAMsi: (cardId: String, concepto: String, monto: Double, meses: Int) -> Unit = { _, _, _, _ -> }
+    // === Fin región A. ===
 ) {
     var editing by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
     var adding by remember { mutableStateOf(false) }
     var paying by remember { mutableStateOf<com.fintrack.app.domain.CreditCardPlanner.CardSummary?>(null) }
     var statementCard by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
     var statementPeriod by remember { mutableStateOf(0) }
+    // === Región A (MSI): cargo del ciclo actual a pasar a MSI. ===
+    var msiCard by remember { mutableStateOf<com.fintrack.app.data.CreditCardRow?>(null) }
+    var msiChargeLabel by remember { mutableStateOf("") }
+    var msiChargeAmount by remember { mutableStateOf(0.0) }
+    // === Fin región A. ===
     // Periodo del corte en hora local: con UTC el periodo brincaba a las 18:00.
     val today = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
     fun chargesOf(card: com.fintrack.app.data.CreditCardRow): CardChargeData {
@@ -320,6 +333,20 @@ internal fun CreditCardsCard(
                                 ") el ${summary.dueDate.dayOfMonth}/${summary.dueDate.monthValue}",
                             fontWeight = FontWeight.Bold
                         )
+                        // === Región A (MSI): informativo "incluye $X de MSI (N planes)". ===
+                        val msiDelCorte = com.fintrack.app.domain.MsiPlanner.msiEnCorte(
+                            msiPlans.filter { it.cardId == card.id },
+                            card.cutoffDay,
+                            summary.statementCutoff
+                        )
+                        val msiActivos = msiPlans.count { it.cardId == card.id && !it.liquidado }
+                        if (msiDelCorte > 0.0) {
+                            AmountText(
+                                "Incluye $${formatMoney(msiDelCorte)} de MSI ($msiActivos planes)",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        // === Fin región A. ===
                         if (summary.isPaid) {
                             Text(
                                 "✓ Pagado (${formatMoney(summary.paid)})",
@@ -371,13 +398,37 @@ internal fun CreditCardsCard(
                             )
                         } else {
                             cycle.forEach { (_, label, dated) ->
-                                AmountText(
-                                    "$label · $${formatMoney(dated.second)} · " +
-                                        "${dated.first.dayOfMonth}/${dated.first.monthValue}",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                                // === Región A (MSI): fila del ciclo con "Pasar a MSI". ===
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AmountText(
+                                        "$label · $${formatMoney(dated.second)} · " +
+                                            "${dated.first.dayOfMonth}/${dated.first.monthValue}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = {
+                                        msiCard = card
+                                        msiChargeLabel = label
+                                        msiChargeAmount = dated.second
+                                    }) { Text("Pasar a MSI") }
+                                }
+                                // === Fin región A. ===
                             }
                         }
+                        // === Región A (MSI): sección "MSI activos" por tarjeta. ===
+                        MsiCardSection(
+                            card = card,
+                            planes = msiPlans,
+                            cargosTagueados = all.map { it.third },
+                            onCrear = onMsiCrear,
+                            onLiquidar = onMsiLiquidar,
+                            onEliminar = onMsiEliminar
+                        )
+                        // === Fin región A. ===
                     }
                 }
             }
@@ -386,6 +437,19 @@ internal fun CreditCardsCard(
             }
         }
     }
+    // === Región A (MSI): diálogo "Pasar a MSI" desde el ciclo actual. ===
+    msiCard?.let { target ->
+        MsiPlanDialog(
+            conceptoInicial = msiChargeLabel.substringBefore("·").trim().ifBlank { msiChargeLabel },
+            montoInicial = msiChargeAmount,
+            onDismiss = { msiCard = null },
+            onSave = { concepto, monto, meses ->
+                onPasarAMsi(target.id, concepto, monto, meses)
+                msiCard = null
+            }
+        )
+    }
+    // === Fin región A. ===
     if (adding) {
         CardEditDialog(
             existing = null,

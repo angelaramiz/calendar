@@ -6,6 +6,12 @@ import kotlin.math.pow
 
 /** Meta de ahorro. @Serializable para persistir la lista en DataStore (GoalStore). */
 @Serializable
+data class Aportacion(
+    val fechaIso: String,
+    val monto: Double
+)
+
+@Serializable
 data class SavingsGoal(
     val id: String,
     val name: String,
@@ -17,7 +23,11 @@ data class SavingsGoal(
     /** Link del producto (Mercado Libre / Amazon). "" = meta manual. */
     val url: String = "",
     /** Tienda del link ("Amazon", "MercadoLibre"). */
-    val store: String = ""
+    val store: String = "",
+    /** D4: monto ya juntado (derivado del historial; se guarda para lectura rápida). */
+    val aportado: Double = 0.0,
+    /** D4: historial de aportaciones (monto negativo = retiro). */
+    val aportaciones: List<Aportacion> = emptyList()
 )
 
 data class CashPlan(

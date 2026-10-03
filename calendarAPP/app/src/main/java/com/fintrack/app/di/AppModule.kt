@@ -4,7 +4,9 @@ import com.fintrack.app.data.BudgetCapsStore
 import com.fintrack.app.data.CloudBackupStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.MsiStore
 import com.fintrack.app.data.PatternLinkStore
+import com.fintrack.app.data.PersonDebtStore
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.TxLinkStore
 import com.fintrack.app.data.FlowStore
@@ -45,6 +47,9 @@ val appModule = module {
     single { OnboardingStore(androidContext()) }
     single { BudgetCapsStore(androidContext()) }
     single { CreditCardStore(androidContext()) }
+    // Región D8+A: stores de deudas personales y planes MSI (DataStore local).
+    single { PersonDebtStore(androidContext()) }
+    single { MsiStore(androidContext()) }
     single { ServiceBillStore(androidContext()) }
     single { PatternLinkStore(androidContext()) }
     single { TxLinkStore(androidContext()) }
@@ -53,6 +58,6 @@ val appModule = module {
     viewModel { AuthViewModel(get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get(), get()) }
-    viewModel { BudgetViewModel(get(), get(), get(), get(), get()) }
-    viewModel { AccountsViewModel(get(), get(), get(), get(), get(), get()) }
+    viewModel { BudgetViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { AccountsViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
 }

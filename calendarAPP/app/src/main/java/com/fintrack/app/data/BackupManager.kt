@@ -29,7 +29,19 @@ class BackupManager(private val context: Context) {
             flowJson = PendingOpCodec.json.encodeToString(
                 MoneyFlow.serializer(), FlowStore(appCtx).snapshot()
             ),
-            allowedPackages = AppFilterStore(appCtx).allowedSnapshot().toList()
+            allowedPackages = AppFilterStore(appCtx).allowedSnapshot().toList(),
+            msiPlans = MsiStore(appCtx).snapshot(),
+            personDebts = PersonDebtStore(appCtx).snapshot(),
+            rules = CategoryRuleStore(appCtx).snapshot(),
+            discreto = DiscreteModeStore(appCtx).snapshot(),
+            allowanceIncome = AllowanceAnchorStore(appCtx).snapshotIncome(),
+            allowanceSavings = AllowanceAnchorStore(appCtx).snapshotSavings(),
+            paycheck = PaycheckStore(appCtx).snapshot(),
+            dismissedAnomalies = AnomalyDismissStore(appCtx).snapshot(),
+            streaks = StreakStore(appCtx).snapshot(),
+            streaksLastPeriod = StreakStore(appCtx).lastPeriod(),
+            hormigaFreq = HormigaStore(appCtx).snapshot().first,
+            hormigaLastSent = HormigaStore(appCtx).snapshot().second
         )
     }
 
@@ -93,6 +105,50 @@ class BackupManager(private val context: Context) {
         }
         backup.allowedPackages?.let {
             AppFilterStore(appCtx).replaceAllowed(it.toSet())
+            applied++
+        }
+        backup.msiPlans?.let {
+            MsiStore(appCtx).restore(it)
+            applied++
+        }
+        backup.personDebts?.let {
+            PersonDebtStore(appCtx).restore(it)
+            applied++
+        }
+        backup.rules?.let {
+            CategoryRuleStore(appCtx).restore(it)
+            applied++
+        }
+        backup.discreto?.let {
+            DiscreteModeStore(appCtx).set(it)
+            applied++
+        }
+        if (backup.allowanceIncome != null || backup.allowanceSavings != null) {
+            val store = AllowanceAnchorStore(appCtx)
+            if (backup.allowanceIncome != null) store.setIncome(backup.allowanceIncome)
+            store.setSavingsShare(backup.allowanceSavings ?: store.snapshotSavings())
+            applied++
+        }
+        backup.paycheck?.let {
+            PaycheckStore(appCtx).save(it)
+            applied++
+        }
+        backup.dismissedAnomalies?.let {
+            AnomalyDismissStore(appCtx).restore(it)
+            applied++
+        }
+        if (backup.streaks != null || backup.streaksLastPeriod != null) {
+            val store = StreakStore(appCtx)
+            store.restore(backup.streaks ?: store.snapshot(), backup.streaksLastPeriod ?: store.lastPeriod())
+            applied++
+        }
+        if (backup.hormigaFreq != null || backup.hormigaLastSent != null) {
+            val store = HormigaStore(appCtx)
+            val current = store.snapshot()
+            store.restore(
+                HormigaFrequency.of(backup.hormigaFreq ?: current.first),
+                backup.hormigaLastSent ?: current.second
+            )
             applied++
         }
         return applied

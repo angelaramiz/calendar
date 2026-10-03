@@ -5,6 +5,10 @@ import androidx.lifecycle.viewModelScope
 import com.fintrack.app.data.CardPayment
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.MsiPlan
+import com.fintrack.app.data.MsiStore
+import com.fintrack.app.data.PersonDebt
+import com.fintrack.app.data.PersonDebtStore
 import com.fintrack.app.data.ServiceBillRow
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.WalletRow
@@ -44,6 +48,12 @@ data class AccountsUiState(
     val recentMovements: List<MovementRow> = emptyList(),
     /** Transacciones cargadas (para cargos a tarjeta y suscripciones). */
     val allTransactions: List<TransactionEntity> = emptyList(),
+    // === Región D8+A (deudas personales + MSI): estado local, sin DDL. ===
+    /** Deudas personales (quién te debe / a quién debes). */
+    val personDebts: List<PersonDebt> = emptyList(),
+    /** Planes MSI activos por tarjeta. */
+    val msiPlans: List<MsiPlan> = emptyList(),
+    // === Fin región D8+A. ===
     val info: String? = null,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -60,7 +70,11 @@ class AccountsViewModel(
     private val authRepository: AuthRepository,
     private val walletStore: WalletStore,
     private val creditCardStore: CreditCardStore,
-    private val billStore: ServiceBillStore
+    private val billStore: ServiceBillStore,
+    // === Región D8+A: stores inyectados (ver AppModule). ===
+    private val personDebtStore: PersonDebtStore,
+    private val msiStore: MsiStore
+    // === Fin región D8+A. ===
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AccountsUiState())
@@ -97,6 +111,11 @@ class AccountsViewModel(
                 val cardPayments = runCatching { creditCardStore.paymentsSnapshot() }
                     .getOrDefault(emptyList())
                 val bills = runCatching { billStore.snapshot() }.getOrDefault(emptyList())
+                // === Región D8+A: deudas personales + MSI (100% local). ===
+                val personDebts = runCatching { personDebtStore.snapshot() }
+                    .getOrDefault(emptyList())
+                val msiPlans = runCatching { msiStore.snapshot() }.getOrDefault(emptyList())
+                // === Fin región D8+A. ===
                 val prevMonth = month.minusMonths(1)
                 val recentMovements = runCatching {
                     patternRepository.getMovementsForMonth(
@@ -133,6 +152,10 @@ class AccountsViewModel(
                     bills = bills,
                     recentMovements = recentMovements,
                     allTransactions = transactions,
+                    // === Región D8+A. ===
+                    personDebts = personDebts,
+                    msiPlans = msiPlans,
+                    // === Fin región D8+A. ===
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -295,9 +318,125 @@ class AccountsViewModel(
         }
     }
 
+    // === Región D8 (deudas personales): alta/edición, abono parcial, liquidar. ===
+    /** Crea o actualiza una deuda personal ("me deben" o "yo debo"). */
+    fun savePersonDebt(
+        id: String?,
+        nombre: String,
+        monto: Double,
+        esDeudaMia: Boolean,
+        fechaIso: String
+    ) {
+        val cleanName = nombre.trim().ifBlank { "Sin nombre" }
+        if (monto <= 0.0) return
+        val previous = _uiState.value.personDebts.firstOrNull { it.id == id }
+        val debt = PersonDebt(
+            id = id ?: "pdebt-${System.currentTimeMillis()}",
+            nombre = cleanName,
+            monto = monto,
+            esDeudaMia = esDeudaMia,
+            fechaIso = fechaIso,
+            abonos = previous?.abonos ?: emptyList()
+        )
+        viewModelScope.launch {
+            runCatching { personDebtStore.upsert(debt) }
+            _uiState.value = _uiState.value.copy(info = "Deuda guardada.")
+            loadAccounts()
+        }
+    }
+
+    fun deletePersonDebt(id: String) {
+        viewModelScope.launch {
+            runCatching { personDebtStore.delete(id) }
+            loadAccounts()
+        }
+    }
+
+    /** Abono parcial contra una deuda personal. */
+    fun addPersonAbono(debtId: String, amount: Double) {
+        if (amount <= 0.0) return
+        viewModelScope.launch {
+            runCatching {
+                personDebtStore.addAbono(
+                    debtId,
+                    amount,
+                    java.time.LocalDate.now(java.time.ZoneId.systemDefault()).toString()
+                )
+            }
+            _uiState.value = _uiState.value.copy(info = "Abono registrado.")
+            loadAccounts()
+        }
+    }
+
+    /** Liquida una deuda (la quita de la lista). */
+    fun liquidarPersonDebt(id: String) {
+        viewModelScope.launch {
+            runCatching { personDebtStore.delete(id) }
+            _uiState.value = _uiState.value.copy(info = "Deuda liquidada.")
+            loadAccounts()
+        }
+    }
+    // === Fin región D8. ===
+
+    // === Región A (MSI): alta manual o desde un cargo, liquidar, eliminar. ===
+    /** Crea un plan MSI manual (meses validados contra lo que ofrecen los bancos). */
+    fun saveMsiPlan(
+        cardId: String,
+        concepto: String,
+        montoTotal: Double,
+        meses: Int,
+        primerCorteIso: String
+    ) {
+        val cleanConcept = concepto.trim().ifBlank { "Compra a MSI" }
+        if (montoTotal <= 0.0) return
+        val mesesValidos = if (com.fintrack.app.domain.MsiPlanner.MESES_VALIDOS.contains(meses)) {
+            meses
+        } else 12
+        val plan = MsiPlan(
+            id = "msi-${System.currentTimeMillis()}",
+            cardId = cardId,
+            concepto = cleanConcept,
+            montoTotal = montoTotal,
+            meses = mesesValidos,
+            primerCorteIso = primerCorteIso
+        )
+        viewModelScope.launch {
+            runCatching { msiStore.upsert(plan) }
+            _uiState.value = _uiState.value.copy(info = "Plan MSI creado.")
+            loadAccounts()
+        }
+    }
+
+    /**
+     * "Pasar a MSI" desde un cargo del ciclo actual: crea el plan con el monto
+     * del cargo (el cargo tagueado original cubre la verificación, sin duplicar).
+     */
+    fun pasarCargoAMsi(cardId: String, concepto: String, monto: Double, meses: Int) {
+        val card = _uiState.value.cards.firstOrNull { it.id == cardId } ?: return
+        val hoy = java.time.LocalDate.now(java.time.ZoneId.systemDefault())
+        // Primer corte real: el próximo corte de la tarjeta.
+        val next = com.fintrack.app.domain.CreditCardPlanner.nextCutoff(card.cutoffDay, hoy)
+        saveMsiPlan(cardId, concepto, monto, meses, next.toString())
+    }
+
+    fun liquidarMsi(id: String) {
+        viewModelScope.launch {
+            runCatching { msiStore.liquidar(id) }
+            _uiState.value = _uiState.value.copy(info = "Plan MSI liquidado.")
+            loadAccounts()
+        }
+    }
+
+    fun deleteMsi(id: String) {
+        viewModelScope.launch {
+            runCatching { msiStore.delete(id) }
+            loadAccounts()
+        }
+    }
+    // === Fin región A. ===
+
     /** Convierte una suscripción detectada en recurrente mensual de gasto. */
-    fun createSubscriptionPattern(candidate: SubscriptionCandidate) {
-        if (userId.isEmpty()) return
+    fun createSubscriptionPattern(candidate: SubscriptionCandidate) {        if (userId.isEmpty()) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null, info = null)
             try {

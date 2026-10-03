@@ -25,7 +25,28 @@ data class LocalBackup(
     val txLinks: Map<String, TxLink>? = null,
     /** Flujo serializado tal cual (MoneyFlow). */
     val flowJson: String? = null,
-    val allowedPackages: List<String>? = null
+    val allowedPackages: List<String>? = null,
+    /** Planes MSI (§A). */
+    val msiPlans: List<MsiPlan>? = null,
+    /** Deudas personales (D8). */
+    val personDebts: List<PersonDebt>? = null,
+    /** Reglas merchant→categoría (C5). */
+    val rules: Map<String, String>? = null,
+    /** Modo discreto (C10). */
+    val discreto: Boolean? = null,
+    /** Ancla de ingreso quincenal + apartado ahorro (D6). */
+    val allowanceIncome: Double? = null,
+    val allowanceSavings: Double? = null,
+    /** Último reparto de quincena (D3). */
+    val paycheck: PaycheckSnapshot? = null,
+    /** Descartes del Vigilante (D5). */
+    val dismissedAnomalies: Set<String>? = null,
+    /** Rachas por categoría + periodo cerrado (D11). */
+    val streaks: Map<String, Int>? = null,
+    val streaksLastPeriod: String? = null,
+    /** Frecuencia hormiga + semana avisada (D11). */
+    val hormigaFreq: String? = null,
+    val hormigaLastSent: String? = null
 )
 
 fun encodeBackup(backup: LocalBackup): String =

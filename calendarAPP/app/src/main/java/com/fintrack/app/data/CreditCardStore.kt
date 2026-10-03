@@ -23,6 +23,10 @@ data class CreditCardRow(
     val paymentDay: Int,
     /** Últimos 4 dígitos (ej. "1234"), para identificarla. */
     val last4: String = "",
+    // === Región D2 (estrategia de deudas): CAT anual editable por tarjeta. ===
+    /** CAT anual en % para la estrategia de deudas (default 60%). */
+    val catAnual: Double = 60.0,
+    // === Fin región D2. ===
     /**
      * Plazo especial tipo Plata: días después del corte para pagar.
      * 0 = día fijo del mes ([paymentDay]).

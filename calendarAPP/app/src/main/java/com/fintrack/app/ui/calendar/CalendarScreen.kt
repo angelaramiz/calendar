@@ -275,12 +275,23 @@ fun CalendarScreen(
                 item { WeekdayRow() }
 
                 item {
+                    // C6: quintiles sobre gasto real del mes (confirmado + Inicio).
+                    val heat = remember(uiState.days) {
+                        val daily = uiState.days.mapValues { (_, d) ->
+                            d.confirmed.filter { it.kind == TxKind.EXPENSE }
+                                .sumOf { it.confirmed_amount } +
+                                d.quick.filter { it.kind == TxKind.EXPENSE }
+                                    .sumOf { it.amount }
+                        }
+                        com.fintrack.app.domain.SpendingHeatmap.quintiles(daily)
+                    }
                     MonthGrid(
                         yearMonth = uiState.yearMonth,
                         days = uiState.days,
                         markers = uiState.markers,
                         selectedDate = uiState.selectedDate,
-                        onSelect = { viewModel.selectDate(it) }
+                        onSelect = { viewModel.selectDate(it) },
+                        heat = heat
                     )
                 }
 
@@ -456,7 +467,9 @@ private fun MonthGrid(
     days: Map<LocalDate, DayData>,
     markers: Map<LocalDate, List<String>>,
     selectedDate: LocalDate,
-    onSelect: (LocalDate) -> Unit
+    onSelect: (LocalDate) -> Unit,
+    /** C6: quintil de gasto 0..4 por dia (0 = sin gasto, sin color). */
+    heat: Map<LocalDate, Int> = emptyMap()
 ) {
     val firstDay = yearMonth.atDay(1)
     val offset = (firstDay.dayOfWeek.value - 1) % 7
@@ -483,6 +496,8 @@ private fun MonthGrid(
                     val hasMarker = markers[date]?.isNotEmpty() == true
 
                     val isSelected = date == selectedDate
+                    // C6: el quintil solo tiñe el fondo; puntos y selección intactos.
+                    val heatQ = heat[date] ?: 0
                     val incomeDot = incomeColor()
                     val expenseDot = expenseColor()
                     Box(
@@ -493,7 +508,7 @@ private fun MonthGrid(
                             .background(
                                 if (isSelected) MaterialTheme.colorScheme.primary
                                 else if (allConfirmed) MaterialTheme.colorScheme.secondaryContainer
-                                else Color.Transparent,
+                                else heatColor(heatQ),
                                 RoundedCornerShape(12.dp)
                             )
                             .then(
@@ -542,6 +557,15 @@ private fun Dot(color: Color) {
     Box(
         modifier = Modifier.size(8.dp).background(color, CircleShape)
     )
+}
+
+/** C6: verde (gasto bajo) → rojo (gasto alto) por quintil; 0 = transparente. */
+private fun heatColor(q: Int): Color = when (q) {
+    1 -> Color(0xFFE8F5E9)
+    2 -> Color(0xFFFFF9C4)
+    3 -> Color(0xFFFFE0B2)
+    4 -> Color(0xFFFFCDD2)
+    else -> Color.Transparent
 }
 
 @Composable

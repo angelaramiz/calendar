@@ -40,6 +40,7 @@ import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.domain.WalletResolver
 import com.fintrack.app.domain.toLocalDateIn
+import com.fintrack.app.ui.common.AmountText
 import com.fintrack.app.ui.theme.expenseColor
 import com.fintrack.app.ui.theme.incomeColor
 
@@ -312,10 +313,10 @@ internal fun CreditCardsCard(
                                 TextButton(onClick = { onDelete(card.id) }) { Text("Eliminar") }
                             }
                         }
-                        Text(
-                            "A pagar ${formatMoney(summary.remaining)} " +
-                                "(cargos ${formatMoney(summary.periodCharges)}" +
-                                if (summary.paid > 0.0) " − pagos ${formatMoney(summary.paid)}" else "" +
+                        AmountText(
+                            "A pagar $${formatMoney(summary.remaining)} " +
+                                "(cargos $${formatMoney(summary.periodCharges)}" +
+                                if (summary.paid > 0.0) " − pagos $${formatMoney(summary.paid)}" else "" +
                                 ") el ${summary.dueDate.dayOfMonth}/${summary.dueDate.monthValue}",
                             fontWeight = FontWeight.Bold
                         )
@@ -347,8 +348,8 @@ internal fun CreditCardsCard(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        "$label · ${formatMoney(dated.second)} · " +
+                                    AmountText(
+                                        "$label · $${formatMoney(dated.second)} · " +
                                             "${dated.first.dayOfMonth}/${dated.first.monthValue}",
                                         style = MaterialTheme.typography.bodySmall
                                     )
@@ -357,9 +358,9 @@ internal fun CreditCardsCard(
                             }
                         }
                         val nextCut = com.fintrack.app.domain.CreditCardPlanner.nextCutoff(card.cutoffDay, today)
-                        Text(
+                        AmountText(
                             "Ciclo actual (corte ${nextCut.dayOfMonth}/${nextCut.monthValue}): " +
-                                "${formatMoney(cycle.sumOf { it.third.second })} · se paga el próximo corte",
+                                "$${formatMoney(cycle.sumOf { it.third.second })} · se paga el próximo corte",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -370,8 +371,8 @@ internal fun CreditCardsCard(
                             )
                         } else {
                             cycle.forEach { (_, label, dated) ->
-                                Text(
-                                    "$label · ${formatMoney(dated.second)} · " +
+                                AmountText(
+                                    "$label · $${formatMoney(dated.second)} · " +
                                         "${dated.first.dayOfMonth}/${dated.first.monthValue}",
                                     style = MaterialTheme.typography.bodySmall
                                 )
@@ -633,7 +634,7 @@ internal fun CardPayDialog(
 @Composable
 internal fun ServiceBillsCard(
     bills: List<com.fintrack.app.data.ServiceBillRow>,
-    onSave: (String?, String, Double, Int, String) -> Unit,
+    onSave: (String?, String, Double, Int, Int, String) -> Unit,
     onDelete: (String) -> Unit,
     onMarkPaid: (String, String) -> Unit,
     onUnmarkPaid: (String) -> Unit
@@ -655,7 +656,7 @@ internal fun ServiceBillsCard(
             } else {
                 bills.forEach { bill ->
                     val due = com.fintrack.app.domain.ServiceBills.nextDue(
-                        bill.dueDay, bill.frequency, today
+                        bill.dueDay, bill.frequency, today, bill.dueMonth
                     )
                     val paid = com.fintrack.app.domain.ServiceBills.isPaidFor(
                         bill.lastPaidDueIso, due
@@ -671,7 +672,8 @@ internal fun ServiceBillsCard(
                                 Text(
                                     "Vence ${due.dayOfMonth}/${due.monthValue}" +
                                         (if (bill.estimatedAmount > 0.0) " · aprox. ${formatMoney(bill.estimatedAmount)}" else "") +
-                                        (if (bill.frequency == "bimonthly") " · bimestral" else ""),
+                                        (if (bill.frequency == "bimonthly") " · bimestral" else "") +
+                                        (if (bill.frequency == "yearly") " · anual" else ""),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -711,8 +713,8 @@ internal fun ServiceBillsCard(
         BillEditDialog(
             existing = null,
             onDismiss = { adding = false },
-            onSave = { _, name, amount, dueDay, frequency ->
-                onSave(null, name, amount, dueDay, frequency)
+            onSave = { _, name, amount, dueDay, dueMonth, frequency ->
+                onSave(null, name, amount, dueDay, dueMonth, frequency)
                 adding = false
             }
         )
@@ -721,19 +723,25 @@ internal fun ServiceBillsCard(
         BillEditDialog(
             existing = bill,
             onDismiss = { editing = null },
-            onSave = { id, name, amount, dueDay, frequency ->
-                onSave(id, name, amount, dueDay, frequency)
+            onSave = { id, name, amount, dueDay, dueMonth, frequency ->
+                onSave(id, name, amount, dueDay, dueMonth, frequency)
                 editing = null
             }
         )
     }
 }
 
+private val MESES_CORTO = listOf(
+    "Ene", "Feb", "Mar", "Abr", "May", "Jun",
+    "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun BillEditDialog(
     existing: com.fintrack.app.data.ServiceBillRow?,
     onDismiss: () -> Unit,
-    onSave: (String?, String, Double, Int, String) -> Unit
+    onSave: (String?, String, Double, Int, Int, String) -> Unit
 ) {
     var name by remember(existing) { mutableStateOf(existing?.name ?: "") }
     var amountText by remember(existing) {
@@ -744,8 +752,13 @@ internal fun BillEditDialog(
     var dueText by remember(existing) {
         mutableStateOf(existing?.dueDay?.toString() ?: "")
     }
+    var dueMonth by remember(existing) {
+        mutableStateOf(existing?.dueMonth?.takeIf { it in 1..12 } ?: 1)
+    }
     var frequency by remember(existing) {
-        mutableStateOf(existing?.frequency?.takeIf { it == "bimonthly" } ?: "monthly")
+        mutableStateOf(
+            existing?.frequency?.takeIf { it == "bimonthly" || it == "yearly" } ?: "monthly"
+        )
     }
     val valid = name.isNotBlank() && (dueText.toIntOrNull() in 1..31)
     AlertDialog(
@@ -786,13 +799,37 @@ internal fun BillEditDialog(
                     singleLine = true
                 )
                 Row(modifier = Modifier.fillMaxWidth()) {
-                    listOf("monthly" to "Mensual", "bimonthly" to "Bimestral").forEach { (value, label) ->
+                    listOf(
+                        "monthly" to "Mensual",
+                        "bimonthly" to "Bimestral",
+                        "yearly" to "Anual"
+                    ).forEach { (value, label) ->
                         FilterChip(
                             selected = frequency == value,
                             onClick = { frequency = value },
                             label = { Text(label) },
                             modifier = Modifier.padding(end = 8.dp)
                         )
+                    }
+                }
+                if (frequency == "yearly") {
+                    Text(
+                        "Mes del vencimiento anual (ej. predial, verificación)",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        MESES_CORTO.forEachIndexed { index, label ->
+                            val month = index + 1
+                            FilterChip(
+                                selected = dueMonth == month,
+                                onClick = { dueMonth = month },
+                                label = { Text(label) }
+                            )
+                        }
                     }
                 }
             }
@@ -804,6 +841,7 @@ internal fun BillEditDialog(
                         existing?.id, name,
                         amountText.replace(".", "").replace(",", "").toDoubleOrNull() ?: 0.0,
                         dueText.toIntOrNull() ?: 1,
+                        dueMonth,
                         frequency
                     )
                 },

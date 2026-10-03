@@ -240,16 +240,28 @@ class AccountsViewModel(
     }
 
     /** Alta/edición de pago de servicio (vencimiento + recordatorio). */
-    fun saveBill(id: String?, name: String, estimatedAmount: Double, dueDay: Int, frequency: String) {
+    fun saveBill(
+        id: String?,
+        name: String,
+        estimatedAmount: Double,
+        dueDay: Int,
+        dueMonth: Int = 1,
+        frequency: String
+    ) {
         val cleanName = name.trim().ifBlank { "Servicio" }
         // Editar no borra el estado de pagado.
         val previous = _uiState.value.bills.firstOrNull { it.id == id }
+        val cleanFrequency =
+            if (frequency == "bimonthly") "bimonthly"
+            else if (frequency == "yearly") "yearly"
+            else "monthly"
         val bill = ServiceBillRow(
             id = id ?: "bill-${System.currentTimeMillis()}",
             name = cleanName,
             estimatedAmount = if (estimatedAmount < 0.0) 0.0 else estimatedAmount,
             dueDay = dueDay.coerceIn(1, 31),
-            frequency = if (frequency == "bimonthly") "bimonthly" else "monthly",
+            dueMonth = dueMonth.coerceIn(1, 12),
+            frequency = cleanFrequency,
             lastPaidDueIso = previous?.lastPaidDueIso
         )
         viewModelScope.launch {

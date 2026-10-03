@@ -27,7 +27,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.fintrack.app.data.CategoryRuleStore
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,6 +45,7 @@ import com.fintrack.app.domain.kind
 import com.fintrack.app.domain.toLocalDateIn
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
+import com.fintrack.app.ui.common.AmountText
 import com.fintrack.app.ui.common.PullRefreshLayout
 import com.fintrack.app.ui.theme.expenseColor
 import com.fintrack.app.ui.theme.incomeColor
@@ -628,14 +632,14 @@ private fun BalanceCard(balance: CalendarBalance) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
+            AmountText(
                 "${if (balance.balance >= 0) "+" else "-"}$${String.format("%.2f", kotlin.math.abs(balance.balance))}",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = balanceTint
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
+            AmountText(
                 "Ingresos $${String.format("%.2f", balance.income)} · " +
                     "Gastos $${String.format("%.2f", balance.expense)}",
                 style = MaterialTheme.typography.bodySmall,
@@ -665,14 +669,14 @@ private fun SummaryLine(label: String, income: Double, expense: Double) {
             color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
         )
         Row {
-            Text(
+            AmountText(
                 "+$${String.format("%.2f", income)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = incomeTint,
                 fontWeight = FontWeight.SemiBold
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Text(
+            AmountText(
                 "-$${String.format("%.2f", expense)}",
                 style = MaterialTheme.typography.bodySmall,
                 color = expenseTint,
@@ -1089,6 +1093,9 @@ private fun MovEditDialog(
 ) {
     val isIncome = mov.kind?.isIncome == true
     val fromPattern = mov.income_pattern_id != null || mov.expense_pattern_id != null
+    // C5: si recategorizas, la app aprende título→categoría.
+    val movDialogContext = LocalContext.current
+    val movRuleScope = rememberCoroutineScope()
     var title by remember(mov) { mutableStateOf(mov.title) }
     var amount by remember(mov) { mutableStateOf(String.format("%.2f", mov.confirmed_amount)) }
     var category by remember(mov) { mutableStateOf(mov.category) }
@@ -1220,6 +1227,12 @@ private fun MovEditDialog(
             TextButton(onClick = {
                 val value = amount.toDoubleOrNull() ?: return@TextButton
                 if (value <= 0) return@TextButton
+                // C5: los movimientos no traen comercio: se aprende título→categoría.
+                if (title.isNotBlank() && category != mov.category) {
+                    movRuleScope.launch {
+                        runCatching { CategoryRuleStore(movDialogContext).putRule(title, category) }
+                    }
+                }
                 onSave(title, description, category, value, walletId, cardId)
             }) { Text("Guardar") }
         },
@@ -1358,6 +1371,9 @@ private fun QuickEditDialog(
     var cardId by remember(tx) { mutableStateOf(initialCardId) }
     val isIncome = type == "INCOME"
     val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+    // C5: si recategorizas, la app aprende merchant→categoría.
+    val dialogContext = LocalContext.current
+    val ruleScope = rememberCoroutineScope()
     val alreadyLinked = txLinks.containsKey(tx.id)
     // Opciones en vivo: al elegir categoría (ej. Sueldo) aparecen los eventos
     // coincidentes en ±1 día para vincular en vez de duplicar.
@@ -1501,6 +1517,11 @@ private fun QuickEditDialog(
             TextButton(onClick = {
                 val value = amount.toDoubleOrNull() ?: return@TextButton
                 if (value <= 0) return@TextButton
+                if (merchant.isNotBlank() && category != tx.category) {
+                    ruleScope.launch {
+                        runCatching { CategoryRuleStore(dialogContext).putRule(merchant, category) }
+                    }
+                }
                 onSave(
                     tx.copy(
                         amount = value,

@@ -20,7 +20,9 @@ data class ServiceBillRow(
     val estimatedAmount: Double = 0.0,
     /** Día de vencimiento (1-31). */
     val dueDay: Int,
-    /** "monthly" o "bimonthly". */
+    /** Mes de vencimiento (1-12): solo aplica a "yearly" (ej. predial en enero). */
+    val dueMonth: Int = 1,
+    /** "monthly", "bimonthly" o "yearly". */
     val frequency: String = "monthly",
     /**
      * Estado de pagado: vencimiento (ISO yyyy-MM-dd) que el usuario marcó

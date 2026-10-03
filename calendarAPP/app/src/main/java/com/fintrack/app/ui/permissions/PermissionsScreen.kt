@@ -3,6 +3,7 @@ package com.fintrack.app.ui.permissions
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.Lifecycle
@@ -26,7 +29,9 @@ import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.service.TransactionNotificationListener
 import com.fintrack.app.domain.NotificationParser
 import com.fintrack.app.domain.ParseResult
+import com.fintrack.app.ui.dashboard.DashboardViewModel
 import kotlinx.coroutines.launch
+import org.koin.androidx.compose.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -469,6 +474,15 @@ private fun BackupSection() {
     var importText by remember { mutableStateOf("") }
     var showImport by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    // Nube cifrada (§B): el mismo DashboardViewModel de la actividad
+    // (no se re-escopa: ver regla en AGENTS.md).
+    val activity = context as ComponentActivity
+    val dashboardViewModel: DashboardViewModel = koinViewModel(viewModelStoreOwner = activity)
+    val dashState by dashboardViewModel.uiState.collectAsState()
+    var cloudPassword by remember { mutableStateOf("") }
+    var showCloudPassword by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) { dashboardViewModel.refreshCloudStatus() }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -524,6 +538,69 @@ private fun BackupSection() {
                         }
                     }
                 }) { Text("Aplicar") }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(12.dp))
+            Text("Respaldo en la nube (cifrado)", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "El mismo respaldo, cifrado en tu teléfono con tu contraseña de " +
+                    "FinTrack antes de subir. El servidor solo guarda bytes opacos.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "Nube: " + (dashState.cloudStatus ?: "revisando…"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = cloudPassword,
+                onValueChange = { cloudPassword = it },
+                label = { Text("Contraseña de FinTrack") },
+                placeholder = {
+                    Text(
+                        if (dashState.canUnlockWithBiometrics) "Vacío = usa la guardada"
+                        else "La misma con la que inicias sesión"
+                    )
+                },
+                singleLine = true,
+                visualTransformation = if (showCloudPassword) VisualTransformation.None
+                else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    TextButton(onClick = { showCloudPassword = !showCloudPassword }) {
+                        Text(if (showCloudPassword) "Ocultar" else "Ver")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    enabled = !dashState.cloudBusy,
+                    onClick = {
+                        dashboardViewModel.uploadCloudBackup(
+                            context.applicationContext,
+                            cloudPassword.takeIf { it.isNotBlank() }
+                        )
+                    }
+                ) { Text("Subir ahora") }
+                OutlinedButton(
+                    enabled = !dashState.cloudBusy,
+                    onClick = {
+                        dashboardViewModel.downloadCloudBackup(
+                            context.applicationContext,
+                            cloudPassword.takeIf { it.isNotBlank() }
+                        )
+                    }
+                ) { Text("Bajar ahora") }
+            }
+            dashState.cloudMessage?.let {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(it, style = MaterialTheme.typography.bodySmall)
             }
         }
     }

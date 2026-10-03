@@ -21,10 +21,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.fintrack.app.data.CategoryRuleStore
+import com.fintrack.app.data.DiscreteModeStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.ui.auth.BiometricLockScreen
+import com.fintrack.app.ui.common.AmountText
 import com.fintrack.app.ui.common.PullRefreshLayout
+import kotlinx.coroutines.launch
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
 import com.fintrack.app.ui.navigation.Routes
 import com.fintrack.app.ui.onboarding.OnboardingDialog
@@ -53,6 +57,13 @@ fun DashboardScreen(
             snackbarHostState.showSnackbar(message)
             viewModel.clearUpdateMessage()
         }
+    }
+
+    // Respaldo en nube (§B): al abrir la app con sesión, baja solo si lo
+    // remoto es más nuevo (restaura vía BackupManager + aviso). Sin sesión
+    // o sin contraseña guardada no hace nada ruidoso.
+    LaunchedEffect(Unit) {
+        viewModel.checkCloudBackupOnStart(context.applicationContext)
     }
 
     // Bloqueo estilo banco: sin sesión pero con credenciales guardadas, la
@@ -158,6 +169,11 @@ fun DashboardScreen(
         )
     }
 
+    // Modo discreto (C10): oculta montos al mostrar la app en público.
+    val discreteStore = remember { DiscreteModeStore(context) }
+    val discreteHidden by discreteStore.hidden.collectAsState(initial = false)
+    val discreteScope = rememberCoroutineScope()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -166,6 +182,15 @@ fun DashboardScreen(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 ),
                 actions = {
+                    IconButton(onClick = {
+                        discreteScope.launch { discreteStore.set(!discreteHidden) }
+                    }) {
+                        Icon(
+                            if (discreteHidden) Icons.Default.VisibilityOff
+                            else Icons.Default.Visibility,
+                            if (discreteHidden) "Mostrar montos" else "Ocultar montos"
+                        )
+                    }
                     IconButton(onClick = { viewModel.checkForUpdate(manual = true) }) {
                         Icon(Icons.Default.SystemUpdate, "Buscar actualizaciones")
                     }
@@ -194,7 +219,7 @@ fun DashboardScreen(
     ) { padding ->
         val listState = rememberLazyListState()
         PullRefreshLayout(
-            onRefresh = { viewModel.refreshAll() },
+            onRefresh = { viewModel.refreshAll(context.applicationContext) },
             isLoading = uiState.isLoading,
             atTopProvider = {
                 listState.firstVisibleItemIndex == 0 &&
@@ -360,7 +385,7 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double, credi
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.72f)
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Text(
+            AmountText(
                 text = "$${String.format("%.2f", balance)}",
                 style = MaterialTheme.typography.displaySmall,
                 color = amountColor,
@@ -407,7 +432,7 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double, credi
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
+                            AmountText(
                                 "+$${String.format("%.2f", income)}",
                                 color = incomeColor(),
                                 fontWeight = FontWeight.Bold,
@@ -438,7 +463,7 @@ private fun BalanceCard(balance: Double, income: Double, expenses: Double, credi
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
+                            AmountText(
                                 "-$${String.format("%.2f", expenses)}",
                                 color = expenseColor(),
                                 fontWeight = FontWeight.Bold,
@@ -583,6 +608,9 @@ private fun EditTransactionDialog(
     var walletId by remember(transaction) { mutableStateOf(initialWalletId) }
     val isIncome = type == "INCOME"
     val categories = com.fintrack.app.domain.TransactionCategories.forType(isIncome)
+    // C5: si recategorizas, la app aprende merchant→categoría.
+    val dialogContext = LocalContext.current
+    val ruleScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -692,6 +720,11 @@ private fun EditTransactionDialog(
             TextButton(onClick = {
                 val value = amount.toDoubleOrNull() ?: return@TextButton
                 if (value <= 0) return@TextButton
+                if (merchant.isNotBlank() && category != transaction.category) {
+                    ruleScope.launch {
+                        runCatching { CategoryRuleStore(dialogContext).putRule(merchant, category) }
+                    }
+                }
                 onSave(
                     transaction.copy(
                         amount = value,

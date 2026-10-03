@@ -245,7 +245,7 @@ class CalendarViewModel(
         val bills = runCatching { billStore.snapshot() }.getOrDefault(emptyList())
         bills.forEach { bill ->
             com.fintrack.app.domain.ServiceBills
-                .duesInRange(bill.dueDay, bill.frequency, from, to)
+                .duesInRange(bill.dueDay, bill.frequency, from, to, bill.dueMonth)
                 .forEach { add(it, "${bill.name} vence ${it.dayOfMonth}") }
         }
         val cards = runCatching { creditCardStore.cardsSnapshot() }.getOrDefault(emptyList())

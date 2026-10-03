@@ -13,7 +13,7 @@ class LocalBackupTest {
         cards = listOf(CreditCardRow("c1", "Plata", 15, 0, "4567", 30)),
         charges = mapOf("tx:abc" to "c1"),
         payments = listOf(CardPayment("pay-1", "c1", 500.0, "2026-09-20", "2026-09-15")),
-        bills = listOf(ServiceBillRow("b1", "Luz", 650.0, 10, "bimonthly")),
+        bills = listOf(ServiceBillRow("b1", "Luz", 650.0, 10, 1, "bimonthly")),
         caps = mapOf("Comida" to 3000.0),
         links = mapOf("pat-1" to PatternLink("credit", "c1")),
         flowJson = """{"name":"Sueldo"}""",

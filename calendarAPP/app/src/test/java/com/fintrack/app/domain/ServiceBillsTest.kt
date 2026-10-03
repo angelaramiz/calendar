@@ -102,4 +102,57 @@ class ServiceBillsTest {
         assertTrue(!ServiceBills.isPaidFor("", LocalDate.of(2026, 9, 20)))
         assertTrue(!ServiceBills.isPaidFor("  ", LocalDate.of(2026, 9, 20)))
     }
+
+    @Test
+    fun anual_este_anio_si_aun_no_pasa() {
+        assertEquals(
+            LocalDate.of(2026, 3, 15),
+            ServiceBills.nextDue(15, "yearly", LocalDate.of(2026, 1, 10), dueMonth = 3)
+        )
+    }
+
+    @Test
+    fun anual_hoy_cuenta_como_proximo() {
+        assertEquals(
+            LocalDate.of(2026, 3, 15),
+            ServiceBills.nextDue(15, "yearly", LocalDate.of(2026, 3, 15), dueMonth = 3)
+        )
+    }
+
+    @Test
+    fun anual_pasado_salta_al_anio_siguiente() {
+        assertEquals(
+            LocalDate.of(2027, 3, 15),
+            ServiceBills.nextDue(15, "yearly", LocalDate.of(2026, 9, 12), dueMonth = 3)
+        )
+    }
+
+    @Test
+    fun anual_29feb_en_anio_no_bisiesto_cae_28() {
+        assertEquals(
+            LocalDate.of(2027, 2, 28),
+            ServiceBills.nextDue(29, "yearly", LocalDate.of(2027, 1, 10), dueMonth = 2)
+        )
+    }
+
+    @Test
+    fun anual_29feb_en_anio_bisiesto_cae_29() {
+        assertEquals(
+            LocalDate.of(2028, 2, 29),
+            ServiceBills.nextDue(29, "yearly", LocalDate.of(2028, 1, 10), dueMonth = 2)
+        )
+    }
+
+    @Test
+    fun duesInRange_anual_un_vencimiento_por_anio() {
+        val dues = ServiceBills.duesInRange(
+            15, "yearly",
+            LocalDate.of(2026, 1, 1), LocalDate.of(2027, 12, 31),
+            dueMonth = 3
+        )
+        assertEquals(
+            listOf(LocalDate.of(2026, 3, 15), LocalDate.of(2027, 3, 15)),
+            dues
+        )
+    }
 }

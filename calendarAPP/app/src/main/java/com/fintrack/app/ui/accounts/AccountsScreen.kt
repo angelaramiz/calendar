@@ -201,8 +201,8 @@ fun AccountsScreen(
             item {
                 ServiceBillsCard(
                     bills = uiState.bills,
-                    onSave = { id, name, amount, dueDay, frequency ->
-                        viewModel.saveBill(id, name, amount, dueDay, frequency)
+                    onSave = { id, name, amount, dueDay, dueMonth, frequency ->
+                        viewModel.saveBill(id, name, amount, dueDay, dueMonth, frequency)
                     },
                     onDelete = { viewModel.deleteBill(it) },
                     onMarkPaid = { id, dueIso -> viewModel.markBillPaid(id, dueIso) },

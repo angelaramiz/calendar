@@ -480,4 +480,54 @@ class NotificationParserTest {
             )
         )
     }
+
+    @Test
+    fun regla_de_categoria_gana_a_la_heuristica() {
+        // Sin regla, "Urbani" no matchea nada y queda en Otros.
+        val sinRegla = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Pagaste a Urbani",
+            text = "Debitamos $ 40.00 de tu cuenta.",
+            allowedPackages = allowed
+        )
+        assertTrue(sinRegla is ParseResult.Accepted)
+        assertEquals("Otros", (sinRegla as ParseResult.Accepted).tx.category)
+
+        val conRegla = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Pagaste a Urbani",
+            text = "Debitamos $ 40.00 de tu cuenta.",
+            allowedPackages = allowed,
+            rules = mapOf("urbani" to "Comida")
+        )
+        assertTrue(conRegla is ParseResult.Accepted)
+        assertEquals("Comida", (conRegla as ParseResult.Accepted).tx.category)
+    }
+
+    @Test
+    fun regla_de_categoria_es_case_insensitive() {
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Pagaste a Urbani",
+            text = "Debitamos $ 40.00 de tu cuenta.",
+            allowedPackages = allowed,
+            rules = mapOf("URBANI" to "Comida")
+        )
+        assertTrue(result is ParseResult.Accepted)
+        assertEquals("Comida", (result as ParseResult.Accepted).tx.category)
+    }
+
+    @Test
+    fun regla_no_aplica_a_otro_comercio() {
+        // Match exacto por comercio: la regla de Oxxo no toca a Starbucks.
+        val result = NotificationParser.parse(
+            packageName = "com.mercadopago.wallet",
+            title = "Compra",
+            text = "Compra en Starbucks por $85.00.",
+            allowedPackages = allowed,
+            rules = mapOf("oxxo" to "Ocio")
+        )
+        assertTrue(result is ParseResult.Accepted)
+        assertEquals("Comida", (result as ParseResult.Accepted).tx.category)
+    }
 }

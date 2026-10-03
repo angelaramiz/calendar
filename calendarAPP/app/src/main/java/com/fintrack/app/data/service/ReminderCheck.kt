@@ -8,10 +8,12 @@ import com.fintrack.app.data.ServiceBillRow
 import com.fintrack.app.data.ServiceBillStore
 import com.fintrack.app.data.remote.AuthRepository
 import com.fintrack.app.data.repository.PatternRepository
+import com.fintrack.app.data.repository.TransactionRepository
 import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.CreditCardPlanner
 import com.fintrack.app.domain.PatternExpander
 import com.fintrack.app.domain.ServiceBills
+import com.fintrack.app.domain.toLocalDateIn
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -27,9 +29,11 @@ data class ReminderReport(
     /** (tarjeta, fecha de pago, días restantes) dentro de la ventana. */
     val cardsDue: List<Triple<CreditCardRow, LocalDate, Int>>,
     val nextCardIn: Int?,
+    /** Tarjetas que cortan en 3 días con cargos del ciclo actual (C3). */
+    val cutsDue: List<CreditCardPlanner.CutoffAlert> = emptyList(),
     /** Eventos del calendario de hoy (nombre, monto). */
     val todayEvents: List<Pair<String, Double>>,
-    /** false = sin sesión: los eventos se omitieron. */
+    /** false = sin sesión: los eventos (y cortes) se omitieron. */
     val sessionOk: Boolean
 )
 
@@ -46,7 +50,7 @@ object ReminderCheck {
 
         val bills = runCatching { ServiceBillStore(context).snapshot() }.getOrDefault(emptyList())
         val billsWithDays = bills.map { bill ->
-            val due = ServiceBills.nextDue(bill.dueDay, bill.frequency, today)
+            val due = ServiceBills.nextDue(bill.dueDay, bill.frequency, today, bill.dueMonth)
             Triple(bill, due, ChronoUnit.DAYS.between(today, due).toInt())
         }
         // Pagado = silencio: el vencimiento marcado ya no avisa (ni mediodía ni noche).
@@ -76,6 +80,7 @@ object ReminderCheck {
 
         var sessionOk = false
         val events = mutableListOf<Pair<String, Double>>()
+        var cuts: List<CreditCardPlanner.CutoffAlert> = emptyList()
         runCatching {
             val userId = AuthRepository().ensureSession()
             if (userId != null) {
@@ -87,6 +92,34 @@ object ReminderCheck {
                 patterns.filter { it.active }.flatMap { pattern ->
                     PatternExpander.expand(pattern, today, today)
                 }.forEach { events.add(it.pattern.name to it.amount) }
+                // C3: cargos tagueados del ciclo actual (tx + movimientos del
+                // mes previo y actual, que cubren el estado abierto).
+                cuts = runCatching {
+                    val txs = TransactionRepository().getTransactions(userId)
+                    val tags = cardStore.chargesSnapshot()
+                    val monthStart = today.minusMonths(1).withDayOfMonth(1).toString()
+                    val movs = repo.getMovementsForMonth(userId, monthStart, today.toString())
+                    val byCard = mutableMapOf<String, MutableList<Pair<LocalDate, Double>>>()
+                    txs.forEach { tx ->
+                        val cardId = tags["tx:${tx.id}"] ?: return@forEach
+                        byCard.getOrPut(cardId) { mutableListOf() }
+                            .add(tx.timestamp.toLocalDateIn() to tx.amount)
+                    }
+                    movs.forEach { mov ->
+                        if (mov.archived) return@forEach
+                        val cardId = tags["mov:${mov.id}"] ?: return@forEach
+                        val date = runCatching { LocalDate.parse(mov.date) }.getOrNull()
+                            ?: return@forEach
+                        byCard.getOrPut(cardId) { mutableListOf() }
+                            .add(date to mov.confirmed_amount)
+                    }
+                    CreditCardPlanner.cutoffAlerts(
+                        cards.map {
+                            CreditCardPlanner.CutoffCard(it.id, it.displayName, it.cutoffDay)
+                        },
+                        byCard, today
+                    )
+                }.getOrDefault(emptyList())
             }
         }
 
@@ -98,6 +131,7 @@ object ReminderCheck {
             cardsChecked = cards.size,
             cardsDue = cardsDue,
             nextCardIn = nextCardIn,
+            cutsDue = cuts,
             todayEvents = events,
             sessionOk = sessionOk
         )
@@ -144,6 +178,20 @@ object ReminderCheck {
             }
         }
 
+        // C3: "Tu <nombre> corta en 3 días y llevas $X". Dedup por corte.
+        report.cutsDue.forEach { alert ->
+            val key = "cut:${alert.cardId}:${alert.cutoff}:$slot"
+            if (key !in reminded) {
+                RemindersNotifier.show(
+                    context, key,
+                    "Tu ${alert.cardName} corta en 3 días",
+                    "Llevas $${alert.cycleTotal.toInt()} acumulados en el ciclo actual " +
+                        "(corte ${alert.cutoff}). Se pagan en el próximo corte."
+                )
+                fresh.add(key)
+            }
+        }
+
         if (report.todayEvents.isNotEmpty()) {
             val key = "day:${report.today}:$slot"
             if (key !in reminded) {
@@ -175,7 +223,10 @@ object ReminderCheck {
         val events = if (!report.sessionOk) "omitidos (sin sesión)"
         else if (report.todayEvents.isEmpty()) "ninguno hoy"
         else "${report.todayEvents.size} hoy"
-        return "Revisado: recibos: $bills; tarjetas: $cards; eventos: $events. " +
+        val cuts = if (!report.sessionOk) "omitidos (sin sesión)"
+        else if (report.cutsDue.isEmpty()) "ninguno en 3 días"
+        else report.cutsDue.joinToString { "${it.cardName} ($${it.cycleTotal.toInt()})" }
+        return "Revisado: recibos: $bills; tarjetas: $cards; cortes: $cuts; eventos: $events. " +
             "Avisos enviados: $fired."
     }
 }

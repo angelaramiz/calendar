@@ -5,6 +5,7 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.fintrack.app.data.AppFilterStore
+import com.fintrack.app.data.CategoryRuleStore
 import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
@@ -23,6 +24,7 @@ class TransactionNotificationListener : NotificationListenerService() {
     private val authRepository = AuthRepository()
     private val appFilter by lazy { AppFilterStore(applicationContext) }
     private val pendingStore by lazy { PendingTxStore(applicationContext) }
+    private val ruleStore by lazy { CategoryRuleStore(applicationContext) }
 
     // Anti-duplicados: misma app + monto + minuto (las notificaciones se re-publican)
     @Volatile
@@ -63,8 +65,11 @@ class TransactionNotificationListener : NotificationListenerService() {
                 // Fusiona bancos nuevos de cada update sin revivir bajas del usuario.
                 appFilter.ensureDefaults()
                 val allowed = appFilter.allowedSnapshot()
+                // Reglas que aprendieron de tus correcciones (C5): si fallan,
+                // se sigue con mapa vacío, nunca se pierde la detección.
+                val rules = runCatching { ruleStore.snapshot() }.getOrDefault(emptyMap())
 
-                when (val result = NotificationParser.parse(packageName, title, text, allowed)) {
+                when (val result = NotificationParser.parse(packageName, title, text, allowed, rules)) {
                     is ParseResult.Rejected -> {
                         Log.d(tag, "Ignorada (${result.reason}): $packageName | $title")
                         diag("RECHAZADA (${result.reason})", packageName, title)

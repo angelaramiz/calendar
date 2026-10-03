@@ -2,6 +2,8 @@ package com.fintrack.app.ui.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fintrack.app.data.BackupManager
+import com.fintrack.app.data.CloudBackupStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
@@ -20,11 +22,16 @@ import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.OnboardingStore
 import com.fintrack.app.data.model.TransactionEntity
+import com.fintrack.app.domain.CLOUD_BACKUP_SCHEMA_V
+import com.fintrack.app.domain.CloudBackupCrypto
+import com.fintrack.app.domain.CloudBackupPlanner
 import com.fintrack.app.domain.WalletResolver
+import com.fintrack.app.domain.sanitizeCloudJson
 import com.fintrack.app.domain.friendlyErrorMessage
 import com.fintrack.app.domain.isRecoverableError
 import com.fintrack.app.domain.kind
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.repository.CloudBackupRepository
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.data.repository.OtaUpdateInfo
 import com.fintrack.app.data.repository.OtaUpdateRepository
@@ -73,7 +80,13 @@ data class DashboardUiState(
     /** Progreso 0..100 mientras descarga (null = sin descarga activa). */
     val otaProgress: Int? = null,
     /** Ruta del APK listo para instalar (null = aún no). */
-    val otaApkPath: String? = null
+    val otaApkPath: String? = null,
+    /** Estado del respaldo en nube (§B): "al día" / "desactualizado" / "nunca" / null (cargando). */
+    val cloudStatus: String? = null,
+    /** Último aviso del respaldo en nube (se muestra en Permisos; updateMessage va al snackbar). */
+    val cloudMessage: String? = null,
+    /** Subida/bajada en curso (evita doble tap). */
+    val cloudBusy: Boolean = false
 )
 
 class DashboardViewModel(
@@ -87,7 +100,9 @@ class DashboardViewModel(
     private val opSync: PendingOpSync,
     private val creditCardStore: CreditCardStore,
     private val onboardingStore: OnboardingStore,
-    private val txLinkStore: TxLinkStore
+    private val txLinkStore: TxLinkStore,
+    private val cloudBackupRepository: CloudBackupRepository,
+    private val cloudBackupStore: CloudBackupStore
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DashboardUiState())
@@ -379,12 +394,216 @@ class DashboardViewModel(
 
     /**
      * Recarga completa (pull-to-refresh de Inicio): baja movimientos,
-     * sube la cola pendiente y revisa OTA silencioso.
+     * sube la cola pendiente y revisa OTA silencioso. Con contexto, además
+     * revisa el respaldo en nube (baja si lo remoto es más nuevo).
      */
-    fun refreshAll() {
+    fun refreshAll(appContext: android.content.Context? = null) {
         loadDashboard(forceRefresh = true)
         syncPending()
         checkForUpdate()
+        if (appContext != null) checkCloudBackupOnStart(appContext)
+    }
+
+    // ---- Respaldo en nube cifrada (§B) ----
+
+    /**
+     * Revisión al abrir la app (con sesión): si lo remoto es más nuevo que
+     * el último sync, lo descifra con la contraseña guardada (solo-lectura
+     * de CredentialStore) y lo aplica vía BackupManager.importJson tal cual.
+     * Sin contraseña guardada solo avisa; la bajada manual vive en Permisos.
+     * Nunca loguea la contraseña ni el JSON.
+     */
+    fun checkCloudBackupOnStart(appContext: android.content.Context) {
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession() ?: return@launch
+            val remote = runCatching { cloudBackupRepository.fetchMeta(uid) }.getOrNull()
+            if (remote == null) {
+                _uiState.value = _uiState.value.copy(cloudStatus = "nunca")
+                return@launch
+            }
+            val (remoteTs, schemaV, sealed) = remote
+            val localTs = runCatching { cloudBackupStore.lastSync() }.getOrNull()
+            if (!CloudBackupPlanner.shouldDownload(localTs, remoteTs)) {
+                _uiState.value = _uiState.value.copy(cloudStatus = "al día")
+                return@launch
+            }
+            if (!CloudBackupPlanner.isCompatible(schemaV)) {
+                sayCloud(
+                    "Hay un respaldo en la nube más nuevo (versión $schemaV) " +
+                        "que esta app no puede leer. Actualiza FinTrack.",
+                    status = "desactualizado"
+                )
+                return@launch
+            }
+            val saved = credentialStore.password()
+            if (saved.isNullOrBlank()) {
+                sayCloud(
+                    "Hay un respaldo en la nube del ${cloudDate(remoteTs)}. " +
+                        "Ve a Permisos para bajarlo.",
+                    status = "desactualizado"
+                )
+                return@launch
+            }
+            val plain = runCatching { CloudBackupCrypto.open(sealed, saved) }.getOrNull()
+            if (plain == null) {
+                sayCloud(
+                    "El respaldo en la nube no se pudo descifrar " +
+                        "(¿cambiaste tu contraseña? Baja de nuevo desde Permisos).",
+                    status = "desactualizado"
+                )
+                return@launch
+            }
+            val applied = runCatching {
+                BackupManager(appContext.applicationContext).importJson(plain)
+            }.getOrNull()
+            if (applied == null) {
+                sayCloud(
+                    "El respaldo en la nube llegó corrupto y no se aplicó.",
+                    status = "desactualizado"
+                )
+                return@launch
+            }
+            runCatching { cloudBackupStore.markSynced(remoteTs) }
+            sayCloud("Respaldo del ${cloudDate(remoteTs)} restaurado.", status = "al día")
+            loadDashboard(forceRefresh = true)
+        }
+    }
+
+    /**
+     * Actualiza el texto de estado ("nube: …") para la Card de Permisos.
+     * Solo lee la meta remota; no descarga ni descifra nada.
+     */
+    fun refreshCloudStatus() {
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                _uiState.value = _uiState.value.copy(cloudStatus = null)
+                return@launch
+            }
+            val remote = runCatching { cloudBackupRepository.fetchMeta(uid) }.getOrNull()
+            if (remote == null) {
+                _uiState.value = _uiState.value.copy(cloudStatus = "nunca")
+                return@launch
+            }
+            val localTs = runCatching { cloudBackupStore.lastSync() }.getOrNull()
+            _uiState.value = _uiState.value.copy(
+                cloudStatus = if (CloudBackupPlanner.shouldDownload(localTs, remote.first)) {
+                    "desactualizado (hay respaldo del ${cloudDate(remote.first)})"
+                } else {
+                    "al día"
+                }
+            )
+        }
+    }
+
+    /**
+     * Subida manual: exporta con BackupManager tal cual, cifra con la
+     * contraseña escrita o la guardada, y hace upsert (last-write-wins).
+     * PENDIENTE explícito: subida automática al suspender (hoy solo manual;
+     * el punto de enganche sería MainActivity.onStop → uploadIfDirty con un
+     * scope de ciclo de vida; sin dependencia de ProcessLifecycle no hay
+     * punto limpio) y re-cifrado al cambiar contraseña (la recuperación vive
+     * en una página web externa —RecoveryWebScreen— sin interceptación
+     * posible desde la app: tras cambiarla, entra de nuevo para que
+     * CredentialStore guarde la nueva y vuelve a subir).
+     */
+    fun uploadCloudBackup(appContext: android.content.Context, password: String?) {
+        if (_uiState.value.cloudBusy) return
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                sayCloud("Inicia sesión para subir el respaldo.")
+                return@launch
+            }
+            val pw = password?.takeIf { it.isNotBlank() } ?: credentialStore.password()
+            if (pw.isNullOrBlank()) {
+                sayCloud("Escribe tu contraseña de FinTrack para cifrar el respaldo.")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(cloudBusy = true)
+            try {
+                val plain = BackupManager(appContext.applicationContext).exportJson()
+                val sealed = CloudBackupCrypto.seal(sanitizeCloudJson(plain), pw)
+                cloudBackupRepository.push(uid, sealed, CLOUD_BACKUP_SCHEMA_V)
+                val remoteTs = runCatching { cloudBackupRepository.fetchMeta(uid) }
+                    .getOrNull()?.first ?: System.currentTimeMillis()
+                runCatching { cloudBackupStore.markSynced(remoteTs) }
+                sayCloud("Respaldo subido a la nube.", status = "al día")
+            } catch (e: Exception) {
+                sayCloud("No se pudo subir: ${friendlyErrorMessage(e).take(150)}")
+            } finally {
+                _uiState.value = _uiState.value.copy(cloudBusy = false)
+            }
+        }
+    }
+
+    /**
+     * Bajada manual: descarga la meta, verifica `schema_v`, descifra y
+     * aplica vía BackupManager.importJson tal cual.
+     */
+    fun downloadCloudBackup(appContext: android.content.Context, password: String?) {
+        if (_uiState.value.cloudBusy) return
+        viewModelScope.launch {
+            val uid = authRepository.ensureSession()
+            if (uid == null) {
+                sayCloud("Inicia sesión para bajar el respaldo.")
+                return@launch
+            }
+            val remote = runCatching { cloudBackupRepository.fetchMeta(uid) }.getOrNull()
+            if (remote == null) {
+                sayCloud("Aún no hay respaldo en la nube.", status = "nunca")
+                return@launch
+            }
+            val (remoteTs, schemaV, sealed) = remote
+            if (!CloudBackupPlanner.isCompatible(schemaV)) {
+                sayCloud(
+                    "Ese respaldo es de una versión más nueva (v$schemaV). " +
+                        "Actualiza FinTrack para leerlo."
+                )
+                return@launch
+            }
+            val pw = password?.takeIf { it.isNotBlank() } ?: credentialStore.password()
+            if (pw.isNullOrBlank()) {
+                sayCloud("Escribe tu contraseña de FinTrack para descifrar el respaldo.")
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(cloudBusy = true)
+            try {
+                val plain = CloudBackupCrypto.open(sealed, pw)
+                val n = BackupManager(appContext.applicationContext).importJson(plain)
+                runCatching { cloudBackupStore.markSynced(remoteTs) }
+                sayCloud(
+                    if (n == 0) "Respaldo válido pero sin secciones."
+                    else "Respaldo del ${cloudDate(remoteTs)} restaurado ($n secciones).",
+                    status = "al día"
+                )
+                loadDashboard(forceRefresh = true)
+            } catch (e: IllegalArgumentException) {
+                sayCloud("Contraseña incorrecta o respaldo corrupto.")
+            } catch (e: Exception) {
+                sayCloud("No se pudo bajar: ${friendlyErrorMessage(e).take(150)}")
+            } finally {
+                _uiState.value = _uiState.value.copy(cloudBusy = false)
+            }
+        }
+    }
+
+    private fun cloudDate(epochMillis: Long): String = runCatching {
+        java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(epochMillis))
+    }.getOrDefault("fecha desconocida")
+
+    /** Aviso de nube en ambos canales: snackbar (updateMessage) y Card de Permisos (cloudMessage). */
+    private fun sayCloud(msg: String, status: String? = null) {
+        _uiState.value = _uiState.value.copy(
+            updateMessage = msg,
+            cloudMessage = msg,
+            cloudStatus = status ?: _uiState.value.cloudStatus
+        )
+    }
+
+    fun clearCloudMessage() {
+        _uiState.value = _uiState.value.copy(cloudMessage = null)
     }
 
     fun addTransaction(

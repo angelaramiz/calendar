@@ -1,6 +1,7 @@
 package com.fintrack.app.di
 
 import com.fintrack.app.data.BudgetCapsStore
+import com.fintrack.app.data.CloudBackupStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.CreditCardStore
 import com.fintrack.app.data.PatternLinkStore
@@ -14,6 +15,7 @@ import com.fintrack.app.data.PendingTxStore
 import com.fintrack.app.data.WalletStore
 import com.fintrack.app.data.OnboardingStore
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.repository.CloudBackupRepository
 import com.fintrack.app.data.repository.OtaUpdateRepository
 import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
@@ -32,6 +34,8 @@ val appModule = module {
     single { TransactionRepository() }
     single { OtaUpdateRepository() }
     single { PatternRepository() }
+    single { CloudBackupRepository() }
+    single { CloudBackupStore(androidContext()) }
     single { FlowStore(androidContext()) }
     single { GoalStore(androidContext()) }
     single { PendingTxStore(androidContext()) }
@@ -45,7 +49,7 @@ val appModule = module {
     single { PatternLinkStore(androidContext()) }
     single { TxLinkStore(androidContext()) }
     single { PendingOpSync(get(), get(), get(), get(), get(), get()) }
-    viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    viewModel { DashboardViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { AuthViewModel(get(), get()) }
     viewModel { CalendarViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
     viewModel { FlowsViewModel(get(), get(), get(), get()) }

@@ -1,6 +1,7 @@
 package com.fintrack.app.domain
 
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /**
  * Lógica de tarjetas de crédito: los gastos con tag de tarjeta no se aplican
@@ -103,6 +104,43 @@ object CreditCardPlanner {
         }
         return periods
     }
+
+    /** Entrada mínima para la alerta de corte (sin Context, testeable). */
+    data class CutoffCard(
+        val id: String,
+        val name: String,
+        val cutoffDay: Int
+    )
+
+    /** Tarjeta que corta en 3 días con cargos acumulados en el ciclo actual. */
+    data class CutoffAlert(
+        val cardId: String,
+        val cardName: String,
+        val cutoff: LocalDate,
+        val cycleTotal: Double
+    )
+
+    /**
+     * Alerta de corte próximo (C3): por cada tarjeta que corta exactamente
+     * en 3 días y lleva cargos del ciclo actual > 0. Puro: [charges] es
+     * cardId → (fecha, monto) de sus cargos tagueados.
+     */
+    fun cutoffAlerts(
+        cards: List<CutoffCard>,
+        charges: Map<String, List<Pair<LocalDate, Double>>>,
+        today: LocalDate
+    ): List<CutoffAlert> =
+        cards.mapNotNull { card ->
+            val next = nextCutoff(card.cutoffDay, today)
+            if (ChronoUnit.DAYS.between(today, next).toInt() != 3) return@mapNotNull null
+            val open = lastCutoff(card.cutoffDay, today)
+            val total = currentCycle(
+                charges.getOrDefault(card.id, emptyList()),
+                { it.first }, open, today
+            ).sumOf { it.second }
+            if (total > 0.0) CutoffAlert(card.id, card.name, next, total)
+            else null
+        }
 
     fun summarize(
         cardId: String,

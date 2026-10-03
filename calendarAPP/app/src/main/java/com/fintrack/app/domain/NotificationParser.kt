@@ -87,11 +87,19 @@ object NotificationParser {
     fun looksLikeBankActivity(packageName: String, title: String, text: String): Boolean =
         parse(packageName, title, text, setOf(packageName)) is ParseResult.Accepted
 
+    /**
+     * Normaliza una llave merchant→categoría para el match exacto
+     * (minúsculas sin acentos, igual que las keywords).
+     */
+    fun normalizeKey(raw: String): String = raw.normalized()
+
     fun parse(
         packageName: String,
         title: String,
         text: String,
-        allowedPackages: Set<String> = DEFAULT_PACKAGES
+        allowedPackages: Set<String> = DEFAULT_PACKAGES,
+        /** Reglas merchant→categoría que aprenden de tus correcciones: ganan a la heurística. */
+        rules: Map<String, String> = emptyMap()
     ): ParseResult {
         // 1. Allowlist de apps
         if (allowedPackages.none { it.equals(packageName, ignoreCase = true) }) {
@@ -120,10 +128,18 @@ object NotificationParser {
         val amount = extractAmount(combined) ?: return ParseResult.Rejected("sin_monto")
         if (amount <= 0) return ParseResult.Rejected("monto_invalido")
 
-        // 5. Tipo (ingreso gana si hay ambas), comercio y categoria
+        // 5. Tipo (ingreso gana si hay ambas), comercio y categoria.
+        // La regla aprendida (match exacto con ambos lados normalizados)
+        // va ANTES de la heurística: si corregiste "Urbani" a Comida, la
+        // próxima llega así aunque la llave venga en otras mayúsculas.
         val type = if (hasIncome) "INCOME" else "EXPENSE"
         val merchant = extractMerchant(title, text)
-        val category = categorize("$title $merchant $text", type == "INCOME")
+        val merchantKey = merchant?.let { normalizeKey(it) }
+        val ruleHit = merchantKey?.let { key ->
+            rules.entries.firstOrNull { normalizeKey(it.key) == key }?.value
+        }
+        val category = ruleHit
+            ?: categorize("$title $merchant $text", type == "INCOME")
 
         return ParseResult.Accepted(
             ParsedTransaction(

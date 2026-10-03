@@ -323,3 +323,105 @@ tu yo de diciembre. Requiere C1/D4 hechos para que el reporte tenga sustancia.
 Orden sugerido global actualizado: MSI → Pronóstico de flujo → **¿Con qué
 tarjeta? + Reparto de quincena** (usan lo anterior) → Respaldo nube → Deudas
 (nieve/avalancha + personales) → Tandas → resto.
+
+---
+
+## E. Plan de integración — selección de 19 (A, B, C3, C5–C10, D2–D6, D8–D12)
+
+Principios: (1) nada rompe lo existente — cada fase sale por OTA propia con la
+suite en verde; (2) todo lo local nuevo nace con su sección en `BackupManager`
++ test de codec; (3) una sola tabla nueva en Supabase en todo el plan
+(`fintrack_backups`, del feature B); (4) reutilizar motores antes de crear
+nuevos (tabla de reuso abajo).
+
+### E0. Qué se reutiliza (no reinventar)
+
+| Existente | Lo usan |
+|---|---|
+| `CreditCardPlanner` (cortes, `summarize`, `currentCycle`, `statementPeriods`) | A (cuotas por corte), C3 (alerta), D2 (saldos), D12 (reporte) |
+| `PatternExpander` + `MonthSummary` | D3 (fijos del periodo), D6 (cálculo diario) |
+| `ServiceBillStore` + `RemindersWorker`/`ReminderCheck` (pasadas 12:00/22:00, dedup por turno en `ReminderStore`) | D10 ( yearly), C3, D5, D11 (nuevos tipos de aviso, mismo canal `fintrack_recordatorios`) |
+| `NotificationParser` + etapas + `Dedup` + `OccurrenceLink` | C5 (reglas antes del `else Otros`), D5 (ventana 72h), D7 (conciliación), D9 (entidades) |
+| `QuickEntryDialog` + Tile + `addTransaction(cardId)` | C8 (pre-llenado por voz), D3 (registro del reparto) |
+| `GoalStore` + `GoalPlanner` | D4 (extiende el modelo), D3 (destino del apartado) |
+| `BudgetCapsStore` + `WalletResolver.monthFlow` | D6 (tope vs ritmo), D11 (rachas bajo tope), D12 |
+| `CreditCardStore` tags (`tx:`/`mov:`) | A (cuota cubierta), D2, D12 |
+| `AppFilterStore`, `CredentialStore`, `PendingOpSync`, `NetErrors` | B (sesión + reintento), sin cambios |
+
+### E1. Fases y orden (6 releases)
+
+**Fase 0 — Victorias rápidas que desriegan el tren (~3 días, OTA 1)**
+C10 (modo discreto: `AmountText` global + setting; hacerlo PRIMERO porque toca
+pantallas que las fases siguientes van a editar), D10 (servicios `yearly`:
+`ServiceBillStore.frequency` + evaluación anual en `ReminderCheck` + tests),
+C5 (reglas: `CategoryRuleStore` + hook en `parse()` antes del fallback +
+guardar regla al recategorizar en el editor; si el editor no expone categoría,
+se agrega ahí el selector). Sin dependencias entre sí, archivos distintos.
+
+**Fase 1 — Deuda inteligente (~6 días, OTA 2)**
+A (MSI: `MsiStore` + `MsiPlanner` + sección Cuentas + sección backup) y D8
+(deudas personales/divididas: `PersonDebtStore` + sección Cuentas/grupo nuevo +
+sección backup) en paralelo (no se tocan); después D2 (bola/avalancha:
+`DebtPlanner` puro que agrega tarjetas + MSI + D8, UI en Presupuesto) y C3
+(alerta de corte: 10 líneas sobre `nextCutoff` + `currentCycle`, tercer tipo de
+aviso en `ReminderCheck`). Cierra con suite + QA de Cuentas.
+
+**Fase 2 — Respaldo en nube (~4 días, OTA 3)**
+B con el diseño de §B (tabla + AES-GCM con llave de la contraseña + sync en
+apertura/cierre + UI en Respaldo local). Cubre todas las secciones existentes
+INCLUIDAS las de Fase 0–1. A partir de aquí, checklist obligatorio por feature:
+nuevo store ⇒ campo en `LocalBackup` + restore + test.
+
+**Fase 3 — Rituales de dinero (~5 días, OTA 4)**
+D4 (aportaciones: extiende `SavingsGoal` con `aportado/historial` en
+`GoalStore` + barra en Objetivos + sección backup), D6 (límite diario:
+`DailyAllowance` con ancla de ingreso — patrón nómina o monto quincenal manual —
+menos fijos del periodo vía D3-parcial, visible en Inicio), D3 (reparto de
+quincena: usa el cálculo de D6 + excedente de D2 + destino D4; registra el
+reparto como marcadores + ofrece registrar movimientos vía `addTransaction`).
+Orden interno estricto: D4 → D6 → D3.
+
+**Fase 4 — Vigilancia (~5 días, OTA 5)**
+D5 (vigilante: `AnomalyChecker` puro — duplicados 72h + subida vs histórico de
+`SubscriptionDetector` — evaluado en la pasada diaria + aviso con descarte),
+C6 (heatmap: color por quintil con `monthFlow` + comparativa MoM en
+Presupuesto), D11 (fuga hormiga semanal + rachas: `StreakStore` + aviso lunes,
+frecuencia configurable). Archivos independientes, una sola OTA.
+
+**Fase 5 — Entrada de datos (~7 días, OTA 6)**
+C8 (voz: intent `RECOGNIZE_SPEECH` del sistema — sin permiso extra — → pre-llena
+`QuickEntryDialog`), C7 (widget Glance: balance + abrir QuickEntry; ÚNICA
+dependencia Gradle nueva del plan junto a C9 — pineada, sin KSP/Hilt), D7 (CSV:
+picker SAF sin permisos + parsers por banco por encabezado + pantalla de
+conciliación que reutiliza `OccurrenceLink`/`Dedup`: aceptar / vincular /
+descartar). C8 primero (barata), luego C7 y D7 en paralelo.
+
+**Fase 6 — Documentos y datos (~7 días, OTA 7)**
+C9 (OCR: ML Kit Text Recognition on-device + foto solo en almacenamiento
+interno — EXCLUIDA del payload nube por diseño §B), D9 (Q&A por plantillas
+sobre transacciones/patrones/metas/MSI, cero alucinaciones: si no matchea, lo
+dice), D12 (PDF local con `PdfDocument`: necesita C1-hecho-no-seleccionado…
+ajuste: el reporte usa D6/D4/D2/A en vez de pronóstico — se documenta el cambio
+— y se construye AL ÚLTIMO porque agrega todo).
+
+### E2. Reglas transversales del plan
+- Backup: cada store nuevo suma sección + restore + test o no se mergea. Las
+  fotos (C9) jamás entran al payload.
+- Avisos: solo canal `fintrack_recordatorios`, claves nuevas en `ReminderStore`
+  (`cut_`, `anom_`, `hormiga_`, `corte_`), respetar 3/1/0-días donde aplique y
+  el silencio como default (como hoy).
+- Permisos nuevos: solo cámara (C9). Voz/CSV/widget no piden nada (intents del
+  sistema, SAF, Glance).
+- Prohibido: tablas Supabase nuevas (solo `fintrack_backups`), columnas en
+  tablas existentes, KSP/Hilt/Room, cambiar versiones pineadas sin preguntar.
+- Cada OTA: suite completa verde + QA emulador de lo tocado + `AGENTS.md`
+  (conteo de tests y líneas de feature, como siempre).
+
+### E3. Riesgos y mitigaciones
+- D9 que no entiende algo → responde "no sé" + ejemplos (diseño, no bug).
+- D7 formatos de banco cambiantes → parser por encabezado + fila "desconocida"
+  que el usuario mapea una vez (se guarda el mapeo).
+- B con contraseña cambiada → re-cifrar en el cambio (flujo en AuthViewModel).
+- C7/C9 suben el tamaño del APK → se vigila en cada release (`apkSha256` ya lo
+  audita indirectamente; alerta si +15 MB).
+- Estimación total: ~37 días-agent en 7 OTAs (v1.0.55 → v1.0.61).

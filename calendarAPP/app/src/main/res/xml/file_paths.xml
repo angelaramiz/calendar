@@ -4,4 +4,7 @@
     <!-- C9 OCR: fotos de tickets en almacenamiento interno (FileProvider
          para el intent TakePicture; jamás salen del equipo). -->
     <files-path name="tickets" path="tickets/" />
+    <!-- D12 Reporte mensual: PDF efímero en cacheDir/reports para compartir
+         vía FileProvider (no se persiste nada). -->
+    <cache-path name="reports" path="reports/" />
 </paths>

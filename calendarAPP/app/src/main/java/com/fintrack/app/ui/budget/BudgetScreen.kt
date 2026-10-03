@@ -483,6 +483,19 @@ fun BudgetScreen(
             }
             // === Fin región D9. ===
 
+            // === Región D12 (reporte mensual): al FINAL, no reordenar. ===
+            item {
+                SectionHeader(title = "Reporte mensual", subtitle = "PDF de una página")
+            }
+            item {
+                com.fintrack.app.ui.report.ReportSection(
+                    transactions = uiState.allTransactions,
+                    movements = uiState.recentMovements,
+                    goals = uiState.goals
+                )
+            }
+            // === Fin región D12. ===
+
             item { Spacer(modifier = Modifier.height(8.dp)) }
         }
     }

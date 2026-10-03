@@ -25,6 +25,7 @@ import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.TransactionCategories
 import com.fintrack.app.domain.VoiceExpenseParser
+import com.fintrack.app.ui.ocr.OcrCaptureButton
 
 /**
  * Formulario completo de registro rápido en una sola pantalla
@@ -149,6 +150,16 @@ fun QuickEntryFullForm(
         }
         Spacer(modifier = Modifier.height(4.dp))
         // === Fin zona voz. ===
+        // === Ticket OCR (C9): foto → monto/comercio propuestos, confirmar a mano. ===
+        // La foto queda en filesDir/tickets y nunca viaja (ni respaldo ni red).
+        OcrCaptureButton(onResult = { monto, comercio, _ ->
+            monto?.let { v ->
+                amount = if (v % 1.0 == 0.0) v.toLong().toString() else v.toString()
+            }
+            if (!comercio.isNullOrBlank()) description = comercio
+        })
+        Spacer(modifier = Modifier.height(4.dp))
+        // === Fin OCR. ===
         Spacer(modifier = Modifier.height(16.dp))
 
         Row(modifier = Modifier.fillMaxWidth()) {

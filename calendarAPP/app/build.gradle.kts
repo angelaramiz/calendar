@@ -60,33 +60,14 @@ android {
     packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
 
-// Tren Compose pineado al BOM 2024.06 (1.6.8): ML Kit publica constraints que
-// empujan foundation a 1.7.0 y runtime/ui a 1.9.0 sobre material3 1.2.1 y eso
-// crashea en prefetch Lazy (FATAL: clickable solo acepta IndicationNodeFactory
-// de su mismo tren, PlatformRipple incompatible). force() restaura el estado
-// conocido-bueno previo a ML Kit; si OCR llegara a necesitar foundation 1.7.0
-// se verá como NoClassDefFound al probar cámara en dispositivo real.
-configurations.all {
-    resolutionStrategy {
-        force(
-            "androidx.compose.animation:animation:1.6.8",
-            "androidx.compose.animation:animation-core:1.6.8",
-            "androidx.compose.foundation:foundation:1.6.8",
-            "androidx.compose.foundation:foundation-layout:1.6.8",
-            "androidx.compose.material:material:1.6.8",
-            "androidx.compose.material:material-ripple:1.6.8",
-            "androidx.compose.material:material-icons-core:1.6.8",
-            "androidx.compose.runtime:runtime:1.6.8",
-            "androidx.compose.runtime:runtime-saveable:1.6.8",
-            "androidx.compose.ui:ui:1.6.8",
-            "androidx.compose.ui:ui-geometry:1.6.8",
-            "androidx.compose.ui:ui-graphics:1.6.8",
-            "androidx.compose.ui:ui-text:1.6.8",
-            "androidx.compose.ui:ui-unit:1.6.8",
-            "androidx.compose.ui:ui-util:1.6.8"
-        )
-    }
-}
+// NOTA tren Compose: ML Kit + activity-compose 1.9.0 empujan runtime a 1.9.0
+// y foundation a 1.7.0 sobre material3 1.2.1 (deriva preexistente desde v1.0.54,
+// verificada: la app arranca y opera). Se intentó forzar todo a 1.6.8 y eso
+// SÍ rompe el arranque (NoSuchMethodError startReplaceGroup: el código compilado
+// con el plugin Compose de Kotlin 2.4.0 + activity 1.9.0 exige runtime ≥1.7.0).
+// Queda pendiente (con aprobación del dueño): subir el tren completo
+// (BOM 2024.10+, material3 1.3.x) para eliminar también el FATAL raro de ripple
+// en prefetch Lazy. Si OCR falla en real con NoClassDefFound, revisar.
 
 kotlin {
     compilerOptions {

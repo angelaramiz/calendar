@@ -65,6 +65,9 @@ class CloudBackupRepository {
                 put("schema_v", schemaV)
                 put("payload", json.encodeToString(SealedPayload.serializer(), sealed))
             }
-            db.from(TABLE).upsert(data)
+            // supabase-kt v3 no expone onConflict en esta firma: delete+insert
+            // atómico a efectos prácticos (una sola fila por usuario, RLS full).
+            db.from(TABLE).delete { filter { eq("user_id", userId) } }
+            db.from(TABLE).insert(data)
         }
 }

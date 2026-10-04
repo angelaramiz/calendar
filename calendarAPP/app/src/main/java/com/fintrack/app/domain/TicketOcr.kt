@@ -22,14 +22,28 @@ data class TicketResult(
 object TicketOcr {
 
     private val totalKeys = listOf("total", "importe", "a pagar", "gran total", "monto total")
-    private val notTotalKeys = listOf("subtotal", "sub total")
+    private val notTotalKeys = listOf(
+        "subtotal", "sub total",
+        // "TOTAL ARTICULOS 5" es conteo, no el gasto.
+        "articulo", "cantidad", "pieza", "producto"
+    )
 
     /** Líneas que jamás son el comercio (datos del ticket, no la tienda). */
     private val merchantBan = listOf(
         "total", "subtotal", "cambio", "efectivo", "tarjeta", "gracias",
         "folio", "ticket", "factura", "pago", "venta", "cliente", "caja",
-        "articulo", "cantidad", "precio", "iva", "propina"
+        "articulo", "cantidad", "precio", "iva", "propina",
+        // Fiscales, dirección y medio de pago: nunca la tienda.
+        "rfc", "regimen", "expedido", "avenida", "av ", "calle", "colonia",
+        "col ", "codigo postal", "telefono", "sucursal", "visa", "mastercard",
+        "amex", "debito", "credito"
     )
+
+    /** Tarjeta enmascarada (****1234): sus dígitos no son dinero. */
+    private val maskedCard = Regex("""\*+\s*[\d\s]+""")
+
+    /** Marcas de dólar americano: el monto se sugiere igual pero se avisa. */
+    private val usdKeys = listOf("usd", "dll", "dolar", "dollar")
 
     private val moneyPattern = Regex("""([$])?\s*(\d[\d.,]*\d|\d)""")
 
@@ -39,24 +53,38 @@ object TicketOcr {
         if (fullText.isBlank()) return TicketResult(null, null)
         val lines = fullText.lines().map { it.trim() }.filter { it.isNotEmpty() }
         if (lines.isEmpty()) return TicketResult(null, null)
-        val totalLine = lines.firstOrNull { it.isTotalLine() }
-        val amount = if (totalLine != null) {
+        val totalIdx = lines.indexOfFirst { it.isTotalLine() }
+        val amount = if (totalIdx >= 0) {
             // En la línea de total vale hasta el entero pelón ("TOTAL 1500").
-            totalLine.candidates()
-                .maxWithOrNull(compareBy({ it.score }, { -it.order }))?.value
+            // Si el TOTAL viene solo ("TOTAL\n$116"), se mira hasta 2 líneas abajo.
+            val scope = listOf(lines[totalIdx]) +
+                lines.drop(totalIdx + 1).take(2)
+            scope.flatMapIndexed { i, line ->
+                line.candidates()
+                    // En las líneas de abajo solo valen $ o decimales (un
+                    // folio suelto no es el gasto); en la de TOTAL todo vale.
+                    .filter { c -> i == 0 || c.score >= 1 }
+                    .map { c -> c.copy(order = i * 1000 + c.order) }
+            }.maxWithOrNull(compareBy({ it.score }, { -it.order }))?.value
         } else {
             // Sin línea de total solo valen candidatos con $ o decimales:
-            // un "FOLIO 123" o "NOTA 2026" sueltos no son el gasto.
+            // un "FOLIO 123" o "NOTA 2026" sueltos no son el gasto. La propina
+            // no gana si hay otro monto (el gasto real la incluye).
             var order = 0
-            lines.flatMap { line ->
+            val all = lines.flatMap { line ->
                 line.candidates().map { c ->
                     order += 1
-                    c.copy(order = order)
+                    Triple(line, order, c)
                 }
-            }.filter { it.score >= 1 }
-                .maxWithOrNull(compareBy({ it.score }, { -it.order }))?.value
+            }.filter { (_, _, c) -> c.score >= 1 }
+            val rest = all.filterNot { (line, _, _) -> "propina" in line.normalized() }
+            (if (rest.isNotEmpty()) rest else all)
+                .maxWithOrNull(compareBy({ (_, _, c) -> c.score }, { (_, order, _) -> -order }))
+                ?.let { (_, _, c) -> c.value }
         }
-        return TicketResult(amount, extractMerchant(lines))
+        val usd = lines.any { line -> usdKeys.any { it in line.normalized() } }
+        val merchant = extractMerchant(lines)?.let { if (usd) "$it (USD)" else it }
+        return TicketResult(amount, merchant)
     }
 
     private fun String.normalized(): String =
@@ -70,15 +98,17 @@ object TicketOcr {
     }
 
     private fun String.candidates(): List<Candidate> =
-        moneyPattern.findAll(this).mapNotNull { m ->
-            val value = parseMoney(m.groupValues[2]) ?: return@mapNotNull null
-            val score = when {
-                m.groupValues[1].isNotEmpty() -> 2
-                m.groupValues[2].contains(".") || m.groupValues[2].contains(",") -> 1
-                else -> 0
-            }
-            Candidate(score, m.range.first, value)
-        }.toList()
+        maskedCard.replace(this, " ").let { clean ->
+            moneyPattern.findAll(clean).mapNotNull { m ->
+                val value = parseMoney(m.groupValues[2]) ?: return@mapNotNull null
+                val score = when {
+                    m.groupValues[1].isNotEmpty() -> 2
+                    m.groupValues[2].contains(".") || m.groupValues[2].contains(",") -> 1
+                    else -> 0
+                }
+                Candidate(score, m.range.first, value)
+            }.toList()
+        }
 
     /**
      * Normaliza un token numérico a Double. El último separador seguido de

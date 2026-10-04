@@ -95,4 +95,49 @@ class TicketOcrTest {
         assertNull(r.amount)
         assertNull(r.merchant)
     }
+
+    @Test
+    fun total_solo_en_su_linea_mira_dos_abajo() {
+        val r = TicketOcr.parse("SUPER AKI\nTOTAL\n$116.00\nGRACIAS")
+        assertEquals(116.0, r.amount ?: -1.0, 0.0)
+    }
+
+    @Test
+    fun total_articulos_es_conteo_no_monto() {
+        val r = TicketOcr.parse("TIENDA\nTOTAL ARTICULOS 5\nTOTAL $200.00")
+        assertEquals(200.0, r.amount ?: -1.0, 0.0)
+    }
+
+    @Test
+    fun tarjeta_enmascarada_no_es_dinero() {
+        val r = TicketOcr.parse("OXXO\nTOTAL $116.00 ****5678")
+        assertEquals(116.0, r.amount ?: -1.0, 0.0)
+    }
+
+    @Test
+    fun rfc_y_direccion_no_son_comercio() {
+        val r = TicketOcr.parse("RFC MELM830101ABC\nOXXO CENTRO\nAV REFORMA 222\nTOTAL $50.00")
+        assertEquals("OXXO CENTRO", r.merchant)
+        assertEquals(50.0, r.amount ?: -1.0, 0.0)
+    }
+
+    @Test
+    fun pago_con_tarjeta_no_es_comercio() {
+        val r = TicketOcr.parse("TOTAL $300.00\nPAGO TARJETA DEBITO")
+        assertEquals(300.0, r.amount ?: -1.0, 0.0)
+        assertNull(r.merchant)
+    }
+
+    @Test
+    fun dolares_marcan_la_nota() {
+        val r = TicketOcr.parse("WALMART\nTOTAL $25.00 USD")
+        assertEquals(25.0, r.amount ?: -1.0, 0.0)
+        assertEquals("WALMART (USD)", r.merchant)
+    }
+
+    @Test
+    fun propina_no_gana_si_hay_consumo() {
+        val r = TicketOcr.parse("RESTAURANTE\nCONSUMO $400.00\nPROPINA $40.00")
+        assertEquals(400.0, r.amount ?: -1.0, 0.0)
+    }
 }

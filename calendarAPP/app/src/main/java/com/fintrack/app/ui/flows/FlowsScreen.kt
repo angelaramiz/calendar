@@ -35,6 +35,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -214,7 +215,8 @@ fun FlowsScreen(
                 ) {
                     OutlinedButton(
                         onClick = { showAddMenu = true },
-                        modifier = Modifier.fillMaxWidth().menuAnchor()
+                        modifier = Modifier.fillMaxWidth()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                     ) {
                         Icon(Icons.Default.Add, "Agregar nodo")
                         Spacer(modifier = Modifier.width(8.dp))
@@ -439,7 +441,8 @@ internal fun IncomeEditor(node: IncomeNode, viewModel: FlowsViewModel) {
             readOnly = true,
             label = { Text("Origen") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor()
+            modifier = Modifier.fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             incomeSourceLabels.forEach { (key, label) ->
@@ -574,7 +577,8 @@ internal fun ConditionEditor(node: ConditionNode, viewModel: FlowsViewModel) {
             readOnly = true,
             label = { Text("Si el monto") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.fillMaxWidth().menuAnchor()
+            modifier = Modifier.fillMaxWidth()
+                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             operatorLabels.forEach { (op, label) ->

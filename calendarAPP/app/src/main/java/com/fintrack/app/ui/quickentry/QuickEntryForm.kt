@@ -31,8 +31,8 @@ private const val STEP_ACCOUNT = 4
 private const val TOTAL_STEPS = 5
 
 /**
- * Registro rápido por pasos (wizard), pensado para la persiana que baja
- * desde arriba —tanto dentro de la app como en el diálogo flotante del Tile—:
+ * Registro rápido por pasos (wizard), exclusivo de la isla que se despliega
+ * en la ventana OUT del Tile:
  * 1) tipo de movimiento, 2) monto, 3) categoría, 4) nota, 5) método de pago
  * o cuenta destino (con alta de cuentas débito/nómina/vales/ahorro).
  *

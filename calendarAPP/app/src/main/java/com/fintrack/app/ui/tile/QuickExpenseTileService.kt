@@ -11,22 +11,35 @@ import android.view.Window
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -134,11 +147,11 @@ class QuickExpenseTileService : TileService(), KoinComponent {
     }
 
     /**
-     * Ventana OUT: persiana flotante SOBRE la app en uso (sin abrir FinTrack).
-     * Baja desde arriba con el wizard por pasos y NO se cierra al tocar
-     * fuera: un toque accidental a media captura no debe tirar el registro.
-     * Solo Cerrar/Cancelar/Guardar la quitan. Con teléfono bloqueado pide
-     * huella/PIN primero.
+     * Ventana OUT: isla flotante SOBRE la app en uso (sin abrir FinTrack).
+     * Nace como píldora compacta y se despliega al formulario con rebote
+     * (spring); NO se cierra al tocar fuera: un toque accidental a media
+     * captura no debe tirar el registro. Solo Cerrar/Cancelar/Guardar la
+     * quitan. Con teléfono bloqueado pide huella/PIN primero.
      */
     override fun onClick() {
         super.onClick()
@@ -181,8 +194,15 @@ class QuickExpenseTileService : TileService(), KoinComponent {
                     var visible by remember { mutableStateOf(false) }
                     // Cuentas locales vivas: el alta del paso 5 refresca aquí.
                     var wallets by remember { mutableStateOf(initialWallets) }
+                    // Isla: la ventana nace píldora y se despliega sola al
+                    // formulario; tocarla la despliega antes si hay prisa.
+                    var unfolded by remember { mutableStateOf(false) }
                     val composeScope = rememberCoroutineScope()
-                    LaunchedEffect(Unit) { visible = true }
+                    LaunchedEffect(Unit) {
+                        visible = true
+                        delay(350)
+                        unfolded = true
+                    }
                     fun animatedClose() {
                         if (!visible) return
                         visible = false
@@ -211,38 +231,81 @@ class QuickExpenseTileService : TileService(), KoinComponent {
                                     animationSpec = tween(250)
                                 ) + fadeOut(animationSpec = tween(200))
                             ) {
-                                Card(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null,
-                                            onClick = {}
-                                        ),
-                                    shape = RoundedCornerShape(
-                                        topStart = 0.dp, topEnd = 0.dp,
-                                        bottomStart = 28.dp, bottomEnd = 28.dp
-                                    ),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    )
-                                ) {
-                                    QuickEntryForm(
-                                        cards = cards,
-                                        wallets = wallets,
-                                        onSave = { tx, walletId, cardId ->
-                                            saveAndClose(dialog, tx, walletId, cardId)
-                                        },
-                                        onCancel = ::animatedClose,
-                                        onCreateWallet = { name, last4, kind ->
-                                            serviceScope.launch {
-                                                runCatching {
-                                                    walletStore.addWallet(name, last4, kind)
-                                                    wallets = walletStore.snapshot()
-                                                }
+                                AnimatedContent(
+                                    targetState = unfolded,
+                                    transitionSpec = {
+                                        (scaleIn(
+                                            animationSpec = spring(
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            ),
+                                            initialScale = 0.55f
+                                        ) + fadeIn(animationSpec = tween(150)))
+                                            .togetherWith(
+                                                fadeOut(animationSpec = tween(120))
+                                            ) using SizeTransform(clip = false)
+                                    },
+                                    label = "isla-registro"
+                                ) { target ->
+                                    if (!target) {
+                                        Surface(
+                                            onClick = { unfolded = true },
+                                            shape = RoundedCornerShape(28.dp),
+                                            color = ComposeColor.Black,
+                                            contentColor = ComposeColor.White,
+                                            tonalElevation = 6.dp
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(
+                                                    horizontal = 20.dp,
+                                                    vertical = 12.dp
+                                                ),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(18.dp),
+                                                    strokeWidth = 2.dp,
+                                                    color = ComposeColor.White
+                                                )
+                                                Text("Registro rápido")
                                             }
                                         }
-                                    )
+                                    } else {
+                                        Card(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable(
+                                                    interactionSource = remember { MutableInteractionSource() },
+                                                    indication = null,
+                                                    onClick = {}
+                                                ),
+                                            shape = RoundedCornerShape(
+                                                topStart = 0.dp, topEnd = 0.dp,
+                                                bottomStart = 28.dp, bottomEnd = 28.dp
+                                            ),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = MaterialTheme.colorScheme.surface
+                                            )
+                                        ) {
+                                            QuickEntryForm(
+                                                cards = cards,
+                                                wallets = wallets,
+                                                onSave = { tx, walletId, cardId ->
+                                                    saveAndClose(dialog, tx, walletId, cardId)
+                                                },
+                                                onCancel = ::animatedClose,
+                                                onCreateWallet = { name, last4, kind ->
+                                                    serviceScope.launch {
+                                                        runCatching {
+                                                            walletStore.addWallet(name, last4, kind)
+                                                            wallets = walletStore.snapshot()
+                                                        }
+                                                    }
+                                                }
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

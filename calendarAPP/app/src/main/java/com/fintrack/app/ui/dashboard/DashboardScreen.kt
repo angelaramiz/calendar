@@ -27,6 +27,7 @@ import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.repository.OtaInstaller
 import com.fintrack.app.ui.auth.BiometricLockScreen
 import com.fintrack.app.ui.common.AmountText
+import com.fintrack.app.ui.common.IslandBanner
 import com.fintrack.app.ui.common.PullRefreshLayout
 import kotlinx.coroutines.launch
 import com.fintrack.app.ui.navigation.FinTrackBottomBar
@@ -245,55 +246,34 @@ fun DashboardScreen(
             ) {
             item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            // Sin red: cinta compacta con reintento manual (el auto-refresh
+            // Sin red: isla de aviso con reintento manual (el auto-refresh
             // baja a 30 s solo y no espamea el snackbar).
             if (uiState.isOffline) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "Sin conexión — mostrando datos locales",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = { viewModel.loadDashboard(forceRefresh = true) }) { Text("Reintentar") }
-                        }
-                    }
+                    IslandBanner(
+                        icon = Icons.Default.CloudOff,
+                        collapsedText = "Sin conexión",
+                        expandedText = "Mostrando datos locales guardados en el teléfono.",
+                        actionLabel = "Reintentar",
+                        onAction = { viewModel.loadDashboard(forceRefresh = true) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 
-            // Cola offline visible: cuántos faltan por subir + reintento.
+            // Cola offline visible: isla con cuántos faltan por subir + reintento.
             if (uiState.pendingCount > 0) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                if (uiState.pendingCount == 1) "1 pendiente por sincronizar"
-                                else "${uiState.pendingCount} pendientes por sincronizar",
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = { viewModel.retryPending() }) { Text("Sincronizar") }
-                        }
-                    }
+                    IslandBanner(
+                        icon = Icons.Default.Sync,
+                        collapsedText =
+                            if (uiState.pendingCount == 1) "1 pendiente por sincronizar"
+                            else "${uiState.pendingCount} pendientes por sincronizar",
+                        expandedText = "Se subirán solos al recuperar sesión y red.",
+                        actionLabel = "Sincronizar",
+                        onAction = { viewModel.retryPending() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
 

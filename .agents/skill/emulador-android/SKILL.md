@@ -59,5 +59,5 @@ Rutas del SDK: usa `$env:ANDROID_HOME` o `%LOCALAPPDATA%\Android\Sdk`.
 
 - Paquete: `com.fintrack.app` · Tabs: Inicio/Calendario/Flujos/Presupuesto/Cuentas.
 - FAB `+` (Inicio) = ventana IN (persiana abajo, formulario completo).
-- Tile "Registro rápido" = ventana OUT (persiana arriba, wizard; no cierra al tocar fuera).
+- Tile "Registro rápido" = ventana OUT (isla: píldora → wizard con spring; no cierra al tocar fuera).
 - Pull-to-refresh en Inicio: `swipe 540 500 540 1300 1200` → "Suelta para actualizar" → "Actualizando…".

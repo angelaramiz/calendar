@@ -31,7 +31,7 @@ import kotlinx.coroutines.launch
  *
  * Persiana desde abajo con el formulario completo en una sola pantalla
  * ([QuickEntryFullForm]). La variante por pasos ([QuickEntryForm]) con
- * persiana desde arriba es exclusiva de la ventana OUT del Tile.
+ * despliegue de isla es exclusiva de la ventana OUT del Tile.
  */
 @Composable
 fun QuickEntryDialog(

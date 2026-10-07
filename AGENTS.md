@@ -72,7 +72,7 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
 
 - Custom tool `preview` (OpenCode): `status` | `boot` (AVD `Medium_Phone_API_35`) | `install` (usa `calendarWeb/calendarfinance.apk`) | `launch` | `screenshot` (guarda `.opencode/preview.png`, leer con `read` para ver) | `tap x y`.
 - Capturas vía `screencap` en el dispositivo + `pull` (nunca `exec-out` redirigido en PowerShell: corrompe el PNG a UTF-16).
-- El emulador queda corriendo para verlo en vivo; el agente opera con `tap`.
+- Al terminar el QA, apaga el emulador (`adb emu kill`, regla 5 de ahorro); el agente opera con `tap` mientras está vivo.
 
 ## Release pipeline (`calendarAPP/scripts/release.ps1`)
 
@@ -88,3 +88,4 @@ Versions are pinned — do not bump without asking: Kotlin 2.4.0, AGP 8.7.3, `co
 2. Don't invent URLs, endpoints, package names, or table names — only those defined in code/config.
 3. Keep Web and Android models consistent (`TransactionEntity` ↔ Supabase columns).
 4. Match existing style: Kotlin `PascalCase` classes / `camelCase` functions, JS `kebab-case.js`, DB `snake_case`.
+5. Ahorro de recursos: cuando termines de usar el emulador (o cualquier herramienta pesada que hayas invocado tú: AVD, builds, túneles), ciérrala (`adb emu kill`; verifica con `adb devices`). No dejes el emulador corriendo entre sesiones.

@@ -60,6 +60,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.DraftStore
 import com.fintrack.app.data.PendingOp
 import com.fintrack.app.data.PendingOpCodec
 import com.fintrack.app.data.PendingOpKind
@@ -119,6 +120,9 @@ class QuickExpenseTileService : TileService(), KoinComponent {
     private val creditCardStore: CreditCardStore by inject()
     private val walletStore: WalletStore by inject()
     private val pendingOpStore: PendingOpStore by inject()
+    // Borrador del formulario: sobrevive si el sistema mata el servicio
+    // a media captura (al reabrir el tile se retoma donde iba).
+    private val draftStore by lazy { DraftStore(this) }
 
     private val serviceScope = MainScope()
     private var entryDialog: Dialog? = null
@@ -176,6 +180,8 @@ class QuickExpenseTileService : TileService(), KoinComponent {
                 walletStore.ensureDefaults()
                 walletStore.snapshot()
             }.getOrDefault(emptyList())
+            // Borrador previo (si la ventana murió a medias): se retoma.
+            val initialDraft = runCatching { draftStore.snapshot() }.getOrNull()
             val dialog = Dialog(this@QuickExpenseTileService).apply {
                 requestWindowFeature(Window.FEATURE_NO_TITLE)
             }
@@ -206,6 +212,8 @@ class QuickExpenseTileService : TileService(), KoinComponent {
                     fun animatedClose() {
                         if (!visible) return
                         visible = false
+                        // Cierre intencional: el borrador se descarta.
+                        serviceScope.launch { runCatching { draftStore.clear() } }
                         composeScope.launch {
                             delay(280)
                             requestClose()
@@ -288,22 +296,28 @@ class QuickExpenseTileService : TileService(), KoinComponent {
                                                 containerColor = MaterialTheme.colorScheme.surface
                                             )
                                         ) {
-                                            QuickEntryForm(
-                                                cards = cards,
-                                                wallets = wallets,
-                                                onSave = { tx, walletId, cardId ->
-                                                    saveAndClose(dialog, tx, walletId, cardId)
-                                                },
-                                                onCancel = ::animatedClose,
-                                                onCreateWallet = { name, last4, kind ->
-                                                    serviceScope.launch {
-                                                        runCatching {
-                                                            walletStore.addWallet(name, last4, kind)
-                                                            wallets = walletStore.snapshot()
-                                                        }
-                                                    }
+                                    QuickEntryForm(
+                                        cards = cards,
+                                        wallets = wallets,
+                                        onSave = { tx, walletId, cardId ->
+                                            saveAndClose(dialog, tx, walletId, cardId)
+                                        },
+                                        onCancel = ::animatedClose,
+                                        onCreateWallet = { name, last4, kind ->
+                                            serviceScope.launch {
+                                                runCatching {
+                                                    walletStore.addWallet(name, last4, kind)
+                                                    wallets = walletStore.snapshot()
                                                 }
-                                            )
+                                            }
+                                        },
+                                        initialDraft = initialDraft,
+                                        onDraftChange = { draft ->
+                                            serviceScope.launch {
+                                                runCatching { draftStore.save(draft) }
+                                            }
+                                        }
+                                    )
                                         }
                                     }
                                 }
@@ -342,6 +356,8 @@ class QuickExpenseTileService : TileService(), KoinComponent {
         cardId: String?
     ) {
         serviceScope.launch {
+            // Guardado: el borrador cumplió, se descarta.
+            runCatching { draftStore.clear() }
             val uid = authRepository.ensureSession()
             if (uid == null) {
                 runCatching { pendingOpStore.enqueue(newTxOp(tx, walletId, cardId)) }

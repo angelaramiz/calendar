@@ -31,7 +31,8 @@ class LocalBackupTest {
         streaks = mapOf("Comida" to 3),
         streaksLastPeriod = "2026-Q4",
         hormigaFreq = "semanal",
-        hormigaLastSent = "2026-W40"
+        hormigaLastSent = "2026-W40",
+        draft = EntryDraft("EXPENSE", "77", "Comida", "", null, null, 2)
     )
 
     @Test

@@ -46,7 +46,9 @@ data class LocalBackup(
     val streaksLastPeriod: String? = null,
     /** Frecuencia hormiga + semana avisada (D11). */
     val hormigaFreq: String? = null,
-    val hormigaLastSent: String? = null
+    val hormigaLastSent: String? = null,
+    /** Borrador del Registro rápido a medias (efímero). */
+    val draft: EntryDraft? = null
 )
 
 fun encodeBackup(backup: LocalBackup): String =

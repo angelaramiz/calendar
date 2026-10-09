@@ -5,12 +5,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.dialog
 import androidx.navigation.navArgument
+import com.fintrack.app.data.DraftStore
+import com.fintrack.app.data.EntryDraft
+import kotlinx.coroutines.launch
 import com.fintrack.app.ui.accounts.AccountsScreen
 import com.fintrack.app.ui.auth.AuthScreen
 import com.fintrack.app.ui.auth.RecoveryWebScreen
@@ -168,18 +175,40 @@ fun FinTrackNavGraph(
             val dashboardViewModel: DashboardViewModel =
                 koinViewModel(viewModelStoreOwner = activity)
             val dashState by dashboardViewModel.uiState.collectAsState()
-            QuickEntryDialog(
-                cards = dashState.cards,
-                wallets = dashState.wallets,
-                onSave = { transaction, walletId, cardId ->
-                    dashboardViewModel.addTransaction(transaction, walletId, cardId)
-                    navController.popBackStack()
-                },
-                onCancel = { navController.popBackStack() },
-                onCreateWallet = { name, last4, kind ->
-                    dashboardViewModel.addWallet(name, last4, kind)
-                }
-            )
+            // Borrador del formulario (si la ventana murió a medias se retoma;
+            // al guardar/cancelar se descarta).
+            val appCtx = LocalContext.current.applicationContext
+            val draftScope = rememberCoroutineScope()
+            var initialDraft by remember { mutableStateOf<EntryDraft?>(null) }
+            var draftReady by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                initialDraft = runCatching { DraftStore(appCtx).snapshot() }.getOrNull()
+                draftReady = true
+            }
+            fun persistDraft(draft: EntryDraft) {
+                draftScope.launch { runCatching { DraftStore(appCtx).save(draft) } }
+            }
+            if (draftReady) {
+                QuickEntryDialog(
+                    cards = dashState.cards,
+                    wallets = dashState.wallets,
+                    onSave = { transaction, walletId, cardId ->
+                        // El borrado va en el ViewModel: este scope muere con el pop.
+                        dashboardViewModel.clearEntryDraft(appCtx)
+                        dashboardViewModel.addTransaction(transaction, walletId, cardId)
+                        navController.popBackStack()
+                    },
+                    onCancel = {
+                        dashboardViewModel.clearEntryDraft(appCtx)
+                        navController.popBackStack()
+                    },
+                    onCreateWallet = { name, last4, kind ->
+                        dashboardViewModel.addWallet(name, last4, kind)
+                    },
+                    initialDraft = initialDraft,
+                    onDraftChange = ::persistDraft
+                )
+            }
         }
     }
 }

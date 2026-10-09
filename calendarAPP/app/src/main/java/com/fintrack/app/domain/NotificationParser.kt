@@ -80,12 +80,60 @@ object NotificationParser {
     )
 
     /**
-     * ¿Parece aviso bancario aunque el paquete no esté en la allowlist?
-     * Corre las etapas 2-5 sin la compuerta: sirve para sugerir bancos
-     * nuevos en vez de ignorarlos en silencio.
+     * Señales bancarias FUERTES (stems, contains): jerga de dinero real y
+     * marcas. Solo para el gate de sugerencia, NO para parse (la allowlist
+     * ya cubre a los bancos conocidos y no queremos endurecerla).
      */
-    fun looksLikeBankActivity(packageName: String, title: String, text: String): Boolean =
-        parse(packageName, title, text, setOf(packageName)) is ParseResult.Accepted
+    private val bankSignalStems = listOf(
+        "banco", "banca", "bancaria", "tarjeta", "cuenta", "saldo",
+        "transferencia", "traspaso", "retiro", "deposito", "fonde",
+        "credito", "debito", "prestamo", "adeudo", "comision",
+        "anualidad", "corte", "vencimiento", "nomin", "sueldo",
+        "salario", "quincen", "aguinaldo", "cajero", "afore",
+        "cetes", "terminacion", "terminada",
+        "pago de", "pago con", "pago a", "cargo a", "abono a",
+        "bbva", "banamex", "bancomer", "santander", "banorte",
+        "hsbc", "scotia", "inbursa", "azteca", "mercadopago",
+        "mercado pago", "paypal", "fondeadora", "stori", "konfio",
+        "nubank", "wise", "dolarapp", "uala", "kubo"
+    )
+
+    /**
+     * Marcas/términos cortos que como substring darían falsos positivos
+     * ("nu" en "nuevo"/"anual", "hey" en "hey!" casual): solo valen como
+     * palabra completa. Texto ya normalizado (minúsculas sin acentos).
+     */
+    private val bankSignalTokens = Regex(
+        """\b(nu|hey|klar|albo|clip|spin|spei|codi|dimo|nip|atm|clabe|afore|oxxo spin|kushki)\b"""
+    )
+
+    /** Tarjeta enmascarada ("****1234", "**** 1234"): casi siempre banco. */
+    private val maskedCard = Regex("""\*{2,}\s?\d{2,4}""")
+
+    /**
+     * ¿Parece aviso bancario aunque el paquete no esté en la allowlist?
+     * Gate PROPIO (más estricto que parse): exige monto + señal bancaria
+     * FUERTE (marca, producto o jerga de dinero real). Los verbos genéricos
+     * solos ("pagaste", "te envió 3 fotos", "paid") NO bastan: así WhatsApp,
+     * juegos o YouTube dejan de sugerirse como bancos.
+     */
+    fun looksLikeBankActivity(packageName: String, title: String, text: String): Boolean {
+        val combined = "$title $text"
+        val normalized = combined.normalized()
+        // Promos y rechazos nunca son bancos ("ganaste 500 monedas", "pago rechazado").
+        if (isPromo(combined)) return false
+        if (rejectionStems.any { normalized.contains(it) } ||
+            fundingInstruction.containsMatchIn(normalized)
+        ) {
+            return false
+        }
+        // Sin monto no hay movimiento que sugerir.
+        if (extractAmount(combined) == null) return false
+        if (bankSignalStems.any { normalized.contains(it) }) return true
+        if (bankSignalTokens.containsMatchIn(normalized)) return true
+        // Tarjeta enmascarada ("****1234", "terminación 5678"): casi siempre banco.
+        return maskedCard.containsMatchIn(combined)
+    }
 
     /**
      * Normaliza una llave merchant→categoría para el match exacto

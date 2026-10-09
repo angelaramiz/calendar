@@ -482,6 +482,74 @@ class NotificationParserTest {
     }
 
     @Test
+    fun mensajeria_con_numero_y_verbo_no_se_sugiere() {
+        // "Te envió 3 fotos": verbo genérico + número, pero sin señal bancaria.
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "com.whatsapp",
+                title = "María",
+                text = "Te envió 3 fotos nuevas del viaje."
+            )
+        )
+    }
+
+    @Test
+    fun juego_con_numero_no_se_sugiere() {
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "com.juego.ejemplo",
+                title = "Energía lista",
+                text = "Tu energía se recargó: 5/5, vuelve a jugar."
+            )
+        )
+    }
+
+    @Test
+    fun red_social_con_vistas_no_se_sugiere() {
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "com.youtube",
+                title = "Tu video despega",
+                text = "Tu video llegó a 1,000 vistas, sigue así."
+            )
+        )
+    }
+
+    @Test
+    fun banco_desconocido_con_spei_se_sugiere() {
+        assertTrue(
+            NotificationParser.looksLikeBankActivity(
+                packageName = "mx.banco.desconocido",
+                title = "SPEI recibido",
+                text = "Recibiste un SPEI de Juan por $1,200.00."
+            )
+        )
+    }
+
+    @Test
+    fun banco_desconocido_con_tarjeta_enmascarada_se_sugiere() {
+        assertTrue(
+            NotificationParser.looksLikeBankActivity(
+                packageName = "mx.banco.desconocido",
+                title = "Cargo aprobado",
+                text = "Cargo a tu tarjeta ****5678 por $320 en OXXO."
+            )
+        )
+    }
+
+    @Test
+    fun marca_corta_no_vale_como_substring() {
+        // "nu" en "nuevo"/"anual" no es Nu; "anual" además es promo.
+        assertTrue(
+            !NotificationParser.looksLikeBankActivity(
+                packageName = "com.tienda.ejemplo",
+                title = "Nuevo beneficio anual",
+                text = "Activa tu nuevo beneficio anual con 500 puntos."
+            )
+        )
+    }
+
+    @Test
     fun regla_de_categoria_gana_a_la_heuristica() {
         // Sin regla, "Urbani" no matchea nada y queda en Otros.
         val sinRegla = NotificationParser.parse(

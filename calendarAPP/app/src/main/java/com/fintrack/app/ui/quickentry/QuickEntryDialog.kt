@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.EntryDraft
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import kotlinx.coroutines.delay
@@ -39,7 +40,10 @@ fun QuickEntryDialog(
     onCancel: () -> Unit,
     cards: List<CreditCardRow> = emptyList(),
     wallets: List<WalletRow> = emptyList(),
-    onCreateWallet: (name: String, last4: String, kind: String) -> Unit = { _, _, _ -> }
+    onCreateWallet: (name: String, last4: String, kind: String) -> Unit = { _, _, _ -> },
+    /** Borrador a medio llenar: se retoma donde iba (lo persiste el dueño). */
+    initialDraft: EntryDraft? = null,
+    onDraftChange: (EntryDraft) -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
     var visible by remember { mutableStateOf(false) }
@@ -55,7 +59,13 @@ fun QuickEntryDialog(
 
     Dialog(
         onDismissRequest = ::requestClose,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        // Tocar fuera NO cierra: un toque accidental a media captura no
+        // debe tirar el registro (igual que la ventana OUT del Tile).
+        // Solo Atrás/Cancelar/Guardar la quitan.
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnClickOutside = false
+        )
     ) {
         Box(
             modifier = Modifier
@@ -100,7 +110,9 @@ fun QuickEntryDialog(
                         wallets = wallets,
                         onSave = onSave,
                         onCancel = ::requestClose,
-                        onCreateWallet = onCreateWallet
+                        onCreateWallet = onCreateWallet,
+                        initialDraft = initialDraft,
+                        onDraftChange = onDraftChange
                     )
                 }
             }

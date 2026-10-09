@@ -75,8 +75,12 @@ class TransactionNotificationListener : NotificationListenerService() {
                         diag("RECHAZADA (${result.reason})", packageName, title)
                         // App fuera de la lista pero con pinta de banco: se
                         // sugiere una sola vez en vez de ignorarla en silencio.
+                        // Doble gate: la categoría de Play descarta juegos/redes
+                        // (ej. "saldo de monedas" no es un banco) y el parser
+                        // exige señal bancaria fuerte ("te envió 3 fotos" no pasa).
                         if (result.reason == "app_no_permitida" &&
                             packageName != applicationContext.packageName &&
+                            !isObviouslyNotBank(packageName) &&
                             NotificationParser.looksLikeBankActivity(packageName, title, text)
                         ) {
                             val fresh = runCatching {
@@ -152,6 +156,26 @@ class TransactionNotificationListener : NotificationListenerService() {
             }
         }
     }
+
+    /**
+     * Categorías de Play que nunca son bancos (juegos, redes, video...):
+     * ni se les sugiere. `category` existe desde API 26 (= minSdk).
+     * Si el paquete no declara categoría o falla la consulta, se deja
+     * pasar al gate del parser (defensa en profundidad, no bloqueo).
+     */
+    private fun isObviouslyNotBank(packageName: String): Boolean = runCatching {
+        val info = packageManager.getApplicationInfo(packageName, 0)
+        when (info.category) {
+            android.content.pm.ApplicationInfo.CATEGORY_GAME,
+            android.content.pm.ApplicationInfo.CATEGORY_SOCIAL,
+            android.content.pm.ApplicationInfo.CATEGORY_VIDEO,
+            android.content.pm.ApplicationInfo.CATEGORY_AUDIO,
+            android.content.pm.ApplicationInfo.CATEGORY_IMAGE,
+            android.content.pm.ApplicationInfo.CATEGORY_NEWS,
+            android.content.pm.ApplicationInfo.CATEGORY_MAPS -> true
+            else -> false
+        }
+    }.getOrDefault(false)
 
     /** Errores donde reintentar después tiene sentido (sesión/red), no errores de datos. */
     private fun isRecoverable(e: Exception): Boolean {

@@ -7,6 +7,7 @@ import com.fintrack.app.data.CloudBackupStore
 import com.fintrack.app.data.CredentialStore
 import com.fintrack.app.data.CreditCardRow
 import com.fintrack.app.data.CreditCardStore
+import com.fintrack.app.data.DraftStore
 import com.fintrack.app.data.PendingOp
 import com.fintrack.app.data.PendingOpCodec
 import com.fintrack.app.data.PendingOpKind
@@ -650,6 +651,17 @@ class DashboardViewModel(
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Descarta el borrador del Registro rápido (al guardar o cancelar).
+     * Corre en viewModelScope a propósito: el scope del diálogo muere con
+     * el pop y mataría el borrado antes de completarse.
+     */
+    fun clearEntryDraft(appContext: android.content.Context) {
+        viewModelScope.launch {
+            runCatching { DraftStore(appContext.applicationContext).clear() }
         }
     }
 

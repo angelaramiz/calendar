@@ -41,7 +41,8 @@ class BackupManager(private val context: Context) {
             streaks = StreakStore(appCtx).snapshot(),
             streaksLastPeriod = StreakStore(appCtx).lastPeriod(),
             hormigaFreq = HormigaStore(appCtx).snapshot().first,
-            hormigaLastSent = HormigaStore(appCtx).snapshot().second
+            hormigaLastSent = HormigaStore(appCtx).snapshot().second,
+            draft = DraftStore(appCtx).snapshot()
         )
     }
 
@@ -149,6 +150,10 @@ class BackupManager(private val context: Context) {
                 HormigaFrequency.of(backup.hormigaFreq ?: current.first),
                 backup.hormigaLastSent ?: current.second
             )
+            applied++
+        }
+        backup.draft?.let {
+            DraftStore(appCtx).restore(it)
             applied++
         }
         return applied

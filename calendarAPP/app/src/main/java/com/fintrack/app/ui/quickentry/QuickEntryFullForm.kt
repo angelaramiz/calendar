@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.fintrack.app.data.CreditCardRow
+import com.fintrack.app.data.EntryDraft
 import com.fintrack.app.data.WalletRow
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.domain.TransactionCategories
@@ -45,21 +46,38 @@ fun QuickEntryFullForm(
     wallets: List<WalletRow> = emptyList(),
     onSave: (TransactionEntity, String?, String?) -> Unit,
     onCancel: () -> Unit,
-    onCreateWallet: (name: String, last4: String, kind: String) -> Unit = { _, _, _ -> }
+    onCreateWallet: (name: String, last4: String, kind: String) -> Unit = { _, _, _ -> },
+    /** Borrador a medio llenar (si la ventana murió antes): se retoma donde iba. */
+    initialDraft: EntryDraft? = null,
+    /** Se invoca con el progreso actual en cada cambio (el dueño lo persiste). */
+    onDraftChange: (EntryDraft) -> Unit = {}
 ) {
-    var type by remember { mutableStateOf("EXPENSE") }
-    var amount by remember { mutableStateOf("") }
-    var category by remember { mutableStateOf(TransactionCategories.defaultFor(false)) }
-    var description by remember { mutableStateOf("") }
+    val draftType = initialDraft?.type?.takeIf { it == "INCOME" } ?: "EXPENSE"
+    var type by remember { mutableStateOf(draftType) }
+    var amount by remember { mutableStateOf(initialDraft?.amount ?: "") }
+    var category by remember {
+        mutableStateOf(
+            initialDraft?.category?.takeIf { it.isNotBlank() }
+                ?: TransactionCategories.defaultFor(draftType == "INCOME")
+        )
+    }
+    var description by remember { mutableStateOf(initialDraft?.description ?: "") }
     // Selección exclusiva: o billetera (débito/efectivo/…) o tarjeta.
-    var walletId by remember { mutableStateOf<String?>(null) }
-    var cardId by remember { mutableStateOf<String?>(null) }
+    var walletId by remember { mutableStateOf(initialDraft?.walletId) }
+    var cardId by remember { mutableStateOf(initialDraft?.cardId) }
     // Alta de cuenta inline.
     var showNewAccount by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var newLast4 by remember { mutableStateOf("") }
     var newKind by remember { mutableStateOf("Débito") }
     var pendingNewName by remember { mutableStateOf<String?>(null) }
+
+    // El progreso se guarda solo: si la ventana muere, al reabrir se retoma.
+    LaunchedEffect(type, amount, category, description, walletId, cardId) {
+        onDraftChange(
+            EntryDraft(type, amount, category, description, walletId, cardId)
+        )
+    }
 
     val isIncome = type == "INCOME"
     val categories = TransactionCategories.forType(isIncome)

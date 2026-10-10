@@ -126,6 +126,49 @@ object DetectionNotifier {
         }
     }
 
+    /**
+     * Aviso de auto-vínculo: el aviso traía el concepto de un recurrente
+     * (ej. "hybridge") y el registro se marcó como ese evento solo
+     * (excluido del balance, proyección oculta, con 🔗 en Inicio).
+     */
+    fun showEventMatched(
+        context: Context,
+        txId: String,
+        patternName: String,
+        amount: Double,
+        dateIso: String,
+        isIncome: Boolean
+    ) {
+        ensureChannel(context)
+        if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+
+        val verb = if (isIncome) "cobrado" else "pagado"
+        val detail = "$patternName $verb por $${String.format("%.2f", amount)} " +
+            "($dateIso): se reconoció por su concepto y se marcó solo."
+        val openIntent = PendingIntent.getActivity(
+            context,
+            ("event" + txId).hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_detect)
+            .setContentTitle("Evento marcado automáticamente")
+            .setContentText(detail)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
+            .setContentIntent(openIntent)
+            .setAutoCancel(true)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(context).notify(("event" + txId).hashCode(), notification)
+        } catch (_: SecurityException) {
+        }
+    }
+
     /** Aviso de banco nuevo: su aviso parece movimiento pero no está en la lista. */
     fun showBankSuggestion(context: Context, packageName: String, sample: String) {
         ensureChannel(context)

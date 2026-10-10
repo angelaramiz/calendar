@@ -7,11 +7,17 @@ import android.util.Log
 import com.fintrack.app.data.AppFilterStore
 import com.fintrack.app.data.CategoryRuleStore
 import com.fintrack.app.data.PendingTxStore
+import com.fintrack.app.data.TxLink
+import com.fintrack.app.data.TxLinkStore
 import com.fintrack.app.data.model.TransactionEntity
 import com.fintrack.app.data.remote.AuthRepository
+import com.fintrack.app.data.repository.PatternRepository
 import com.fintrack.app.data.repository.TransactionRepository
+import com.fintrack.app.data.repository.toDomain
 import com.fintrack.app.domain.NotificationParser
+import com.fintrack.app.domain.ParsedTransaction
 import com.fintrack.app.domain.ParseResult
+import com.fintrack.app.domain.matchPatternByConcept
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +31,8 @@ class TransactionNotificationListener : NotificationListenerService() {
     private val appFilter by lazy { AppFilterStore(applicationContext) }
     private val pendingStore by lazy { PendingTxStore(applicationContext) }
     private val ruleStore by lazy { CategoryRuleStore(applicationContext) }
+    private val txLinkStore by lazy { TxLinkStore(applicationContext) }
+    private val patternRepository = PatternRepository()
 
     // Anti-duplicados: misma app + monto + minuto (las notificaciones se re-publican)
     @Volatile
@@ -130,6 +138,12 @@ class TransactionNotificationListener : NotificationListenerService() {
                             lastKey = key
                             lastTime = System.currentTimeMillis()
                             Log.d(tag, "Guardada: ${saved.id} ${saved.type} $${saved.amount} ${saved.category}")
+                            // Auto-vínculo: si el aviso trae el concepto de un
+                            // recurrente (ej. "hybridge"), se marca como ese
+                            // evento sin duplicar (igual que Vincular manual).
+                            if (tryAutoLinkEvent(userId, saved, parsed, title, text, packageName)) {
+                                return@launch
+                            }
                             diag(
                                 "GUARDADA ${parsed.type} $${parsed.amount} ${parsed.category}",
                                 packageName,
@@ -175,6 +189,44 @@ class TransactionNotificationListener : NotificationListenerService() {
             android.content.pm.ApplicationInfo.CATEGORY_MAPS -> true
             else -> false
         }
+    }.getOrDefault(false)
+
+    /**
+     * Auto-vínculo aviso → evento recurrente: si el texto trae el concepto
+     * del recurrente y hay una ocurrencia esperada a ±2 días, el registro
+     * detectado se vincula solo (excluye del balance y oculta la proyección,
+     * con 🔗 y Desvincular en la app). true = vinculado (ya avisado).
+     * Solo con sesión: sin red no hay patrones que comparar y el aviso
+     * queda encolado para vincular a mano.
+     */
+    private suspend fun tryAutoLinkEvent(
+        userId: String,
+        saved: TransactionEntity,
+        parsed: ParsedTransaction,
+        title: String,
+        text: String,
+        packageName: String
+    ): Boolean = runCatching {
+        val isIncome = parsed.type == "INCOME"
+        val rows = if (isIncome) patternRepository.getIncomePatterns(userId)
+        else patternRepository.getExpensePatterns(userId)
+        if (rows.isEmpty()) return false
+        val occurrence = matchPatternByConcept(
+            title, text, isIncome,
+            rows.mapNotNull { it.toDomain(parsed.type) },
+            java.time.LocalDate.now(), 2
+        ) ?: return false
+        txLinkStore.link(
+            saved.id,
+            TxLink(occurrence.pattern.id, occurrence.date.toString(), isIncome, occurrence.pattern.name)
+        )
+        Log.d(tag, "Evento auto-vinculado: ${occurrence.pattern.name} ${occurrence.date}")
+        diag("EVENTO AUTO-VINCULADO ${occurrence.pattern.name}", packageName, title)
+        DetectionNotifier.showEventMatched(
+            applicationContext, saved.id, occurrence.pattern.name,
+            parsed.amount, occurrence.date.toString(), isIncome
+        )
+        true
     }.getOrDefault(false)
 
     /** Errores donde reintentar después tiene sentido (sesión/red), no errores de datos. */
